@@ -1,4 +1,4 @@
- // Description: Controller for fetching and storing Quorum API
+// Description: Controller for fetching and storing Quorum API
 require("dotenv").config();
 const axios = require("axios");
 const Senator = require("../models/senatorSchema");
@@ -69,45 +69,13 @@ class QuorumDataController {
         }
     }
 
-    // filterData(type, data) {
-    //     const mappings = {
-    //         senator: item => ({
-    //             senatorId: item?.id || null,
-    //             party: item?.most_recent_party || "Unknown",
-    //             photo: item?.high_quality_image_url || item?.image_url || null,
-    //             name: item?.name || "Unknown",
-    //             state: item?.most_recent_role_state || "Unknown"
-    //         }),
-    //         representative: item => {
-    //             if (
-    //                 !Array.isArray(item.minor_person_types) || 
-    //                 !item.minor_person_types.includes(2) || 
-    //                 item?.most_recent_role_title !== "US Senator"
-    //             ) {
-    //                 return null;
-    //             }
-    //             return {
-    //                 repId: item?.id || null,
-    //                 name: item?.name || "Unknown",
-    //                 title: item?.most_recent_role_title || "Unknown",
-    //                 district: item?.most_recent_district || "Unknown",
-    //                 party: item?.most_recent_party || "Unknown",
-    //                 state: item?.most_recent_role_state || "Unknown"
-    //             };
-    //         },
-    //         votes: item => ({
-    //             voteId: item?._id || null,
-    //             senatorId: item?.senatorId || null,
-    //             repId: item?.repId || null,
-    //             bill: item?.bill || "Unknown",
-    //             decision: item?.decision || "Unknown"
-    //         })
-    //     };
-
-    //     return data.map(mappings[type]).filter(item => item);
-    // }
-
     filterData(type, data) {
+        const partyMapping = {
+            1: 'democrat',
+            2: 'republican',
+            3: 'independent'
+        };
+
         const mappings = {
             senator: item => {
                 if (item?.title !== "US Senator") {
@@ -116,8 +84,7 @@ class QuorumDataController {
                 return {
                     senatorId: item?.id || null,
                     name: item?.name || "Unknown",
-                    
-                    party: item?.most_recent_party || "Unknown",
+                    party: partyMapping[item?.most_recent_party] || "Unknown",
                     photo: item?.high_quality_image_url || item?.image_url || null,
                     state: item?.most_recent_role_state || "Unknown"
                 };
@@ -128,14 +95,14 @@ class QuorumDataController {
                     !item.minor_person_types.includes(2) || 
                     item?.title !== "US Representative"
                 ) {
-                    return null; // Skip if title is not "US Representative"
+                    return null;  
                 }
                 return {
                     repId: item?.id || null,
                     name: item?.name || "Unknown",
                     photo: item?.high_quality_image_url || item?.image_url || null, 
                     district: item?.most_recent_district || "Unknown",
-                    party: item?.most_recent_party || "Unknown",
+                    party: partyMapping[item?.most_recent_party] || "Unknown",
                     state: item?.most_recent_role_state || "Unknown"
                 };
             },
@@ -147,10 +114,9 @@ class QuorumDataController {
                 decision: item?.decision || "Unknown"
             })
         };
-    
+
         return data.map(mappings[type]).filter(item => item);
     }
-    
 
     async saveData(req, res) {
         try {
