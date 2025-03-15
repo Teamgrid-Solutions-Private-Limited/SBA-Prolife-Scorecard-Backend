@@ -3,6 +3,8 @@ const axios = require("axios");
 const Senator = require("../models/senatorSchema");
 const Representative = require("../models/representativeSchema");
 const Vote = require("../models/voteSchema");
+const SenatorData = require("../models/senatorDataSchema");
+const RepresentativeData = require("../models/representativeDataSchema");
 
 class QuorumDataController {
     constructor() {
@@ -10,6 +12,7 @@ class QuorumDataController {
         this.filterData = this.filterData.bind(this);
         this.saveData = this.saveData.bind(this);
         this.saveVotes = this.saveVotes.bind(this);
+        this.updateVoteScore = this.updateVoteScore.bind(this);
     }
 
     static API_URLS = {
@@ -132,10 +135,56 @@ class QuorumDataController {
                 await model.updateOne({ [idField]: vote[idField] }, { $set: vote }, { upsert: true });
             }
 
+            // Call the function to update vote scores
+            for (const vote of votes) {
+                await this.updateVoteScore(vote.quorumId);
+            }
+
             res.json({ message: "Votes saved successfully", data: votes });
         } catch (error) {
             console.error("Error saving votes:", error.stack || error.message);
             res.status(500).json({ error: "Failed to store votes" });
+        }
+    }
+
+    async updateVoteScore(quorumId) {
+        try {
+            const voteDetails = await axios.get(`${process.env.VOTE_API_URL}/${quorumId}`);
+            const { yea_votes, nay_votes, present_votes, other_votes, bill_type } = voteDetails.data;
+
+            const allVotes = [
+                ...yea_votes.map(uri => ({ uri, score: 'yea' })),
+                ...nay_votes.map(uri => ({ uri, score: 'nay' })),
+                ...present_votes.map(uri => ({ uri, score: 'present' })),
+                ...other_votes.map(uri => ({ uri, score: 'other' }))
+            ];
+
+            for (const { uri, score } of allVotes) {
+                const personId = uri.split('/').pop();
+                let person;
+                let dataModel;
+                let idField;
+
+                if (bill_type === 'senate_bill') {
+                    person = await Senator.findOne({ quorumId: personId });
+                    dataModel = SenatorData;
+                    idField = 'senateId';
+                } else if (bill_type === 'house_bill') {
+                    person = await Representative.findOne({ quorumId: personId });
+                    dataModel = RepresentativeData;
+                    idField = 'houseId';
+                }
+
+                if (person) {
+                    await dataModel.updateOne(
+                        { [idField]: person._id },
+                        { $push: { votesScore: { voteId: quorumId, score } } },
+                        { upsert: true }
+                    );
+                }
+            }
+        } catch (error) {
+            console.error("Error updating vote scores:", error.stack || error.message);
         }
     }
 }
