@@ -1,4 +1,3 @@
-// Description: Controller for fetching and storing Quorum API
 require("dotenv").config();
 const axios = require("axios");
 const Senator = require("../models/senatorSchema");
@@ -10,146 +9,133 @@ class QuorumDataController {
         this.fetchData = this.fetchData.bind(this);
         this.filterData = this.filterData.bind(this);
         this.saveData = this.saveData.bind(this);
+        this.saveVotes = this.saveVotes.bind(this);
     }
 
     static API_URLS = {
         senator: process.env.QUORUM_SENATOR_API || "https://www.quorum.us/api/newperson/",
         representative: process.env.QUORUM_REP_API || "https://www.quorum.us/api/newperson/",
-        votes: process.env.VOTE_API_URL || "http://localhost:4000/dummy-data/votes"
+        votes: process.env.VOTE_API_URL || "https://www.quorum.us/api/newbill/"
     };
 
     static MODELS = {
         senator: { model: Senator, idField: "senatorId" },
         representative: { model: Representative, idField: "repId" },
-        votes: { model: Vote, idField: "voteId" }
+        votes: { model: Vote, idField: "quorumId" }
     };
 
-    async fetchData(type) {
+    async fetchData(type, additionalParams = {}) {
+        if (!QuorumDataController.API_URLS[type]) {
+            throw new Error(`Invalid API type: ${type}`);
+        }
+        
+        let allData = [];
+        let offset = 0;
+        const limit = 200;
+        const maxRecords = 1000;
+        
         try {
-            if (!QuorumDataController.API_URLS[type]) {
-                throw new Error(`Invalid API type: ${type}`);
-            }
-    
-            let allData = [];
-            let offset = 0;
-            const limit = 200; // Set API fetch limit per request
-            const maxRecords = 1000; // Maximum number of records to fetch
-    
-            while (true) {
+            while (allData.length < maxRecords) {
                 const params = {
                     api_key: process.env.QUORUM_API_KEY,
                     username: process.env.QUORUM_USERNAME,
                     limit,
-                    offset
+                    offset,
+                    ...additionalParams
                 };
-    
-                const response = await axios.get(QuorumDataController.API_URLS[type], { params });
-    
-                if (!response.data || !Array.isArray(response.data.objects)) {
-                    console.error(`Invalid data format for ${type}`, response.data);
-                    break;
+                
+                if (type === "senator") {
+                    params.current = true;
                 }
-    
-                allData = [...allData, ...response.data.objects]; // Append current batch
-                offset += limit; // Increase offset for next batch
-    
-                if (allData.length >= maxRecords || !response.data.meta || !response.data.meta.next) break; // Stop if no more pages or maxRecords reached
+                
+                const response = await axios.get(QuorumDataController.API_URLS[type], { params });
+                if (!response.data || !Array.isArray(response.data.objects)) break;
+                
+                allData = allData.concat(response.data.objects);
+                offset += limit;
+                
+                if (!response.data.meta?.next) break;
             }
-    
-            // Trim the data to maxRecords if it exceeds
-            if (allData.length > maxRecords) {
-                allData = allData.slice(0, maxRecords);
-            }
-    
-            return allData;
-    
         } catch (error) {
-            console.error(`Error fetching ${type} data:`, error.message);
-            return [];
+            console.error(`Error fetching ${type} data:`, error.stack || error.message);
         }
+        
+        return allData.slice(0, maxRecords);
     }
 
     filterData(type, data) {
-        const partyMapping = {
-            1: 'democrat',
-            2: 'republican',
-            3: 'independent'
-        };
-
-        const mappings = {
-            senator: item => {
-                if (item?.title !== "US Senator") {
-                    return null; // Skip if the title is not "US Senator"
-                }
-                return {
-                    senatorId: item?.id || null,
-                    name: item?.name || "Unknown",
-                    party: partyMapping[item?.most_recent_party] || "Unknown",
-                    photo: item?.high_quality_image_url || item?.image_url || null,
-                    state: item?.most_recent_role_state || "Unknown"
-                };
-            },
-            representative: item => {
-                if (
-                    !Array.isArray(item.minor_person_types) || 
-                    !item.minor_person_types.includes(2) || 
-                    item?.title !== "US Representative"
-                ) {
-                    return null;  
-                }
-                return {
-                    repId: item?.id || null,
-                    name: item?.name || "Unknown",
-                    photo: item?.high_quality_image_url || item?.image_url || null, 
-                    district: item?.most_recent_district || "Unknown",
-                    party: partyMapping[item?.most_recent_party] || "Unknown",
-                    state: item?.most_recent_role_state || "Unknown"
-                };
-            },
-            votes: item => ({
-                voteId: item?._id || null,
-                senatorId: item?.senatorId || null,
-                repId: item?.repId || null,
-                bill: item?.bill || "Unknown",
-                decision: item?.decision || "Unknown"
-            })
-        };
-
-        return data.map(mappings[type]).filter(item => item);
+        const partyMapping = { 1: "democrat", 2: "republican", 3: "independent" };
+        
+        const mapSenator = item => item?.title === "US Senator" ? {
+            senatorId: item.id || null,
+            name: `Sen.${item.firstname || "Unknown"} ${item.middlename || ""} ${item.lastname || "Unknown"}`.trim(),
+            party: partyMapping[item.most_recent_party] || "Unknown",
+            photo: item.high_quality_image_url || item.image_url || null,
+            state: item.most_recent_role_state || "Unknown"
+        } : null;
+        
+        const mapRepresentative = item => (Array.isArray(item.minor_person_types) && item.minor_person_types.includes(2) && item?.title === "US Representative") ? {
+            repId: item.id || null,
+            name: `Rep.${item.firstname || "Unknown"} ${item.middlename || ""} ${item.lastname || "Unknown"}`.trim(),
+            photo: item.high_quality_image_url || item.image_url || null,
+            district: item.most_recent_district || "Unknown",
+            party: partyMapping[item.most_recent_party] || "Unknown",
+            state: item.most_recent_role_state || "Unknown"
+        } : null;
+        
+        const mapVotes = item => ({
+            quorumId: item.id || null,
+            title: item.title || "Unknown",
+            type: item.bill_type || "Unknown",
+            bill: item.bill || "Unknown",
+            decision: item.decision || "Unknown"
+        });
+        
+        const mappings = { senator: mapSenator, representative: mapRepresentative, votes: mapVotes };
+        return data.map(mappings[type]).filter(Boolean);
     }
 
     async saveData(req, res) {
         try {
-            const { type } = req.body;
-            if (!QuorumDataController.MODELS[type]) {
-                return res.status(400).json({ error: "Invalid data type" });
-            }
-
-            const rawData = await this.fetchData(type);
-            if (!rawData.length) {
-                return res.status(400).json({ error: `No valid ${type} data to save` });
-            }
-
+            const { type, additionalParams } = req.body;
+            if (!QuorumDataController.MODELS[type]) return res.status(400).json({ error: "Invalid data type" });
+            
+            const rawData = await this.fetchData(type, additionalParams);
+            if (!rawData.length) return res.status(400).json({ error: `No valid ${type} data to save` });
+            
             const filteredData = this.filterData(type, rawData);
-            if (!filteredData.length) {
-                return res.status(400).json({ error: `Filtered ${type} data is empty` });
-            }
-
+            if (!filteredData.length) return res.status(400).json({ error: `Filtered ${type} data is empty` });
+            
+            if (type === "votes") return res.json({ message: "Votes data fetched successfully", data: filteredData });
+            
             const { model, idField } = QuorumDataController.MODELS[type];
-
-            const bulkOps = filteredData.map(item => ({
-                updateOne: {
-                    filter: { [idField]: item[idField] },
-                    update: { $set: item },
-                    upsert: true
-                }
-            }));
-
-            await model.bulkWrite(bulkOps);
+            await model.bulkWrite(filteredData.map(item => ({
+                updateOne: { filter: { [idField]: item[idField] }, update: { $set: item }, upsert: true }
+            })));
+            
             res.json({ message: `${type} data saved successfully` });
         } catch (error) {
-            console.error(`Error storing ${req.body.type} data:`, error.message);
+            console.error(`Error storing ${req.body.type} data:`, error.stack || error.message);
             res.status(500).json({ error: `Failed to store ${req.body.type} data` });
+        }
+    }
+
+    async saveVotes(req, res) {
+        try {
+            const { votes } = req.body;
+            if (!Array.isArray(votes) || votes.length === 0) return res.status(400).json({ error: "No valid votes provided" });
+
+            const { model, idField } = QuorumDataController.MODELS.votes;
+
+            // Save each vote individually
+            for (const vote of votes) {
+                await model.updateOne({ [idField]: vote[idField] }, { $set: vote }, { upsert: true });
+            }
+
+            res.json({ message: "Votes saved successfully", data: votes });
+        } catch (error) {
+            console.error("Error saving votes:", error.stack || error.message);
+            res.status(500).json({ error: "Failed to store votes" });
         }
     }
 }
