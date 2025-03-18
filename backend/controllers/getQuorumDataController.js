@@ -18,7 +18,7 @@ class QuorumDataController {
     static API_URLS = {
         senator: process.env.QUORUM_SENATOR_API || "https://www.quorum.us/api/newperson/",
         representative: process.env.QUORUM_REP_API || "https://www.quorum.us/api/newperson/",
-        votes: process.env.VOTE_API_URL || "https://www.quorum.us/api/newbill/"
+        votes: process.env.BILL_API_URL || "https://www.quorum.us/api/newbill/"
     };
 
     static MODELS = {
@@ -74,7 +74,7 @@ class QuorumDataController {
             name: `Sen.${item.firstname || "Unknown"} ${item.middlename || ""} ${item.lastname || "Unknown"}`.trim(),
             party: partyMapping[item.most_recent_party] || "Unknown",
             photo: item.high_quality_image_url || item.image_url || null,
-            state: item.most_recent_role_state || "Unknown"
+            state: item.most_recent_state || "Unknown"
         } : null;
         
         const mapRepresentative = item => (Array.isArray(item.minor_person_types) && item.minor_person_types.includes(2) && item?.title === "US Representative") ? {
@@ -83,7 +83,7 @@ class QuorumDataController {
             photo: item.high_quality_image_url || item.image_url || null,
             district: item.most_recent_district || "Unknown",
             party: partyMapping[item.most_recent_party] || "Unknown",
-            state: item.most_recent_role_state || "Unknown"
+            
         } : null;
         
         const mapVotes = item => ({
@@ -136,9 +136,9 @@ class QuorumDataController {
             }
 
             // Call the function to update vote scores
-            for (const vote of votes) {
-                await this.updateVoteScore(vote.quorumId);
-            }
+            // for (const vote of votes) {
+            //     await this.updateVoteScore(vote.quorumId);
+            // }
 
             res.json({ message: "Votes saved successfully", data: votes });
         } catch (error) {
@@ -149,6 +149,8 @@ class QuorumDataController {
 
     async updateVoteScore(quorumId) {
         try {
+
+            
             const voteDetails = await axios.get(`${process.env.VOTE_API_URL}/${quorumId}`);
             const { yea_votes, nay_votes, present_votes, other_votes, bill_type } = voteDetails.data;
 
