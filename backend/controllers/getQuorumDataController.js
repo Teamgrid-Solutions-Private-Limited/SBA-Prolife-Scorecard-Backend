@@ -27,6 +27,38 @@ class QuorumDataController {
         votes: { model: Vote, idField: "quorumId" }
     };
 
+    async fetchStateData() {
+        const params = {
+            api_key: process.env.QUORUM_API_KEY,
+            username: process.env.QUORUM_USERNAME,
+            limit: 400
+        };
+        const response = await axios.get("https://www.quorum.us/api/state/", { params });
+        if (!response.data || !Array.isArray(response.data.objects)) {
+            throw new Error("Failed to fetch state data");
+        }
+        return response.data.objects.reduce((acc, state) => {
+            acc[state.resource_uri] = state.name;
+            return acc;
+        }, {});
+    }
+
+    async fetchDistrictData() {
+        const params = {
+            api_key: process.env.QUORUM_API_KEY,
+            username: process.env.QUORUM_USERNAME,
+            limit: 1000
+        };
+        const response = await axios.get("https://www.quorum.us/api/district/", { params });
+        if (!response.data || !Array.isArray(response.data.objects)) {
+            throw new Error("Failed to fetch district data");
+        }
+        return response.data.objects.reduce((acc, district) => {
+            acc[district.resource_uri] = district.name;
+            return acc;
+        }, {});
+    }
+
     async fetchData(type, additionalParams = {}) {
         if (!QuorumDataController.API_URLS[type]) {
             throw new Error(`Invalid API type: ${type}`);
@@ -66,26 +98,39 @@ class QuorumDataController {
         return allData.slice(0, maxRecords);
     }
 
-    filterData(type, data) {
+    async filterData(type, data) {
         const partyMapping = { 1: "democrat", 2: "republican", 3: "independent" };
-        
-        const mapSenator = item => item?.title === "US Senator" ? {
-            senatorId: item.id || null,
-            name: `Sen.${item.firstname || "Unknown"} ${item.middlename || ""} ${item.lastname || "Unknown"}`.trim(),
-            party: partyMapping[item.most_recent_party] || "Unknown",
-            photo: item.high_quality_image_url || item.image_url || null,
-            state: item.most_recent_state || "Unknown"
-        } : null;
-        
-        const mapRepresentative = item => (Array.isArray(item.minor_person_types) && item.minor_person_types.includes(2) && item?.title === "US Representative") ? {
-            repId: item.id || null,
-            name: `Rep.${item.firstname || "Unknown"} ${item.middlename || ""} ${item.lastname || "Unknown"}`.trim(),
-            photo: item.high_quality_image_url || item.image_url || null,
-            district: item.most_recent_district || "Unknown",
-            party: partyMapping[item.most_recent_party] || "Unknown",
-            
-        } : null;
-        
+        const stateMapping = await this.fetchStateData();
+        const districtMapping = await this.fetchDistrictData();
+
+        // console.log("Raw data:", data);
+        // console.log("State mapping:", stateMapping);
+        // console.log("District mapping:", districtMapping);
+
+        const mapSenator = item => {
+            const stateUri = item.most_recent_state;
+            const stateName = stateMapping[stateUri] || "Unknown";
+            return item?.title === "US Senator" ? {
+                senatorId: item.id || null,
+                name: `Sen.${item.firstname || "Unknown"} ${item.middlename || ""} ${item.lastname || "Unknown"}`.trim(),
+                party: partyMapping[item.most_recent_party] || "Unknown",
+                photo: item.high_quality_image_url || item.image_url || null,
+                state: stateName
+            } : null;
+        };
+
+        const mapRepresentative = item => {
+            const districtUri = item.most_recent_district;
+            const districtName = districtMapping[districtUri] || "Unknown";
+            return (Array.isArray(item.minor_person_types) && item.minor_person_types.includes(2) && item?.title === "US Representative") ? {
+                repId: item.id || null,
+                name: `Rep.${item.firstname || "Unknown"} ${item.middlename || ""} ${item.lastname || "Unknown"}`.trim(),
+                photo: item.high_quality_image_url || item.image_url || null,
+                district: districtName,
+                party: partyMapping[item.most_recent_party] || "Unknown",
+            } : null;
+        };
+
         const mapVotes = item => ({
             quorumId: item.id || null,
             title: item.title || "Unknown",
@@ -93,9 +138,13 @@ class QuorumDataController {
             bill: item.bill || "Unknown",
             decision: item.decision || "Unknown"
         });
-        
+
         const mappings = { senator: mapSenator, representative: mapRepresentative, votes: mapVotes };
-        return data.map(mappings[type]).filter(Boolean);
+        const mappedData = data.map(mappings[type]).filter(Boolean);
+
+        
+
+        return mappedData;
     }
 
     async saveData(req, res) {
@@ -106,7 +155,7 @@ class QuorumDataController {
             const rawData = await this.fetchData(type, additionalParams);
             if (!rawData.length) return res.status(400).json({ error: `No valid ${type} data to save` });
             
-            const filteredData = this.filterData(type, rawData);
+            const filteredData = await this.filterData(type, rawData); // Await the filterData method
             if (!filteredData.length) return res.status(400).json({ error: `Filtered ${type} data is empty` });
             
             if (type === "votes") return res.json({ message: "Votes data fetched successfully", data: filteredData });
