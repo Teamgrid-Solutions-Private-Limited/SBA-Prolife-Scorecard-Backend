@@ -2,7 +2,7 @@ require("dotenv").config();
 const axios = require("axios");
 const Senator = require("../models/senatorSchema");
 const Representative = require("../models/representativeSchema");
-const Vote = require("../models/voteSchema");
+const Bill = require("../models/voteSchema"); // Renamed Vote to Bill
 const SenatorData = require("../models/senatorDataSchema");
 const RepresentativeData = require("../models/representativeDataSchema");
 
@@ -11,20 +11,20 @@ class QuorumDataController {
         this.fetchData = this.fetchData.bind(this);
         this.filterData = this.filterData.bind(this);
         this.saveData = this.saveData.bind(this);
-        this.saveVotes = this.saveVotes.bind(this);
+        this.saveBills = this.saveBills.bind(this); // Renamed saveVotes to saveBills
         this.updateVoteScore = this.updateVoteScore.bind(this);
     }
 
     static API_URLS = {
         senator: process.env.QUORUM_SENATOR_API || "https://www.quorum.us/api/newperson/",
         representative: process.env.QUORUM_REP_API || "https://www.quorum.us/api/newperson/",
-        votes: process.env.BILL_API_URL || "https://www.quorum.us/api/newbill/"
+        bills: process.env.BILL_API_URL || "https://www.quorum.us/api/newbill/" // Renamed votes to bills
     };
 
     static MODELS = {
         senator: { model: Senator, idField: "senatorId" },
         representative: { model: Representative, idField: "repId" },
-        votes: { model: Vote, idField: "quorumId" }
+        bills: { model: Bill, idField: "quorumId" } // Renamed votes to bills
     };
 
     async fetchStateData() {
@@ -103,10 +103,6 @@ class QuorumDataController {
         const stateMapping = await this.fetchStateData();
         const districtMapping = await this.fetchDistrictData();
 
-        // console.log("Raw data:", data);
-        // console.log("State mapping:", stateMapping);
-        // console.log("District mapping:", districtMapping);
-
         const mapSenator = item => {
             const stateUri = item.most_recent_state;
             const stateName = stateMapping[stateUri] || "Unknown";
@@ -131,18 +127,27 @@ class QuorumDataController {
             } : null;
         };
 
-        const mapVotes = item => ({
-            quorumId: item.id || null,
-            title: item.title || "Unknown",
-            type: item.bill_type || "Unknown",
-            bill: item.bill || "Unknown",
-            decision: item.decision || "Unknown"
-        });
+        const mapBills = async item => {
+            const quorumId = item.id || null;
+            let shortDesc = "No description available";
+            try {
+                const response = await axios.get(`https://www.quorum.us/api/newbillsummary/${quorumId}/`, {
+                    params: {
+                        api_key: process.env.QUORUM_API_KEY,
+                        username: process.env.QUORUM_USERNAME,
+                        limit: 200
+                    }
+                });
+           
+                shortDesc = response.data.content || "No description available";
+            } catch (error) {
+                console.error(`Error fetching bill summary for quorumId ${quorumId}:`, error.message);
+            }
+            return { quorumId, shortDesc };
+        };
 
-        const mappings = { senator: mapSenator, representative: mapRepresentative, votes: mapVotes };
-        const mappedData = data.map(mappings[type]).filter(Boolean);
-
-        
+        const mappings = { senator: mapSenator, representative: mapRepresentative, bills: mapBills }; // Renamed votes to bills
+        const mappedData = await Promise.all(data.map(mappings[type])).then(results => results.filter(Boolean));
 
         return mappedData;
     }
@@ -158,7 +163,7 @@ class QuorumDataController {
             const filteredData = await this.filterData(type, rawData); // Await the filterData method
             if (!filteredData.length) return res.status(400).json({ error: `Filtered ${type} data is empty` });
             
-            if (type === "votes") return res.json({ message: "Votes data fetched successfully", data: filteredData });
+            if (type === "bills") return res.json({ message: "Bills data fetched successfully", data: filteredData }); // Renamed votes to bills
             
             const { model, idField } = QuorumDataController.MODELS[type];
             await model.bulkWrite(filteredData.map(item => ({
@@ -172,27 +177,22 @@ class QuorumDataController {
         }
     }
 
-    async saveVotes(req, res) {
+    async saveBills(req, res) { // Renamed saveVotes to saveBills
         try {
-            const { votes } = req.body;
-            if (!Array.isArray(votes) || votes.length === 0) return res.status(400).json({ error: "No valid votes provided" });
+            const { bills } = req.body; // Renamed votes to bills
+            if (!Array.isArray(bills) || bills.length === 0) return res.status(400).json({ error: "No valid bills provided" }); // Renamed votes to bills
 
-            const { model, idField } = QuorumDataController.MODELS.votes;
+            const { model, idField } = QuorumDataController.MODELS.bills; // Renamed votes to bills
 
-            // Save each vote individually
-            for (const vote of votes) {
-                await model.updateOne({ [idField]: vote[idField] }, { $set: vote }, { upsert: true });
+            // Save each bill individually
+            for (const bill of bills) { // Renamed vote to bill
+                await model.updateOne({ [idField]: bill[idField] }, { $set: bill }, { upsert: true }); // Renamed vote to bill
             }
 
-            // Call the function to update vote scores
-            // for (const vote of votes) {
-            //     await this.updateVoteScore(vote.quorumId);
-            // }
-
-            res.json({ message: "Votes saved successfully", data: votes });
+            res.json({ message: "Bills saved successfully", data: bills }); // Renamed votes to bills
         } catch (error) {
-            console.error("Error saving votes:", error.stack || error.message);
-            res.status(500).json({ error: "Failed to store votes" });
+            console.error("Error saving bills:", error.stack || error.message); // Renamed votes to bills
+            res.status(500).json({ error: "Failed to store bills" }); // Renamed votes to bills
         }
     }
 

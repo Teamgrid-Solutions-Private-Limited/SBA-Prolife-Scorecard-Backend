@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const { saveData, saveVotes } = require('../controllers/getQuorumDataController');
+const { saveData,  saveBills } = require('../controllers/getQuorumDataController');
 
  
 router.post('/store-data',saveData ); 
-router.post("/votes/save", saveVotes);
+router.post("/votes/save", saveBills);
 
  
 module.exports = router;
