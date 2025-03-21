@@ -129,6 +129,7 @@ class QuorumDataController {
 
         const mapBills = async item => {
             const quorumId = item.id || null;
+            const title = item.title || "Unknown";
             let shortDesc = "No description available";
             try {
                 const response = await axios.get(`https://www.quorum.us/api/newbillsummary/${quorumId}/`, {
@@ -143,7 +144,7 @@ class QuorumDataController {
             } catch (error) {
                 console.error(`Error fetching bill summary for quorumId ${quorumId}:`, error.message);
             }
-            return { quorumId, shortDesc };
+            return { quorumId, shortDesc,title };
         };
 
         const mappings = { senator: mapSenator, representative: mapRepresentative, bills: mapBills }; // Renamed votes to bills
