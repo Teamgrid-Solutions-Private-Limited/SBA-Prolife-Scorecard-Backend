@@ -1,5 +1,6 @@
 require("dotenv").config();
 const axios = require("axios");
+
 const Senator = require("../models/senatorSchema");
 const Representative = require("../models/representativeSchema");
 const Bill = require("../models/voteSchema"); // Renamed Vote to Bill
@@ -63,12 +64,12 @@ class QuorumDataController {
         if (!QuorumDataController.API_URLS[type]) {
             throw new Error(`Invalid API type: ${type}`);
         }
-        
+
         let allData = [];
         let offset = 0;
-        const limit = 200;
-        const maxRecords = 1000;
-        
+        const limit = type === "bills" ? 20 : type === "senator" ? 120 : type === "representative" ? 500 : 20; // Set limit to 20 for bills
+        const maxRecords = type === "bills" ? 20 : 1000; // Restrict maxRecords to 20 for bills
+
         try {
             while (allData.length < maxRecords) {
                 const params = {
@@ -78,23 +79,23 @@ class QuorumDataController {
                     offset,
                     ...additionalParams
                 };
-                
+
                 if (type === "senator") {
                     params.current = true;
                 }
-                
+
                 const response = await axios.get(QuorumDataController.API_URLS[type], { params });
                 if (!response.data || !Array.isArray(response.data.objects)) break;
-                
+
                 allData = allData.concat(response.data.objects);
                 offset += limit;
-                
-                if (!response.data.meta?.next) break;
+
+                if (!response.data.meta?.next || type === "bills") break; // Stop after the first page for bills
             }
         } catch (error) {
             console.error(`Error fetching ${type} data:`, error.stack || error.message);
         }
-        
+
         return allData.slice(0, maxRecords);
     }
 
@@ -127,25 +128,16 @@ class QuorumDataController {
             } : null;
         };
 
-        const mapBills = async item => {
-            const quorumId = item.id || null;
-            const title = item.title || "Unknown";
-            let shortDesc = "No description available";
-            try {
-                const response = await axios.get(`https://www.quorum.us/api/newbillsummary/${quorumId}/`, {
-                    params: {
-                        api_key: process.env.QUORUM_API_KEY,
-                        username: process.env.QUORUM_USERNAME,
-                        limit: 200
-                    }
-                });
-           
-                shortDesc = response.data.content || "No description available";
-            } catch (error) {
-                console.error(`Error fetching bill summary for quorumId ${quorumId}:`, error.message);
-            }
-            return { quorumId, shortDesc,title };
-        };
+
+
+        const mapBills = item => ({
+            quorumId: item.id || null,
+            title: item.title || "Unknown",
+            type: item.bill_type || "Unknown",
+            date: item.introduced_date || "Unknown",
+             
+            
+        });
 
         const mappings = { senator: mapSenator, representative: mapRepresentative, bills: mapBills }; // Renamed votes to bills
         const mappedData = await Promise.all(data.map(mappings[type])).then(results => results.filter(Boolean));
@@ -157,20 +149,20 @@ class QuorumDataController {
         try {
             const { type, additionalParams } = req.body;
             if (!QuorumDataController.MODELS[type]) return res.status(400).json({ error: "Invalid data type" });
-            
+
             const rawData = await this.fetchData(type, additionalParams);
             if (!rawData.length) return res.status(400).json({ error: `No valid ${type} data to save` });
-            
+
             const filteredData = await this.filterData(type, rawData); // Await the filterData method
             if (!filteredData.length) return res.status(400).json({ error: `Filtered ${type} data is empty` });
-            
+
             if (type === "bills") return res.json({ message: "Bills data fetched successfully", data: filteredData }); // Renamed votes to bills
-            
+
             const { model, idField } = QuorumDataController.MODELS[type];
             await model.bulkWrite(filteredData.map(item => ({
                 updateOne: { filter: { [idField]: item[idField] }, update: { $set: item }, upsert: true }
             })));
-            
+
             res.json({ message: `${type} data saved successfully` });
         } catch (error) {
             console.error(`Error storing ${req.body.type} data:`, error.stack || error.message);
@@ -178,22 +170,64 @@ class QuorumDataController {
         }
     }
 
-    async saveBills(req, res) { // Renamed saveVotes to saveBills
+    async saveBills(req, res) {  
         try {
-            const { bills } = req.body; // Renamed votes to bills
-            if (!Array.isArray(bills) || bills.length === 0) return res.status(400).json({ error: "No valid bills provided" }); // Renamed votes to bills
-
-            const { model, idField } = QuorumDataController.MODELS.bills; // Renamed votes to bills
-
-            // Save each bill individually
-            for (const bill of bills) { // Renamed vote to bill
-                await model.updateOne({ [idField]: bill[idField] }, { $set: bill }, { upsert: true }); // Renamed vote to bill
+            const { bills } = req.body; 
+            if (!Array.isArray(bills) || bills.length === 0) {
+                return res.status(400).json({ error: "No valid bills provided" }); 
             }
 
-            res.json({ message: "Bills saved successfully", data: bills }); // Renamed votes to bills
+            const { model, idField } = QuorumDataController.MODELS.bills; 
+
+            // Save each bill individually and fetch the updated document
+            const updatedBills = [];
+            for (const bill of bills) {
+                await model.updateOne({ [idField]: bill[idField] }, { $set: bill }, { upsert: true });
+                const updatedBill = await model.findOne({ [idField]: bill[idField] });  
+                updatedBills.push(updatedBill);  
+            }
+
+            // Update shortDesc for saved bills
+            await this.updateBillShortDesc(updatedBills);
+
+            res.json({
+                message: "Bills saved successfully and short descriptions updated",
+                data: updatedBills 
+            });
         } catch (error) {
-            console.error("Error saving bills:", error.stack || error.message); // Renamed votes to bills
-            res.status(500).json({ error: "Failed to store bills" }); // Renamed votes to bills
+            console.error("Error saving bills:", error.stack || error.message);  
+            res.status(500).json({ error: "Failed to store bills" });  
+        }
+    }
+
+    async updateBillShortDesc(bills) {
+        const { model, idField } = QuorumDataController.MODELS.bills;  
+
+        for (const bill of bills) {
+            const quorumId = bill[idField];
+            try {
+                const response = await axios.get(`https://www.quorum.us/api/newbillsummary/${quorumId}/`, {
+                    params: {
+                        api_key: process.env.QUORUM_API_KEY,
+                        username: process.env.QUORUM_USERNAME,
+                        limit: 2
+                    }
+                });
+
+                const shortDesc = response.data.content || "No description available";
+
+                // Update the bill in the database with the fetched shortDesc
+                await model.updateOne(
+                    { [idField]: quorumId },
+                    { $set: { shortDesc } }
+                );
+            } catch (error) {
+                if (error.response?.status === 404) {
+                    console.warn(`Bill summary not found for quorumId ${quorumId}`);
+                } else {
+                    console.error(`Error fetching bill summary for quorumId ${quorumId}:`, error.message);
+                }
+            }
         }
     }
 
