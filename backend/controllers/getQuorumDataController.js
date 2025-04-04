@@ -190,6 +190,15 @@ class QuorumDataController {
             // Update shortDesc for saved bills
             await this.updateBillShortDesc(updatedBills);
 
+            for (const bill of bills) {
+                console.log(`Calling updateVoteScore for bill ${bill.quorumId}`)
+                try {
+                    await this.updateVoteScore(bill.quorumId);
+                } catch (error) {
+                    console.error("Error in saveBills:", error.message);
+                }
+            }
+
             res.json({
                 message: "Bills saved successfully and short descriptions updated",
                 data: updatedBills 
@@ -231,48 +240,127 @@ class QuorumDataController {
         }
     }
 
-    async updateVoteScore(quorumId) {
-        try {
+ 
+
+async updateVoteScore(quorumId) {
+    try {
+        // Fetch vote details from API
+        const response = await axios.get(`${process.env.VOTE_API_URL}`, {
+            params: {
+                api_key: process.env.QUORUM_API_KEY,
+                username: process.env.QUORUM_USERNAME,
+                limit: 2,
+                related_bill: quorumId
+            },
+        });
+
+        const vote = await Bill.findOne({ quorumId: quorumId.toString() });
+
+        if (!vote) {
+            console.warn(`No vote document found for quorumId: ${quorumId}`);
+            return [];
+        }
+
+        if (!response.data || !Array.isArray(response.data.objects) || response.data.objects.length === 0) {
+            console.warn(`No vote data found for Bill ID: ${quorumId}`);
+            return [];
+        }
+
+        const votesData = response.data.objects[0] || {};
+      
+
+        // Extract bill_type from related_bill object
+        const bill_type = votesData.related_bill?.bill_type || null;
+       
+
+        if (!bill_type) {
+            console.warn(`Missing bill_type for Bill ID: ${quorumId}`);
+            return [];
+        }
+
+        const { yea_votes = [], nay_votes = [], present_votes = [], other_votes = [] } = votesData;
+
+        // Aggregate votes
+        const allVotes = [
+            ...yea_votes.map(uri => ({ uri, score: 'yea' })),
+            ...nay_votes.map(uri => ({ uri, score: 'nay' })),
+            ...present_votes.map(uri => ({ uri, score: 'present' })),
+            ...other_votes.map(uri => ({ uri, score: 'other' }))
+        ];
+
+        for (const { uri, score } of allVotes) {
+            // Extract person ID correctly
+            const personId = uri ? uri.replace(/\/$/, "").split('/').pop() : null;
+            if (!personId) {
+                console.warn(`Skipping invalid URI: ${uri}`);
+                continue;
+            }
+
+            let person;
+            let dataModel;
+            let idField;
+            let personIdField;
+
+            if (bill_type === 'senate_bill') {
+                person = await Senator.findOne({ senatorId: personId });
+                dataModel = SenatorData;
+                idField = 'senateId';
+                personIdField = 'senatorId';
+            } else if (bill_type === 'house_bill') {
+                person = await Representative.findOne({ repId: personId });
+                dataModel = RepresentativeData;
+                idField = 'houseId';
+                personIdField = 'repId';
+            } else {
+                console.warn(`Unsupported bill_type: ${bill_type}`);
+                continue;
+            }
 
             
-            const voteDetails = await axios.get(`${process.env.VOTE_API_URL}/${quorumId}`);
-            const { yea_votes, nay_votes, present_votes, other_votes, bill_type } = voteDetails.data;
 
-            const allVotes = [
-                ...yea_votes.map(uri => ({ uri, score: 'yea' })),
-                ...nay_votes.map(uri => ({ uri, score: 'nay' })),
-                ...present_votes.map(uri => ({ uri, score: 'present' })),
-                ...other_votes.map(uri => ({ uri, score: 'other' }))
-            ];
-
-            for (const { uri, score } of allVotes) {
-                const personId = uri.split('/').pop();
-                let person;
-                let dataModel;
-                let idField;
-
-                if (bill_type === 'senate_bill') {
-                    person = await Senator.findOne({ quorumId: personId });
-                    dataModel = SenatorData;
-                    idField = 'senateId';
-                } else if (bill_type === 'house_bill') {
-                    person = await Representative.findOne({ quorumId: personId });
-                    dataModel = RepresentativeData;
-                    idField = 'houseId';
-                }
-
-                if (person) {
-                    await dataModel.updateOne(
-                        { [idField]: person._id },
-                        { $push: { votesScore: { voteId: quorumId, score } } },
-                        { upsert: true }
-                    );
-                }
+            if (!person) {
+                console.warn(`No matching person found for ID: ${personId}`);
+                continue;
             }
-        } catch (error) {
-            console.error("Error updating vote scores:", error.stack || error.message);
+
+            const matchQuery = { [idField]: person._id };
+
+            let existingData = await dataModel.findOne(matchQuery);
+            if (!existingData) {
+               
+                existingData = await new dataModel({
+                    [idField]: person._id,
+                    votesScore: [],
+                }).save();
+            }
+
+            // Avoid duplicate voteId entries in votesScore (optional)
+            const alreadyExists = await dataModel.findOne({
+                [idField]: person._id,
+                "votesScore.voteId": vote._id,
+            });
+
+            if (alreadyExists) {
+                
+                continue;
+            }
+
+            const updateResult = await dataModel.updateOne(
+                { [idField]: person._id },
+                { $push: { votesScore: { voteId: vote._id, score } } }
+            );
+
+          
         }
+
+        return response.data.objects;
+    } catch (error) {
+        console.error("Error updating vote scores:", error.response?.data || error.message);
+        throw error;
     }
+}
+
+    
 }
 
 module.exports = new QuorumDataController();
