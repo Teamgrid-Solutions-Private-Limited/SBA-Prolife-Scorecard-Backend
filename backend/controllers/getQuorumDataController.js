@@ -91,7 +91,7 @@ class QuorumDataController {
         const mappings = {
             senator: item => item.title === "US Senator" ? {
                 senatorId: item.id,
-                name: `Sen.${item.firstname || ""} ${item.middlename || ""} ${item.lastname || ""}`.trim(),
+                name: `Sen. ${item.firstname || ""} ${item.middlename || ""} ${item.lastname || ""}`.trim(),
                 party: partyMap[item.most_recent_party] || "Unknown",
                 photo: item.high_quality_image_url || item.image_url || null,
                 state: stateMap[item.most_recent_state] || "Unknown"
@@ -99,7 +99,7 @@ class QuorumDataController {
 
             representative: item => (item.minor_person_types?.includes(2) && item.title === "US Representative") ? {
                 repId: item.id,
-                name: `Rep.${item.firstname || ""} ${item.middlename || ""} ${item.lastname || ""}`.trim(),
+                name: `Rep. ${item.firstname || ""} ${item.middlename || ""} ${item.lastname || ""}`.trim(),
                 party: partyMap[item.most_recent_party] || "Unknown",
                 photo: item.high_quality_image_url || item.image_url || null,
                 district: districtMap[item.most_recent_district] || "Unknown"
