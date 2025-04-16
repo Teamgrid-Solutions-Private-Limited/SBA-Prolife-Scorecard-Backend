@@ -7,7 +7,7 @@ const activitySchema = new mongoose.Schema({
     rollCall: String,
     readMore: String,
     date: Date,
-    congress: { type: String, required: true },
+    congress: { type: String },
     termId: { type: mongoose.Schema.Types.ObjectId, ref: 'terms' }
   });
 
