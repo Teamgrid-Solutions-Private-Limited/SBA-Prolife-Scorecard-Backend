@@ -83,7 +83,7 @@ class activityController {
         }
   
         // Update the vote in the database
-        const updatedVote = await Activity.findByIdAndUpdate(activityID, updateData, { new: true })
+        const updatedActivity = await Activity.findByIdAndUpdate(activityID, updateData, { new: true })
           .populate('termId'); // Populate the referenced term (optional)
   
         if (!updatedActivity) {
