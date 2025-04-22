@@ -5,8 +5,18 @@ const RepresentativeDataSchema = new mongoose.Schema({
     currentTerm: Boolean,
     summary: String,
     rating: String,
-    votesScore: [{ voteId: mongoose.Schema.Types.ObjectId, score: String }],
-    activitiesScore: [{ activityId: mongoose.Schema.Types.ObjectId, score: String }]
+    votesScore: [
+        { 
+          voteId: { type: mongoose.Schema.Types.ObjectId, ref: 'votes' },  
+          score: String 
+        }
+      ],
+      activitiesScore: [
+        { 
+          activityId: { type: mongoose.Schema.Types.ObjectId, ref: 'activities' },  
+          score: String 
+        }
+      ]
   });
   
   module.exports=mongoose.model('representative_datas', RepresentativeDataSchema);
