@@ -153,6 +153,7 @@ class QuorumDataController {
 
             const { model, idField } = QuorumDataController.MODELS.bills;
 
+            // Save bills (upsert)
             const saved = await Promise.all(
                 bills.map(async bill => {
                     await model.updateOne({ [idField]: bill[idField] }, { $set: bill }, { upsert: true });
@@ -160,10 +161,19 @@ class QuorumDataController {
                 })
             );
 
-            await this.updateBillShortDesc(saved);
-            await Promise.all(saved.map(bill => this.updateVoteScore(bill.quorumId)));
+            // Respond immediately
+            res.json({ message: "Bills saved. Summary and vote score updates running in background.", data: saved });
 
-            res.json({ message: "Bills saved & scores updated", data: saved });
+            // Background: update summaries and vote scores (no await)
+            (async () => {
+                try {
+                    await this.updateBillShortDesc(saved);
+                    await Promise.all(saved.map(bill => this.updateVoteScore(bill.quorumId)));
+                } catch (err) {
+                    console.error("Background update error:", err);
+                }
+            })();
+
         } catch (err) {
             console.error("Save bills error:", err);
             res.status(500).json({ error: "Failed to store bills" });
