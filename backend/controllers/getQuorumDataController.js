@@ -12,6 +12,13 @@ class QuorumDataController {
         this.saveData = this.saveData.bind(this);
         this.saveBills = this.saveBills.bind(this);
         this.updateVoteScore = this.updateVoteScore.bind(this);
+
+        // Add caches
+        this._stateMapCache = null;
+        this._districtMapCache = null;
+        this._stateMapCacheTimestamp = 0;
+        this._districtMapCacheTimestamp = 0;
+        this._CACHE_TTL = 4 * 24 * 60 * 60 * 1000; // 4 days in milliseconds
     }
 
     static API_URLS = {
@@ -34,23 +41,35 @@ class QuorumDataController {
     }
 
     async fetchStateData() {
+        const now = Date.now();
+        if (this._stateMapCache && (now - this._stateMapCacheTimestamp < this._CACHE_TTL)) {
+            return this._stateMapCache;
+        }
         const params = {
             api_key: process.env.QUORUM_API_KEY,
             username: process.env.QUORUM_USERNAME,
             limit: 400
         };
         const data = await this.fetchFromApi("https://www.quorum.us/api/state/", params);
-        return Object.fromEntries(data.map(state => [state.resource_uri, state.name]));
+        this._stateMapCache = Object.fromEntries(data.map(state => [state.resource_uri, state.name]));
+        this._stateMapCacheTimestamp = now;
+        return this._stateMapCache;
     }
 
     async fetchDistrictData() {
+        const now = Date.now();
+        if (this._districtMapCache && (now - this._districtMapCacheTimestamp < this._CACHE_TTL)) {
+            return this._districtMapCache;
+        }
         const params = {
             api_key: process.env.QUORUM_API_KEY,
             username: process.env.QUORUM_USERNAME,
             limit: 1000
         };
         const data = await this.fetchFromApi("https://www.quorum.us/api/district/", params);
-        return Object.fromEntries(data.map(d => [d.resource_uri, d.name]));
+        this._districtMapCache = Object.fromEntries(data.map(d => [d.resource_uri, d.name]));
+        this._districtMapCacheTimestamp = now;
+        return this._districtMapCache;
     }
 
     async fetchData(type, additionalParams = {}) {
