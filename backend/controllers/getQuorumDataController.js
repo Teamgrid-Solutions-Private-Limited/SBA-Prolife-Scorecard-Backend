@@ -260,19 +260,26 @@ class QuorumDataController {
         // Check cache first
         const cache = this._dataCache[type];
         const now = Date.now();
-        if (cache?.data && (now - cache.timestamp < (this._CACHE_TTL[type] || cacheConfig.CACHE_TTL.DEFAULT))) {
-            return cache.data;
+        const ttl = this._CACHE_TTL[type] || cacheConfig.CACHE_TTL.DEFAULT;
+        let cacheStale = false;
+        if (cache?.data) {
+            if (now - cache.timestamp < ttl) {
+                // Fresh cache
+                return { data: cache.data, fromCache: true, cacheStale: false };
+            } else {
+                // Stale cache
+                cacheStale = true;
+            }
         }
 
         // Check circuit breaker state
         const circuitBreaker = this._circuitBreakers.quorum;
         if (!circuitBreaker.canRequest()) {
             console.log(`Circuit is OPEN for ${type} data, using cache or empty result`);
-            // Return cached data if available even if expired
             if (cache?.data) {
-                return cache.data;
+                return { data: cache.data, fromCache: true, cacheStale: true };
             }
-            return [];
+            return { data: [], fromCache: false, cacheStale: false };
         }
 
         const allData = [];
@@ -289,77 +296,51 @@ class QuorumDataController {
                 ...(type === "senator" && { current: true })
             };
 
-            // Queue the initial API request
             const fetchTask = () => apiClient.get(QuorumDataController.API_URLS[type], { params: firstParams });
             const response = await this._requestQueue.add(fetchTask);
-            
-            // Success, update circuit breaker
             circuitBreaker.success();
-            
-            if (!response.data?.objects?.length) return [];
-
+            if (!response.data?.objects?.length) return { data: [], fromCache: false, cacheStale: false };
             allData.push(...response.data.objects);
 
             if (response.data.meta?.next && type !== "bills") {
-                // Only do parallel requests for senators and representatives
                 const totalPages = Math.min(
                     Math.ceil(response.data.meta.total_count / limit),
                     Math.ceil(maxRecords / limit) - 1
                 );
-                
-                // Limit parallel requests
                 const maxParallelRequests = cacheConfig.MAX_PARALLEL_PAGES || 3;
-                
                 for (let page = 1; page <= totalPages; page += maxParallelRequests) {
                     const pagePromises = [];
-                    
-                    // Create a batch of page requests
                     for (let i = 0; i < maxParallelRequests && page + i <= totalPages; i++) {
                         const pageOffset = (page + i) * limit;
                         const pageParams = { ...firstParams, offset: pageOffset };
-                        
-                        // Queue each page request
                         const pageTask = () => apiClient.get(QuorumDataController.API_URLS[type], { params: pageParams })
                             .then(res => res.data?.objects || [])
                             .catch(err => {
                                 console.error(`Page ${page + i} fetch error:`, err.message);
                                 return [];
                             });
-                            
                         pagePromises.push(this._requestQueue.add(pageTask));
                     }
-                    
-                    // Get results for this batch
                     const pageResults = await Promise.all(pagePromises);
                     pageResults.forEach(pageData => {
                         allData.push(...pageData);
                     });
                 }
             }
-
-            // Memory optimization: only keep needed data
             const trimmedData = this.trimDataForMemory(allData.slice(0, maxRecords), type);
-
-            // Store in cache
             this._dataCache[type] = {
                 data: trimmedData,
                 timestamp: now
             };
-            
-            return trimmedData;
+            return { data: trimmedData, fromCache: false, cacheStale };
         } catch (error) {
-            // Failure, update circuit breaker
             circuitBreaker.failure();
-            
             console.error(`Failed to fetch ${type} data:`, error.message);
-            
-            // Return cached data if available even if expired
             if (cache?.data) {
                 console.log(`Using expired cache for ${type}`);
-                return cache.data;
+                return { data: cache.data, fromCache: true, cacheStale: true };
             }
-            
-            return [];
+            return { data: [], fromCache: false, cacheStale: false };
         }
     }
 
@@ -435,8 +416,6 @@ class QuorumDataController {
             const { type, additionalParams } = req.body;
             const modelConfig = QuorumDataController.MODELS[type];
             if (!modelConfig) return res.status(400).json({ error: "Invalid data type" });
-
-            // Check circuit breaker state
             const circuitBreaker = this._circuitBreakers.quorum;
             if (!circuitBreaker.canRequest()) {
                 return res.status(503).json({ 
@@ -444,29 +423,33 @@ class QuorumDataController {
                     message: "API service is currently unavailable, please try again later" 
                 });
             }
-
-            // Set a response timeout
             const timeoutId = setTimeout(() => {
+                // Try to return cached data if available
+                const cache = this._dataCache[type];
+                if (cache?.data) {
+                    return res.status(200).json({ 
+                        message: "Timeout: returning cached data.", 
+                        data: cache.data, 
+                        fromCache: true, 
+                        cacheStale: true 
+                    });
+                }
                 return res.status(408).json({ 
                     error: "Request timeout", 
                     message: "Data fetch is taking too long. The process will continue in the background." 
                 });
             }, cacheConfig.TIMEOUTS.SERVER_RESPONSE);
 
-            // Start data fetch
             const fetchPromise = this.fetchData(type, additionalParams);
-            
-            // Execute in background if it takes too long
-            fetchPromise.then(async rawData => {
+            fetchPromise.then(async result => {
                 clearTimeout(timeoutId);
-                
+                const { data: rawData, fromCache, cacheStale } = result;
                 if (!rawData.length) {
                     if (!res.headersSent) {
                         return res.status(400).json({ error: `No valid ${type} data` });
                     }
                     return;
                 }
-
                 const filtered = await this.filterData(type, rawData);
                 if (!filtered.length) {
                     if (!res.headersSent) {
@@ -474,17 +457,13 @@ class QuorumDataController {
                     }
                     return;
                 }
-
                 if (type === "bills") {
                     if (!res.headersSent) {
-                        return res.json({ message: "Bills fetched", data: filtered });
+                        return res.json({ message: "Bills fetched", data: filtered, fromCache, cacheStale });
                     }
                     return;
                 }
-
                 const { model, idField } = modelConfig;
-                
-                // Use batch sizes from config
                 const BATCH_SIZE = cacheConfig.BATCH_SIZES.DATABASE_OPERATIONS;
                 for (let i = 0; i < filtered.length; i += BATCH_SIZE) {
                     const batch = filtered.slice(i, i + BATCH_SIZE);
@@ -496,13 +475,22 @@ class QuorumDataController {
                         }
                     })));
                 }
-
                 if (!res.headersSent) {
-                    res.json({ message: `${type} data saved successfully` });
+                    res.json({ message: `${type} data saved successfully`, fromCache, cacheStale });
                 }
             }).catch(err => {
                 clearTimeout(timeoutId);
                 console.error("Save error:", err);
+                // Try to return cached data if available
+                const cache = this._dataCache[type];
+                if (cache?.data && !res.headersSent) {
+                    return res.status(200).json({ 
+                        message: "Error: returning cached data.", 
+                        data: cache.data, 
+                        fromCache: true, 
+                        cacheStale: true 
+                    });
+                }
                 if (!res.headersSent) {
                     res.status(500).json({ error: "Failed to store data" });
                 }
