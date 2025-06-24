@@ -5,8 +5,8 @@ module.exports = {
     // Cache TTL in milliseconds
     CACHE_TTL: {
         DEFAULT: 4 * 60 * 60 * 1000, // 4 hours
-        SENATOR: 4 * 60 * 60 * 1000, // 4 hours
-        REPRESENTATIVE: 4 * 60 * 60 * 1000, // 4 hours 
+        SENATOR: 6 * 60 * 60 * 1000, // 6 hours
+        REPRESENTATIVE: 6 * 60 * 60 * 1000, // 6 hours 
         STATE: 24 * 60 * 60 * 1000, // 24 hours (states rarely change)
         DISTRICT: 24 * 60 * 60 * 1000, // 24 hours (districts rarely change)
         BILLS: 2 * 60 * 60 * 1000 // 2 hours (bills may change more often)
@@ -14,8 +14,8 @@ module.exports = {
     
     // API request timeouts in milliseconds
     TIMEOUTS: {
-        API_REQUEST: 10000, // 10 seconds for API requests
-        SERVER_RESPONSE: 15000 // 15 seconds before responding to client
+        API_REQUEST: 30000, // 30 seconds for API requests (increased from 10 seconds)
+        SERVER_RESPONSE: 45000 // 45 seconds before responding to client (increased from 15 seconds)
     },
     
     // Batch sizes for processing
