@@ -276,7 +276,7 @@ class QuorumDataController {
         }
 
         const allData = [];
-        const limit = { senator: 120, representative: 500, bills: 20 }[type] || 20;
+        const limit = { senator: 40, representative: 40, bills: 10 }[type] || 10;
         const maxRecords = type === "bills" ? 20 : 1000;
 
         try {
