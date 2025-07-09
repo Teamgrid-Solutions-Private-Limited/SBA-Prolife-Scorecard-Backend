@@ -2,6 +2,7 @@
   "name": "server",
   "version": "1.0.0",
   "description": "",
+  "_protectedKeyNote": "Set PROTECTED_KEY in your environment to secure GET APIs. Clients must send 'x-protected-key' header with this value.",
   "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
