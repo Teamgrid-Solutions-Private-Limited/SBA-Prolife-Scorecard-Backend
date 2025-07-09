@@ -566,7 +566,8 @@ class QuorumDataController {
                 res.status(200).json({ 
                     message: `${type} data available from cache`,
                     count: filtered.length,
-                    source: "cache"
+                    source: "cache",
+                    data: filtered
                 });
                 responseHandled = true;
                 
