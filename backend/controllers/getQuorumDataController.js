@@ -289,7 +289,7 @@ class QuorumDataController {
         // Adjust max records based on type
         const maxRecords = { 
             senator: 120, 
-            representative: 1500,  // Increased max for representatives 
+            representative: 15000,  // Increased max for representatives 
             bills: 20 
         }[type] || 1000;
 
@@ -301,8 +301,11 @@ class QuorumDataController {
                 limit,
                 offset: 0,
                 ...additionalParams,
-                ...(type === "senator" && { current: true }),
-                ...(type === "representative" && { current: true }) // Ensure we only get current reps
+                ...(type === "senator"
+                    ? { current: true }
+                    : type === "representative"
+                        ? { current: true, most_recent_role_type: 2 }
+                        : {})
             };
 
             // Queue the initial API request
@@ -494,7 +497,7 @@ class QuorumDataController {
                 state: stateMap[item.most_recent_state] || "Unknown"
             } : null,
 
-            representative: item => (item.minor_person_types?.includes(2) && item.title === "US Representative") ? {
+            representative: item =>  item.title === "US Representative" ? {
                 repId: item.id,
                 name: `Rep. ${item.firstname || ""} ${item.middlename || ""} ${item.lastname || ""}`.trim(),
                 party: partyMap[item.most_recent_party] || "Unknown",
