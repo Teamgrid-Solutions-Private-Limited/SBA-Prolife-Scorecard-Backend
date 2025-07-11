@@ -131,6 +131,20 @@ apiClient.interceptors.response.use(null, async (error) => {
   return apiClient(config);
 });
 
+// Helper to generate a cache key based on type and params
+function getCacheKey(type, params) {
+    // Only stringify params if present and not empty
+    if (params && Object.keys(params).length > 0) {
+        // Sort keys for consistent cache keys
+        const sorted = Object.keys(params).sort().reduce((acc, key) => {
+            acc[key] = params[key];
+            return acc;
+        }, {});
+        return `${type}:${JSON.stringify(sorted)}`;
+    }
+    return type;
+}
+
 class QuorumDataController {
     constructor() {
         this.saveData = this.saveData.bind(this);
@@ -258,11 +272,12 @@ class QuorumDataController {
     async fetchData(type, additionalParams = {}) {
         if (!QuorumDataController.API_URLS[type]) throw new Error(`Invalid API type: ${type}`);
 
-        // Check cache first
-        const cache = this._dataCache[type];
+        // Use per-search cache key
+        const cacheKey = getCacheKey(type, additionalParams);
+        const cache = this._dataCache[cacheKey];
         const now = Date.now();
         if (cache?.data && (now - cache.timestamp < (this._CACHE_TTL[type] || cacheConfig.CACHE_TTL.DEFAULT))) {
-            console.log(`Using valid cache for ${type}, items: ${cache.data.length}`);
+            console.log(`Using valid cache for ${cacheKey}, items: ${cache.data.length}`);
             return cache.data;
         }
 
@@ -272,7 +287,7 @@ class QuorumDataController {
             console.log(`Circuit is OPEN for ${type} data, using cache or empty result`);
             // Return cached data if available even if expired
             if (cache?.data) {
-                console.log(`Using expired cache for ${type}, items: ${cache.data.length}`);
+                console.log(`Using expired cache for ${cacheKey}, items: ${cache.data.length}`);
                 return cache.data;
             }
             return [];
@@ -289,7 +304,7 @@ class QuorumDataController {
         // Adjust max records based on type
         const maxRecords = { 
             senator: 120, 
-            representative: 15000,  // Increased max for representatives 
+            representative: 20000,  // Increased max for representatives 
             bills: 20 
         }[type] || 1000;
 
@@ -379,11 +394,11 @@ class QuorumDataController {
                         const trimmedIntermediateData = this.trimDataForMemory(allData.slice(0, maxRecords), type);
                         
                         // Store in cache
-                        this._dataCache[type] = {
+                        this._dataCache[cacheKey] = {
                             data: trimmedIntermediateData,
                             timestamp: now
                         };
-                        console.log(`Updated cache for ${type} with ${trimmedIntermediateData.length} items`);
+                        console.log(`Updated cache for ${cacheKey} with ${trimmedIntermediateData.length} items`);
                     }
                 }
             }
@@ -395,7 +410,7 @@ class QuorumDataController {
             console.log(`Trimmed ${type} data to ${trimmedData.length} items`);
 
             // Store in cache
-            this._dataCache[type] = {
+            this._dataCache[cacheKey] = {
                 data: trimmedData,
                 timestamp: now
             };
@@ -409,7 +424,7 @@ class QuorumDataController {
             
             // Return cached data if available even if expired
             if (cache?.data) {
-                console.log(`Using expired cache for ${type} after error, items: ${cache.data.length}`);
+                console.log(`Using expired cache for ${cacheKey} after error, items: ${cache.data.length}`);
                 return cache.data;
             }
             
@@ -551,15 +566,16 @@ class QuorumDataController {
             let responseHandled = false;
             let timeoutId = null;
 
-            // Check if we already have cached data that we can immediately return
-            const cache = this._dataCache[type];
+            // Use per-search cache key
+            const cacheKey = getCacheKey(type, additionalParams);
+            const cache = this._dataCache[cacheKey];
             const now = Date.now();
             const isCacheValid = cache?.data && 
                 (now - cache.timestamp < (this._CACHE_TTL[type] || cacheConfig.CACHE_TTL.DEFAULT));
             
             if (isCacheValid && cache.data.length > 0) {
                 // We have valid cached data - fast path
-                console.log(`Using cached ${type} data (${cache.data.length} items) for immediate response`);
+                console.log(`Using cached ${cacheKey} data (${cache.data.length} items) for immediate response`);
                 
                 // Return early response with cached data
                 const filtered = await this.filterData(type, cache.data);
