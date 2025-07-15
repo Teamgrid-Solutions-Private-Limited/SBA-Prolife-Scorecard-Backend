@@ -21,3 +21,5 @@ const SenatorDataSchema = new mongoose.Schema({
 });
 
 module.exports = mongoose.model('senator_datas', SenatorDataSchema);
+
+SenatorDataSchema.index({ senateId: 1, currentTerm: 1 });
