@@ -1,4 +1,5 @@
 const House = require('../models/representativeSchema');  
+const RepresentativeData = require('../models/representativeDataSchema');
 const upload = require('../middlewares/fileUploads'); 
 
 class representativeController {
@@ -27,26 +28,106 @@ class representativeController {
         }
   };
 
-  // Get all  House
+  // Get all House
   static async getAllHouse(req, res) {
     try {
-      const house = await  House.find();
-      res.status(200).json(house);
+      const houses = await House.find().lean(); // fast read-only fetch
+
+      const housesWithRatings = await Promise.all(
+        houses.map(async (house) => {
+          // Try current term rating
+          let ratingData = await RepresentativeData.findOne({
+            houseId: house._id,
+            currentTerm: true
+          }).select('rating currentTerm summary').lean();
+
+          // If not found, fallback to most recent term
+          if (!ratingData) {
+            ratingData = await RepresentativeData.findOne({
+              houseId: house._id
+            })
+            .sort({ termId: -1 })
+            .select('rating currentTerm summary')
+            .lean();
+          }
+
+          // Clean fast mapping
+          return {
+            id: house._id,
+            name: house.name,
+            district: house.district,
+            party: house.party,
+            photo: house.photo,
+            status: house.status,
+            rating: ratingData?.rating || null,
+            isCurrentTerm: ratingData?.currentTerm || false,
+            summary: ratingData?.summary || null
+          };
+        })
+      );
+
+      res.status(200).json({
+        message: "Retrieved successfully",
+        info: housesWithRatings
+      });
     } catch (error) {
-      res.status(500).json({ message: 'Error retrieving  House', error:error.message });
+      console.error('Error in getAllHouse:', error);
+      res.status(500).json({
+        message: "Error retrieving representatives",
+        error: error.message,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      });
     }
   }
 
-  // Get a  House by ID
+  // Get a House by ID
   static async getHouseById(req, res) {
     try {
-      const  house = await  House.findById(req.params.id);
+      const houseId = req.params.id;
+
+      // Fetch house and current term data in parallel using Promise.all
+      const [house, currentTermData] = await Promise.all([
+        House.findById(houseId),
+        RepresentativeData.findOne({
+          houseId: houseId,
+          currentTerm: true
+        }).select('rating currentTerm summary')
+      ]);
+
       if (!house) {
-        return res.status(404).json({ message: ' House not found' });
+        return res.status(404).json({ message: 'Representative not found' });
       }
-      res.status(200).json( house);
+
+      let ratingData = currentTermData;
+
+      // If current term not found, fetch latest by termId
+      if (!ratingData) {
+        ratingData = await RepresentativeData.findOne({
+          houseId: houseId
+        })
+        .sort({ termId: -1 })
+        .select('rating currentTerm summary');
+      }
+
+      // Combine result
+      const result = {
+        ...house.toObject(),
+        rating: ratingData?.rating ?? null,
+        isCurrentTerm: ratingData?.currentTerm ?? false,
+        summary: ratingData?.summary ?? null
+      };
+
+      res.status(200).json({
+        message: "Retrieved successfully",
+        info: result
+      });
     } catch (error) {
-      res.status(500).json({ message: 'Error retrieving  House', error:error.message });
+      console.error('Error in getHouseById:', error);
+      res.status(500).json({ 
+        message: 'Error retrieving representative', 
+        error: error.message,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      });
     }
   }
 
