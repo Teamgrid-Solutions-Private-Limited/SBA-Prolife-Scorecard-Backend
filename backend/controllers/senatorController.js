@@ -55,7 +55,7 @@ static async getAllSenators(req, res) {
 
 
   // Get all senators for  frontend display
-static async AllSenators(req, res) {
+static async Senators(req, res) {
   try {
     const senators = await Senator.find().lean(); // fast read-only fetch
 
@@ -106,7 +106,7 @@ static async AllSenators(req, res) {
 
 
 
-  // Get a senator by ID for fro0ntend display
+  // Get a senator by ID for frontend display
 static async SenatorById(req, res) {
   try {
     const senatorId = req.params.id;
