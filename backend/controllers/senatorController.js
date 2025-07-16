@@ -86,7 +86,7 @@ static async Senators(req, res) {
           party: senator.party,
           photo: senator.photo,
           status: senator.status,
-          rating: ratingData?.rating || null,
+          rating: ratingData?.rating || "N/A", // Default to "N/A" if no rating found
           isCurrentTerm: ratingData?.currentTerm || false
         };
       })

@@ -1,7 +1,7 @@
 require("dotenv").config();
 const express = require('express');
 const cors = require("cors");
-
+const morgan = require('morgan');
 
 const connection =require('./db/connection');
 const userRoute =require('./routes/userRoutes');
@@ -21,6 +21,8 @@ const PORT= process.env.PORT || 4000;
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({extended:true}));
+const morganFormat = process.env.NODE_ENV === 'production' ? 'combined' : 'dev';
+app.use(morgan(morganFormat));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 
