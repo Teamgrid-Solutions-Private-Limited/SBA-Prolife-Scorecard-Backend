@@ -4,7 +4,7 @@ const VoteController = require('../controllers/voteController');
 const protectedKey = require('../middlewares/protectedKey');
 
 // POST: Create a new vote with file upload for readMore
-router.post('/votes/create/', protectedKey, VoteController.createVote);
+router.post('/votes/create/', VoteController.createVote);
 
 // GET: Retrieve all votes
 router.get('/votes/viewAll/', protectedKey, VoteController.getAllVotes);
@@ -13,9 +13,9 @@ router.get('/votes/viewAll/', protectedKey, VoteController.getAllVotes);
 router.get('/votes/viewId/:id', protectedKey, VoteController.getVoteById);
 
 // PUT: Update a vote by ID
-router.put('/votes/update/:id', protectedKey, VoteController.updateVote);
+router.put('/votes/update/:id', VoteController.updateVote);
 
 // DELETE: Delete a vote by ID
-router.delete('/votes/delete/:id', protectedKey, VoteController.deleteVote);
+router.delete('/votes/delete/:id', VoteController.deleteVote);
 
 module.exports = router;

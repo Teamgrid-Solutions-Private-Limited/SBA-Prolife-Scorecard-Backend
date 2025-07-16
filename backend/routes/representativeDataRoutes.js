@@ -4,7 +4,7 @@ const HD = require('../controllers/representativeData');
 const protectedKey = require('../middlewares/protectedKey');
 
 // POST: Create a new house data
-router.post('/house-data/create/', protectedKey, HD.createHouseData);
+router.post('/house-data/create/', HD.createHouseData);
 
 // GET: Retrieve all house data with populated votesScore and activitiesScore
 router.get('/house-data/viewAll/', protectedKey, HD.getAllHouseData);
@@ -13,10 +13,10 @@ router.get('/house-data/viewAll/', protectedKey, HD.getAllHouseData);
 router.get('/house-data/viewID/:id', protectedKey, HD.getHouseDataById);
 
 // PUT: Update house data by ID
-router.put('/house-data/update/:id', protectedKey, HD.updateHouseData);
+router.put('/house-data/update/:id', HD.updateHouseData);
 
 // DELETE: Delete house data by ID
-router.delete('/house-data/delete/:id', protectedKey, HD.deleteHouseData);
+router.delete('/house-data/delete/:id', HD.deleteHouseData);
 
 router.get('/house-data/viewbyhouse/:id', protectedKey, HD.getHouseDataByHouseId);
 

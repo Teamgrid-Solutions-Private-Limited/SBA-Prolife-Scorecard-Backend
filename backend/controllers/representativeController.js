@@ -27,9 +27,31 @@ class representativeController {
           res.status(500).json({ message: 'Error creating house', error:error.message });
         }
   };
-
-  // Get all House
+  // Get all  House for admin dashboard
   static async getAllHouse(req, res) {
+    try {
+      const house = await  House.find();
+      res.status(200).json(house);
+    } catch (error) {
+      res.status(500).json({ message: 'Error retrieving  House', error:error.message });
+    }
+  }
+
+  // Get a  House by ID for admin dashboard
+  static async getHouseById(req, res) {
+    try {
+      const  house = await  House.findById(req.params.id);
+      if (!house) {
+        return res.status(404).json({ message: ' House not found' });
+      }
+      res.status(200).json( house);
+    } catch (error) {
+      res.status(500).json({ message: 'Error retrieving  House', error:error.message });
+    }
+  }
+
+  // Get all House for frontend display
+  static async AllHouse(req, res) {
     try {
       const houses = await House.find().lean(); // fast read-only fetch
 
@@ -80,8 +102,8 @@ class representativeController {
     }
   }
 
-  // Get a House by ID
-  static async getHouseById(req, res) {
+  // Get a House by ID for frontend display
+  static async HouseById(req, res) {
     try {
       const houseId = req.params.id;
 
