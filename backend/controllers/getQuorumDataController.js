@@ -145,6 +145,10 @@ function getCacheKey(type, params) {
     return type;
 }
 
+function formatDistrict(district) {
+    return district.replace(/^([A-Z]+)(\d+)$/, '$1-$2');
+}
+
 class QuorumDataController {
     constructor() {
         this.saveData = this.saveData.bind(this);
@@ -266,7 +270,7 @@ class QuorumDataController {
         };
         
         const data = await this.fetchFromApi("https://www.quorum.us/api/district/", params, "district");
-        return Object.fromEntries(data.map(d => [d.resource_uri, d.name]));
+        return Object.fromEntries(data.map(d => [d.resource_uri,d.kw_DistrictCode|| d.name]));
     }
 
     async fetchData(type, additionalParams = {}) {
@@ -517,7 +521,7 @@ class QuorumDataController {
                 name: `Rep. ${item.firstname || ""} ${item.middlename || ""} ${item.lastname || ""}`.trim(),
                 party: partyMap[item.most_recent_party] || "Unknown",
                 photo: item.high_quality_image_url || item.image_url || null,
-                district: districtMap[item.most_recent_district] || "Unknown"
+                district: formatDistrict(districtMap[item.most_recent_district] || "Unknown")
             } : null,
 
             bills: item => ({
