@@ -8,7 +8,8 @@ const activitySchema = new mongoose.Schema({
     readMore: String,
     date: Date,
     congress: { type: String },
-    termId: { type: mongoose.Schema.Types.ObjectId, ref: 'terms' }
+    termId: { type: mongoose.Schema.Types.ObjectId, ref: 'terms' },
+    status: { type: String, enum: ['completed', 'pending','failed'], default: 'completed' },
   });
 
   module.exports=mongoose.model('activities', activitySchema);

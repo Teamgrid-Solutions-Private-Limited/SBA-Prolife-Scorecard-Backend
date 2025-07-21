@@ -12,7 +12,7 @@ class activityController {
   
       try {
         // Extract other fields from the body
-        const { type, title, shortDesc, longDesc, rollCall, date, congress, termId } = req.body;
+        const { type, title, shortDesc, longDesc, rollCall, date, congress, termId , status} = req.body;
   
         // Get the uploaded file path (null if no file is uploaded)
         const readMore = req.file ? `/uploads/documents/${req.file.filename}` : null;
@@ -27,7 +27,8 @@ class activityController {
           readMore, // Attach the file path if a file is uploaded
           date,
           congress,
-          termId
+          termId,
+          status, // Default status
         });
   
         // Save the new vote to the database
