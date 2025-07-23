@@ -176,6 +176,46 @@ class activityController {
       });
     }
   }
+
+  // Controller to bulk PATCH trackActivities
+static async bulkUpdateTrackActivities(req, res) {
+  try {
+    const { ids, trackActivities } = req.body;
+
+    // Validate input
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ message: 'No activity IDs provided' });
+    }
+
+    const validStatuses = ['Pending', 'Completed', 'Failed'];
+    if (!validStatuses.includes(trackActivities)) {
+      return res.status(400).json({ message: 'Invalid trackActivities value' });
+    }
+
+    // Bulk update
+    const result = await Activity.updateMany(
+      { _id: { $in: ids } },
+      { $set: { trackActivities } }
+    );
+
+    if (result.modifiedCount === 0) {
+      return res.status(404).json({ message: 'No activities were updated' });
+    }
+
+    const updatedActivities = await Activity.find({ _id: { $in: ids } });
+
+    res.status(200).json({
+      message: `${result.modifiedCount} activities updated successfully`,
+      updatedActivities
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: 'Error bulk updating activities',
+      error: error.message
+    });
+  }
+}
+
 }
 
 module.exports = activityController;
