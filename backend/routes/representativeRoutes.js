@@ -3,6 +3,7 @@ const router = express.Router();
 const RC = require('../controllers/representativeController');
 const upload = require('../middlewares/fileUploads');
 const protectedKey = require('../middlewares/protectedKey');
+const { auth, authorizeRoles } = require('../middlewares/authentication');
 
 // =================== Admin Routes ===================
 // POST request to create a house representative with photo
@@ -24,7 +25,7 @@ router.put('/house/update/:id', (req, res, next) => {
 }, upload.single('photo'), RC.updateHouse);
 
 // DELETE request to remove a house representative by ID
-router.delete('/house/delete/:id', RC.deleteHouse);
+router.delete('/house/delete/:id',auth,authorizeRoles("admin"), RC.deleteHouse);
 
 // =================== Frontend Routes ===================
 // GET request to retrieve all house representatives for frontend display

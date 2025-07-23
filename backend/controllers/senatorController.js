@@ -31,14 +31,23 @@ class senatorController {
   };
 
   // Get all senators for admin dashboard
+// GET /api/senators?published=true OR published=false
 static async getAllSenators(req, res) {
-    try {
-      const senators = await Senator.find();
-      res.status(200).json({message:"Retrive successfully",info:senators});
-    } catch (error) {
-      res.status(500).json({ message: 'Error retrieving senators', error:error.message });
+  try {
+    const filter = {};
+    if (req.query.published === 'true') {
+      filter.published = true;
+    } else if (req.query.published === 'false') {
+      filter.published = false;
     }
+
+    const senators = await Senator.find(filter);
+    res.status(200).json(senators);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching senators', error });
   }
+}
+
 
   // Get a senator by ID for admin dashboard
   static async getSenatorById(req, res) {
@@ -185,6 +194,52 @@ static async SenatorById(req, res) {
       res.status(500).json({ message: 'Error deleting senator', error });
     }
   }
+static async toggleSenatorPublishStatus(req, res) {
+  try {
+    const { id } = req.params;
+    const { published } = req.body;
+
+    if (typeof published !== 'boolean') {
+      return res.status(400).json({ message: 'Published must be a boolean' });
+    }
+
+    const updated = await Senator.findByIdAndUpdate(
+      id,
+      { published },
+      { new: true }
+    );
+
+    if (!updated) {
+      return res.status(404).json({ message: 'Senator not found' });
+    }
+
+    res.status(200).json({ message: `Senator ${published ? 'published' : 'set to draft'}`, data: updated });
+  } catch (error) {
+    res.status(500).json({ message: 'Error updating publish status', error });
+  }
+}
+  //bulk update senators' publish status
+  // PATCH /api/senators/publish-all
+static async bulkTogglePublishStatus(req, res) {
+  try {
+    const { published } = req.body;
+
+    if (typeof published !== 'boolean') {
+      return res.status(400).json({ message: 'published must be true or false' });
+    }
+
+    const result = await Senator.updateMany({}, { published });
+
+    res.status(200).json({
+      message: `All senators ${published ? 'published' : 'set to draft'}`,
+      modifiedCount: result.modifiedCount
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error updating all senators', error });
+  }
+}
+
+
 }
 
 module.exports = senatorController;

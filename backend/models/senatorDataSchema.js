@@ -18,7 +18,7 @@ const SenatorDataSchema = new mongoose.Schema({
       score: String 
     }
   ]
-});
+},{timestamps: true});
 
 module.exports = mongoose.model('senator_datas', SenatorDataSchema);
 

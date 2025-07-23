@@ -6,7 +6,7 @@ const SenatorSchema = new mongoose.Schema({
     party: { type: String, enum: ['democrat', 'independent', 'republican'] },
     photo: String,
     status: { type: String, enum: ['active', 'former'] },
-    senatorId:String,
-  });
+    senatorId: String,
+  },{timestamps: true});
 
   module.exports=mongoose.model('senators', SenatorSchema);

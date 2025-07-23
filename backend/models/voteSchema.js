@@ -9,7 +9,7 @@ const VoteSchema = new mongoose.Schema({
     readMore: String,
     date: Date,
     congress: { type: String },
-    termId: { type: mongoose.Schema.Types.ObjectId, ref: 'terms' }
-  });
+   termId: { type: mongoose.Schema.Types.ObjectId, ref: 'terms' },
+  },{timestamps: true});
 
   module.exports=mongoose.model('votes', VoteSchema);

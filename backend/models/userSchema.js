@@ -10,6 +10,8 @@ const UserSchema = new mongoose.Schema({
      
   },
   role: { type: String, enum: ['admin', 'editor', 'contributor'] }
+}, {
+  timestamps: true
 });
 
 module.exports= mongoose.model("users",UserSchema);
