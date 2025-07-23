@@ -33,4 +33,6 @@ router.get('/frontend/house/view', protectedKey, RC.AllHouse);
 // GET request to retrieve a house representative by ID for frontend display
 router.get('/frontend/house/viewId/:id', protectedKey, RC.HouseById);
 
+router.patch("/representatives/status/:id", RC.updateRepresentativeStatus);
+
 module.exports = router;
