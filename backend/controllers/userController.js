@@ -1,8 +1,7 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const User = require('../models/userSchema');
-const JWT_SECRET = process.env.JWT_SECRET 
-const Invite = require('../models/inviteSchema');
+const JWT_SECRET = process.env.JWT_SECRET;
 
 class userController {
  
@@ -157,31 +156,6 @@ class userController {
   }
 
 
-
-static signupWithInvite = async (req, res) => {
-  const { email, password, token } = req.body;
-
-  try {
-    const invite = await Invite.findOne({ email, token });
-
-    if (!invite || invite.expiresAt < Date.now()) {
-      return res.status(400).json({ message: 'Invite invalid or expired.' });
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await User.create({
-      email,
-      password: hashedPassword,
-      role: invite.role
-    });
-
-    await Invite.deleteOne({ email }); // clean up invite
-
-    res.status(201).json({ message: 'Signup successful', userId: user._id });
-  } catch (err) {
-    res.status(500).json({ message: 'Signup failed', err });
-  }
-};
 
 }
 
