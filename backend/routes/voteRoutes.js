@@ -18,4 +18,8 @@ router.put('/votes/update/:id', VoteController.updateVote);
 // DELETE: Delete a vote by ID
 router.delete('/votes/delete/:id', VoteController.deleteVote);
 
+// PATCH: Update vote status (draft → published or vice versa)
+router.patch('/votes/status/:id', VoteController.updateVoteStatus);
+
+
 module.exports = router;

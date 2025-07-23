@@ -32,7 +32,8 @@ class voteController {
           date,
           congress,
           termId,
-          sbaPosition
+          sbaPosition,
+          status: 'draft', // Default status
         });
   
         // Save the new vote to the database
@@ -121,6 +122,32 @@ static async updateVote(req, res) {
       res.status(500).json({ message: 'Error deleting vote', error });
     }
   }
+
+  // Update status (draft/published)
+static async updateVoteStatus(req, res) {
+  try {
+    const { status } = req.body;
+
+    if (!['draft', 'published'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid status' });
+    }
+
+    const updatedVote = await Vote.findByIdAndUpdate(
+      req.params.id,
+      { status },
+      { new: true }
+    );
+
+    if (!updatedVote) {
+      return res.status(404).json({ message: 'Vote not found' });
+    }
+
+    res.status(200).json({ message: 'Status updated successfully', vote: updatedVote });
+  } catch (error) {
+    res.status(500).json({ message: 'Error updating vote status', error: error.message });
+  }
+}
+
 }
 
 module.exports = voteController;
