@@ -21,5 +21,7 @@ router.delete('/votes/delete/:id', VoteController.deleteVote);
 // PATCH: Update vote status (draft → published or vice versa)
 router.patch('/votes/status/:id', VoteController.updateVoteStatus);
 
+//Patch bulk-update sba-position
+router.patch('/update/bulk-update-sbaPosition', VoteController.bulkUpdateSbaPosition);
 
 module.exports = router;

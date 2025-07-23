@@ -72,7 +72,47 @@ class voteController {
     }
   }
 
- 
+ // Controller to bulk update SBA Position for multiple votes
+static async bulkUpdateSbaPosition(req, res) {
+  try {
+    const { ids, sbaPosition } = req.body;
+
+    // Validate input
+    if (!ids || !Array.isArray(ids)) {
+      return res.status(400).json({ message: 'Invalid bill IDs provided' });
+    }
+
+    if (sbaPosition !== 'Yes' && sbaPosition !== 'No') {
+      return res.status(400).json({ message: 'Invalid SBA Position value' });
+    }
+
+    // Update all matching votes
+    const result = await Vote.updateMany(
+      { _id: { $in: ids } },
+      { $set: { sbaPosition } },
+      { new: true }
+    );
+
+    if (result.modifiedCount === 0) {
+      return res.status(404).json({ message: 'No matching bills found or no changes made' });
+    }
+
+    // Get the updated votes to return
+    const updatedVotes = await Vote.find({ _id: { $in: ids } })
+      .populate('termId'); // Populate the referenced term if needed
+
+    res.status(200).json({
+      message: `${result.modifiedCount} bills updated successfully`,
+      updatedBills: updatedVotes
+    });
+
+  } catch (error) {
+    res.status(500).json({ 
+      message: 'Error bulk updating bills',
+      error: error.message 
+    });
+  }
+}
  
 // Controller to update a vote
 static async updateVote(req, res) {
