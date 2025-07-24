@@ -5,7 +5,7 @@ const RepresentativeSchema = new mongoose.Schema({
     district: String,
     party: { type: String, enum: ['democrat', 'independent', 'republican'] },
     photo: String,
-    status: { type: String, enum: ['active', 'former'] }
-  });
+  status: { type: String, enum: ['active', 'former'] },  
+  },{timestamps: true});
 
   module.exports=mongoose.model('representatives', RepresentativeSchema);

@@ -1,7 +1,7 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const User = require('../models/userSchema');
-const JWT_SECRET = process.env.JWT_SECRET || "jwt-token";
+const JWT_SECRET = process.env.JWT_SECRET;
 
 class userController {
  
@@ -119,6 +119,44 @@ class userController {
       res.status(500).json({ message: 'Error logging in', error });
     }
   }
+  //assign new user to a role
+    // Assign or update user role — Admin only
+  static async assignUserRole(req, res) {
+    try {
+      console.log("req.body:-", req.body);
+      const { userId, newRole } = req.body;
+
+
+      // Validate input
+      const validRoles = ['admin', 'editor', 'contributor'];
+      if (!validRoles.includes(newRole)) {
+        return res.status(400).json({ message: 'Invalid role provided.' });
+      }
+
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      user.role = newRole;
+      await user.save();
+
+      res.status(200).json({
+        message: `Role updated to ${newRole}`,
+        user: {
+          id: user._id,
+          fullName: user.fullName,
+          email: user.email,
+          role: user.role,
+        },
+      });
+    } catch (error) {
+      res.status(500).json({ message: 'Error assigning role', error: error.message });
+    }
+  }
+
+
+
 }
 
 module.exports = userController;

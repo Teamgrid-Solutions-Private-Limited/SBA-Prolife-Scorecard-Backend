@@ -16,6 +16,6 @@ const VoteSchema = new mongoose.Schema({
     enum: ["draft", "published"],
     default: "draft",
   },
-});
+},{timestamps: true});
 
 module.exports = mongoose.model("votes", VoteSchema);

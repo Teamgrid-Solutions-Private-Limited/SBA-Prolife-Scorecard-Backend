@@ -18,6 +18,6 @@ const RepresentativeDataSchema = new mongoose.Schema({
             score: String 
         }
     ]
-});
+},{timestamps: true});
 
 module.exports = mongoose.model('representative_datas', RepresentativeDataSchema);

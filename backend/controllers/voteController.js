@@ -50,14 +50,25 @@ class voteController {
   
 
   // Get all votes with populated termId
-  static async getAllVotes(req, res) {
-    try {
-      const votes = await Vote.find().populate('termId');
-      res.status(200).json(votes);  
-    } catch (error) {
-      res.status(500).json({ message: 'Error retrieving votes', error });
+// Get all votes with optional filtering by 'published' and populated termId
+static async getAllVotes(req, res) {
+  try {
+    const filter = {};
+
+    // Check if query param is present and valid
+    if (req.query.published === 'true') {
+      filter.published = true;
+    } else if (req.query.published === 'false') {
+      filter.published = false;
     }
+
+    const votes = await Vote.find(filter).populate('termId');
+    res.status(200).json(votes);  
+  } catch (error) {
+    res.status(500).json({ message: 'Error retrieving votes', error: error.message });
   }
+}
+
 
   // Get a vote by ID with populated termId
   static async getVoteById(req, res) {
@@ -187,6 +198,38 @@ static async updateVoteStatus(req, res) {
     res.status(500).json({ message: 'Error updating vote status', error: error.message });
   }
 }
+
+  //admin only toggle published status
+
+  // Toggle publish status - Admin only
+static async togglePublishStatus(req, res) {
+  try {
+    const { id } = req.params;
+    const { published } = req.body;
+
+    if (typeof published !== 'boolean') {
+      return res.status(400).json({ message: 'published must be true or false' });
+    }
+
+    const updatedVote = await Vote.findByIdAndUpdate(
+      id,
+      { published },
+      { new: true }
+    ).populate('termId');
+
+    if (!updatedVote) {
+      return res.status(404).json({ message: 'Vote not found' });
+    }
+
+    res.status(200).json({
+      message: `Vote ${published ? 'published' : 'set to draft'}`,
+      vote: updatedVote
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error toggling publish status', error: error.message });
+  }
+}
+
 
 }
 

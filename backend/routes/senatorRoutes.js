@@ -3,6 +3,7 @@ const router = express.Router();
 const SenatorController = require('../controllers/senatorController');
 const upload = require('../middlewares/fileUploads');
 const protectedKey = require('../middlewares/protectedKey');
+const { auth, authorizeRoles } = require('../middlewares/authentication');
  
 // =================== Admin Routes ===================
 // POST request to create a senator with a photo
@@ -20,8 +21,9 @@ router.get('/senators/viewId/:id', protectedKey, SenatorController.getSenatorByI
 // PUT request to update a senator by ID
 router.put('/senators/update/:id', upload.single('photo'), SenatorController.updateSenator);
 
+
 // DELETE request to remove a senator by ID
-router.delete('/senators/delete/:id', SenatorController.deleteSenator);
+router.delete('/senators/delete/:id',auth,authorizeRoles("admin"), SenatorController.deleteSenator);
 
 // =================== Frontend Routes ===================
 // GET request to retrieve all senators for frontend display
