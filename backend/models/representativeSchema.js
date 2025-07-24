@@ -8,7 +8,7 @@ const RepresentativeSchema = new mongoose.Schema({
   status: { type: String, enum: ["active", "former"] },
   publishStatus: {
     type: String,
-    enum: ["draft", "published"],
+    enum: ["draft", "published" , "reviewed"],
     default: "draft",
   },
 });
