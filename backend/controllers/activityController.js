@@ -151,7 +151,7 @@ class activityController {
         return res.status(400).json({ message: "Missing activity ID" });
       }
 
-      if (!["draft", "published"].includes(status)) {
+      if (!["draft", "published", "reviewed"].includes(status)) {
         return res.status(400).json({ message: "Invalid status" });
       }
 

@@ -16,7 +16,7 @@ const activitySchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ["draft", "published"],
+    enum: ["draft", "published", "reviewed"],
     default: "draft",
   },
 },{timestamps: true});

@@ -13,7 +13,7 @@ const VoteSchema = new mongoose.Schema({
   sbaPosition: { type: String, enum: ["yes", "no"], default: "no" },
   status: {
     type: String,
-    enum: ["draft", "published"],
+    enum: ["draft", "published", "reviewed"],
     default: "draft",
   },
 },{timestamps: true});
