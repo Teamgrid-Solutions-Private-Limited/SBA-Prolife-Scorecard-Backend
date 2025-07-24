@@ -19,4 +19,10 @@ router.put('/votes/update/:id', VoteController.updateVote);
 // DELETE: Delete a vote by ID
 router.delete('/votes/delete/:id',auth,authorizeRoles("admin"),VoteController.deleteVote);
 
+// PATCH: Update vote status (draft → published or vice versa)
+router.patch('/votes/status/:id', VoteController.updateVoteStatus);
+
+//Patch bulk-update sba-position
+router.patch('/update/bulk-update-sbaPosition', VoteController.bulkUpdateSbaPosition);
+
 module.exports = router;

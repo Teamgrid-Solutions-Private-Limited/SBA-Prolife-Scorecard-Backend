@@ -18,4 +18,11 @@ router.put('/activity/update/:id', AC.updateActivity);
 // DELETE: Delete a activity by ID
 router.delete('/activity/delete/:id', AC.deleteActivity);
 
+router.patch("/activity/status/:id", AC.updateActivityStatus);
+// PATCH: Bulk update activity status
+router.patch(
+  "/update/bulk-update-track-activities",
+  AC.bulkUpdateTrackActivities
+);
+
 module.exports = router;

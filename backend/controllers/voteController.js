@@ -16,7 +16,7 @@ class voteController {
   
       try {
         // Extract other fields from the body
-        const { type, title, shortDesc, longDesc, rollCall, date, congress, termId } = req.body;
+        const { type, title, shortDesc, longDesc, rollCall, date, congress, termId , sbaPosition } = req.body;
   
         // Get the uploaded file path (null if no file is uploaded)
         const readMore = req.file ? `/uploads/documents/${req.file.filename}` : null;
@@ -31,7 +31,9 @@ class voteController {
           readMore, // Attach the file path if a file is uploaded
           date,
           congress,
-          termId
+          termId,
+          sbaPosition,
+          status: 'draft', // Default status
         });
   
         // Save the new vote to the database
@@ -81,7 +83,47 @@ static async getAllVotes(req, res) {
     }
   }
 
- 
+ // Controller to bulk update SBA Position for multiple votes
+static async bulkUpdateSbaPosition(req, res) {
+  try {
+    const { ids, sbaPosition } = req.body;
+
+    // Validate input
+    if (!ids || !Array.isArray(ids)) {
+      return res.status(400).json({ message: 'Invalid bill IDs provided' });
+    }
+
+    if (sbaPosition !== 'Yes' && sbaPosition !== 'No') {
+      return res.status(400).json({ message: 'Invalid SBA Position value' });
+    }
+
+    // Update all matching votes
+    const result = await Vote.updateMany(
+      { _id: { $in: ids } },
+      { $set: { sbaPosition } },
+      { new: true }
+    );
+
+    if (result.modifiedCount === 0) {
+      return res.status(404).json({ message: 'No matching bills found or no changes made' });
+    }
+
+    // Get the updated votes to return
+    const updatedVotes = await Vote.find({ _id: { $in: ids } })
+      .populate('termId'); // Populate the referenced term if needed
+
+    res.status(200).json({
+      message: `${result.modifiedCount} bills updated successfully`,
+      updatedBills: updatedVotes
+    });
+
+  } catch (error) {
+    res.status(500).json({ 
+      message: 'Error bulk updating bills',
+      error: error.message 
+    });
+  }
+}
  
 // Controller to update a vote
 static async updateVote(req, res) {
@@ -131,6 +173,32 @@ static async updateVote(req, res) {
       res.status(500).json({ message: 'Error deleting vote', error });
     }
   }
+
+  // Update status (draft/published)
+static async updateVoteStatus(req, res) {
+  try {
+    const { status } = req.body;
+
+    if (!['draft', 'published'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid status' });
+    }
+
+    const updatedVote = await Vote.findByIdAndUpdate(
+      req.params.id,
+      { status },
+      { new: true }
+    );
+
+    if (!updatedVote) {
+      return res.status(404).json({ message: 'Vote not found' });
+    }
+
+    res.status(200).json({ message: 'Status updated successfully', vote: updatedVote });
+  } catch (error) {
+    res.status(500).json({ message: 'Error updating vote status', error: error.message });
+  }
+}
+
   //admin only toggle published status
 
   // Toggle publish status - Admin only
