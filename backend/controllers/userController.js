@@ -155,6 +155,14 @@ class userController {
     }
   }
 
+ static async getAllUsers (req, res) {
+    try {
+      const users = await User.find({}, '-password'); // Exclude password field
+      res.status(200).json(users);
+    } catch (error) {
+      res.status(500).json({ message: 'Error fetching users', error });
+    }
+  }
 
 
 }
