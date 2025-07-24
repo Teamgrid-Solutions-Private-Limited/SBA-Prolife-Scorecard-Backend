@@ -34,7 +34,7 @@ const sendInvite = async (req, res) => {
     // Define base URL based on environment
     const baseUrl = process.env.NODE_ENV === 'production' 
       ? 'https://demos.godigitalalchemy.com/scorecard/admin'  // Replace with your actual production domain
-      : 'http://localhost:3001/scorecard/admin/';
+      : 'http://localhost:3001/scorecard/admin';
 
     const loginUrl = `${baseUrl}/login`;
 
