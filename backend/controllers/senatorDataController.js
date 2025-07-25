@@ -1,13 +1,19 @@
-const SenatorData = require('../models/senatorDataSchema'); 
+const SenatorData = require("../models/senatorDataSchema");
 
 class senatorDataController {
-  
   // Create a new senator data
   static async createSenatorData(req, res) {
     try {
-      const { senateId, termId, currentTerm, summary, rating, votesScore, activitiesScore } = req.body;
+      const {
+        senateId,
+        termId,
+        currentTerm,
+        summary,
+        rating,
+        votesScore,
+        activitiesScore,
+      } = req.body;
 
-       
       const newSenatorData = new SenatorData({
         senateId,
         termId,
@@ -15,7 +21,7 @@ class senatorDataController {
         summary,
         rating,
         votesScore,
-        activitiesScore
+        activitiesScore,
       });
 
       // Save the senator data to the database
@@ -23,7 +29,7 @@ class senatorDataController {
 
       res.status(201).json(newSenatorData);
     } catch (error) {
-      res.status(500).json({ message: 'Error creating senator data', error });
+      res.status(500).json({ message: "Error creating senator data", error });
     }
   }
 
@@ -31,12 +37,12 @@ class senatorDataController {
   static async getAllSenatorData(req, res) {
     try {
       const senatorData = await SenatorData.find()
-        .populate('votesScore.voteId')  
-        .populate('activitiesScore.activityId');  
+        .populate("votesScore.voteId")
+        .populate("activitiesScore.activityId");
 
       res.status(200).json(senatorData);
     } catch (error) {
-      res.status(500).json({ message: 'Error retrieving senator data', error });
+      res.status(500).json({ message: "Error retrieving senator data", error });
     }
   }
 
@@ -44,75 +50,104 @@ class senatorDataController {
   static async getSenatorDataById(req, res) {
     try {
       const senatorData = await SenatorData.findById(req.params.id)
-        .populate('votesScore.voteId')
-        .populate('activitiesScore.activityId');
+        .populate("votesScore.voteId")
+        .populate("activitiesScore.activityId");
 
       if (!senatorData) {
-        return res.status(404).json({ message: 'Senator data not found' });
+        return res.status(404).json({ message: "Senator data not found" });
       }
 
       res.status(200).json(senatorData);
     } catch (error) {
-      res.status(500).json({ message: 'Error retrieving senator data', error });
+      res.status(500).json({ message: "Error retrieving senator data", error });
     }
   }
 
   // Update senator data by ID
   static async updateSenatorData(req, res) {
     try {
-      const updatedSenatorData = await SenatorData.findByIdAndUpdate(
-        req.params.id,
-        req.body,
-        { new: true } // Return the updated document
-      );
+      const { termId, senateId } = req.body;
 
-      if (!updatedSenatorData) {
-        return res.status(404).json({ message: 'Senator data not found' });
+      //  Manual check: If termId is missing or an empty string
+      if (!termId || termId.toString().trim() === "") {
+        return res.status(400).json({ message: "Term is required" });
       }
 
-      res.status(200).json(updatedSenatorData);
+      //  Optional manual check for senateId too
+      if (!senateId || senateId.toString().trim() === "") {
+        return res.status(400).json({ message: "Senate ID is required" });
+      }
+
+      //  Load the document first so we can validate on save
+      const existing = await SenatorData.findById(req.params.id);
+
+      if (!existing) {
+        return res.status(404).json({ message: "Senator data not found" });
+      }
+
+      // Apply updates from the request
+      Object.assign(existing, req.body);
+
+      //  Trigger Mongoose validation
+      const updated = await existing.save();
+
+      res.status(200).json(updated);
     } catch (error) {
-      res.status(500).json({ message: 'Error updating senator data', error });
+      //  Catch schema validation errors from Mongoose
+      if (error.name === "ValidationError") {
+        const messages = Object.values(error.errors).map((err) => err.message);
+        return res.status(400).json({ message: messages.join(", ") });
+      }
+
+      //  Catch unexpected errors
+      res.status(500).json({
+        message: error.message || "Error updating senator data",
+        stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
+      });
     }
   }
 
   // Delete senator data by ID
   static async deleteSenatorData(req, res) {
     try {
-      const deletedSenatorData = await SenatorData.findByIdAndDelete(req.params.id);
+      const deletedSenatorData = await SenatorData.findByIdAndDelete(
+        req.params.id
+      );
 
       if (!deletedSenatorData) {
-        return res.status(404).json({ message: 'Senator data not found' });
+        return res.status(404).json({ message: "Senator data not found" });
       }
 
-      res.status(200).json({ message: 'Senator data deleted successfully' });
+      res.status(200).json({ message: "Senator data deleted successfully" });
     } catch (error) {
-      res.status(500).json({ message: 'Error deleting senator data', error });
+      res.status(500).json({ message: "Error deleting senator data", error });
     }
   }
-
 
   // Get senator data by senator ID with populated termId and senatorId
-static async getSenatorDataBySenatorId(req, res) {
-  try {
-    const senateId = req.params.id;
-    const senatorData = await SenatorData.find({ senateId })
-      .populate('termId')  
-      .populate('senateId')
-      .populate('votesScore.voteId')
-      .populate('activitiesScore.activityId');
+  static async getSenatorDataBySenatorId(req, res) {
+    try {
+      const senateId = req.params.id;
+      const senatorData = await SenatorData.find({ senateId })
+        .populate("termId")
+        .populate("senateId")
+        .populate("votesScore.voteId")
+        .populate("activitiesScore.activityId");
 
-    if (!senatorData) {
-      return res.status(404).json({ message: 'Senator data not found' });
+      if (!senatorData) {
+        return res.status(404).json({ message: "Senator data not found" });
+      }
+
+      res
+        .status(200)
+        .json({ message: "Retrive successfully", info: senatorData });
+    } catch (error) {
+      res.status(500).json({
+        message: "Error retrieving senator data",
+        error: error.message,
+      });
     }
-
- 
-    res.status(200).json({message:"Retrive successfully",info:senatorData});
-  } catch (error) {
-    res.status(500).json({ message: 'Error retrieving senator data', error:error.message });
   }
-}
-
 }
 
 module.exports = senatorDataController;
