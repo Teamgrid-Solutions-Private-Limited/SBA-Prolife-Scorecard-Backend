@@ -11,8 +11,8 @@ const activitySchema = new mongoose.Schema({
   termId: { type: mongoose.Schema.Types.ObjectId, ref: "terms" },
   trackActivities: {
     type: String,
-    enum: ["Completed", "Pending", "Failed"],
-    default: "Completed",
+    enum: ["completed", "pending", "failed"],
+    default: "completed",
   },
   status: {
     type: String,

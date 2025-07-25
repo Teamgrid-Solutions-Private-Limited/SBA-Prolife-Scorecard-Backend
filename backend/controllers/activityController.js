@@ -187,7 +187,7 @@ static async bulkUpdateTrackActivities(req, res) {
       return res.status(400).json({ message: 'No activity IDs provided' });
     }
 
-    const validStatuses = ['Pending', 'Completed', 'Failed'];
+    const validStatuses = ['pending', 'completed', 'failed'];
     if (!validStatuses.includes(trackActivities)) {
       return res.status(400).json({ message: 'Invalid trackActivities value' });
     }
