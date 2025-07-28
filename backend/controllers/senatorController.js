@@ -243,41 +243,78 @@ static async bulkTogglePublishStatus(req, res) {
 
 
   //update published status of senator
+static async updateSenatorStatus(req, res) {
+  try {
+    const { publishStatus } = req.body;
+    const { id } = req.params;
 
-    static async updateSenatorStatus(req, res) {
-      try {
-        const { publishStatus } = req.body;
-        const { id } = req.params;
-  
-        if (!id) {
-          return res.status(400).json({ message: "Missing senator ID" });
-        }
-
-        if (!["draft", "published", "reviewed"].includes(publishStatus)) {
-          return res.status(400).json({ message: "Invalid status" });
-        }
-
-        const updatedSenator = await Senator.findByIdAndUpdate(
-          id,
-          { publishStatus },
-          { new: true, runValidators: true }
-        );
-
-        if (!updatedSenator) {
-          return res.status(404).json({ message: "Senator not found" });
-        }
-
-        return res.status(200).json({
-          message: "Status updated successfully",
-          senator: updatedSenator,
-        });
-      } catch (error) {
-        return res.status(500).json({
-          message: "Error updating senator status",
-          error: error.message,
-        });
-      }
+    if (!id) {
+      return res.status(400).json({ message: "Missing senator ID" });
     }
+
+    // Use updated enum values
+    const validStatuses = ["draft", "published", "under review"];
+
+    if (!validStatuses.includes(publishStatus)) {
+      return res.status(400).json({ message: "Invalid status" });
+    }
+
+    const updatedSenator = await Senator.findByIdAndUpdate(
+      id,
+      { publishStatus },
+      { new: true, runValidators: true }
+    );
+
+    if (!updatedSenator) {
+      return res.status(404).json({ message: "Senator not found" });
+    }
+
+    return res.status(200).json({
+      message: "Status updated successfully",
+      senator: updatedSenator,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Error updating senator status",
+      error: error.message,
+    });
+  }
+}
+
+    // static async updateSenatorStatus(req, res) {
+    //   try {
+    //     const { publishStatus } = req.body;
+    //     const { id } = req.params;
+  
+    //     if (!id) {
+    //       return res.status(400).json({ message: "Missing senator ID" });
+    //     }
+
+    //     if (!["draft", "published", "reviewed"].includes(publishStatus)) {
+    //       return res.status(400).json({ message: "Invalid status" });
+    //     }
+
+    //     const updatedSenator = await Senator.findByIdAndUpdate(
+    //       id,
+    //       { publishStatus },
+    //       { new: true, runValidators: true }
+    //     );
+
+    //     if (!updatedSenator) {
+    //       return res.status(404).json({ message: "Senator not found" });
+    //     }
+
+    //     return res.status(200).json({
+    //       message: "Status updated successfully",
+    //       senator: updatedSenator,
+    //     });
+    //   } catch (error) {
+    //     return res.status(500).json({
+    //       message: "Error updating senator status",
+    //       error: error.message,
+    //     });
+    //   }
+    // }
 
   
 
