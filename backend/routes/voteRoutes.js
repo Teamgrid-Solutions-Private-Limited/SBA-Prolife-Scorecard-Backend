@@ -23,6 +23,6 @@ router.delete('/votes/delete/:id',auth,authorizeRoles("admin"),VoteController.de
 router.patch('/votes/status/:id', VoteController.updateVoteStatus);
 
 //Patch bulk-update sba-position
-router.patch('/update/bulk-update-sbaPosition', VoteController.bulkUpdateSbaPosition);
+router.put('/update/bulk-update-sbaPosition', VoteController.bulkUpdateSbaPosition);
 
 module.exports = router;

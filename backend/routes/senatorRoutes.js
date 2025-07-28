@@ -32,6 +32,6 @@ router.get('/frontend/senators/view', protectedKey, SenatorController.Senators);
 // GET request to retrieve a senator by ID for frontend display
 router.get('/frontend/senators/viewId/:id', protectedKey, SenatorController.SenatorById);
 
-router.patch("/senators/status/:id", SenatorController.updateSenatorStatus);
+router.put("/senators/status/:id", SenatorController.updateSenatorStatus);
 
 module.exports = router;
