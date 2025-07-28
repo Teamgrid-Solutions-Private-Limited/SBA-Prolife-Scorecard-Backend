@@ -16,9 +16,22 @@ const activitySchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ["draft", "published", "reviewed"],
+    enum: ["draft", "published", "under review"],
     default: "draft",
   },
+  editedFields: {
+    type: [String],
+    default: [],
+  },
+   fieldEditors: {
+    type: Map,
+    of: new mongoose.Schema({
+      editorId: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
+      editorName: String,
+      editedAt: { type: Date, default: Date.now }
+    }, { _id: false }),
+    default: {}
+  }
 },{timestamps: true});
 
 module.exports = mongoose.model("activities", activitySchema);

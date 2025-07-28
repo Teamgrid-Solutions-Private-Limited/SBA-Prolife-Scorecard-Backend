@@ -253,7 +253,7 @@ static async bulkTogglePublishStatus(req, res) {
           return res.status(400).json({ message: "Missing senator ID" });
         }
 
-        if (!["draft", "published", "reviewed"].includes(publishStatus)) {
+        if (!["draft", "published", "under review"].includes(publishStatus)) {
           return res.status(400).json({ message: "Invalid status" });
         }
 

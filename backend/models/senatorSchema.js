@@ -9,7 +9,7 @@ const SenatorSchema = new mongoose.Schema({
   senatorId: String,
   publishStatus: {
     type: String,
-    enum: ["draft", "published", "reviewed"],
+    enum: ["draft", "published", "under review"],
     default: "draft",
   },
 },{timestamps: true});

@@ -179,7 +179,7 @@ static async updateVoteStatus(req, res) {
   try {
     const { status } = req.body;
 
-    if (!['draft', 'published', 'reviewed'].includes(status)) {
+    if (!['draft', 'published', 'under review'].includes(status)) {
       return res.status(400).json({ message: 'Invalid status' });
     }
 
