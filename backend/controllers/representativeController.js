@@ -163,26 +163,46 @@ class representativeController {
   static async updateHouse(req, res) {
     try {
       const houseId = req.params.id;
-      const updateData = { ...req.body };
+      let updateData = req.body;
 
-      // If a new photo is uploaded, update the photo field
+      // Handle file upload
       if (req.file) {
-        updateData.photo = req.file ? req.file.filename : null;
+        updateData.photo = req.file.filename;
       }
-      const updatedHouse = await House.findByIdAndUpdate(houseId, updateData, {
-        new: true,
-      });
+
+      // Parse the editedFields and fieldEditors if they were stringified
+      if (typeof updateData.editedFields === 'string') {
+        updateData.editedFields = JSON.parse(updateData.editedFields);
+      }
+      if (typeof updateData.fieldEditors === 'string') {
+        updateData.fieldEditors = JSON.parse(updateData.fieldEditors);
+      }
+
+      // Clear editedFields if publishing
+      if (updateData.publishStatus === 'published') {
+        updateData.editedFields = [];
+      }
+
+      const updatedHouse = await House.findByIdAndUpdate(
+        houseId,
+        updateData,
+        { new: true }
+      );
+
       if (!updatedHouse) {
         return res.status(404).json({ message: "House not found" });
       }
-      res
-        .status(200)
-        .json({
-          message: "house data updated successfully",
-          info: updatedHouse,
-        });
+
+      res.status(200).json({
+        message: "House updated successfully",
+        house: updatedHouse
+      });
     } catch (error) {
-      res.status(500).json({ message: "Error updating house", error });
+      console.error("Update error:", error);
+      res.status(500).json({
+        message: "Error updating house",
+        error: error.message
+      });
     }
   }
 
