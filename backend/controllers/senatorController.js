@@ -1,7 +1,7 @@
 const Senator = require("../models/senatorSchema");
 const SenatorData = require("../models/senatorDataSchema");
 const upload = require("../middlewares/fileUploads");
-const SenatorHistory = require('../models/senatorHistorySchema');
+
 
 class senatorController {
   // Create a new senator with photo upload
@@ -189,20 +189,20 @@ class senatorController {
       }
 
       // Save history BEFORE update
-      const updatedHistory = await SenatorHistory.findOneAndUpdate(
-        { senatorId: existingSenator._id },
-        {
-          $push: {
-            history: {
-              oldData: existingSenator.toObject(),
-              actionType: 'update'
-            }
-          }
-        },
-        { upsert: true, new: true }
-      );
+      // const updatedHistory = await SenatorHistory.findOneAndUpdate(
+      //   { senatorId: existingSenator._id },
+      //   {
+      //     $push: {
+      //       history: {
+      //         oldData: existingSenator.toObject(),
+      //         actionType: 'update'
+      //       }
+      //     }
+      //   },
+      //   { upsert: true, new: true }
+      // );
 
-      console.log("Updated Senator History:", updatedHistory);
+      //console.log("Updated Senator History:", updatedHistory);
 
 
       const updatedSenator = await Senator.findByIdAndUpdate(

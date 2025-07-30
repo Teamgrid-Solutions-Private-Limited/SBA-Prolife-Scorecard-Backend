@@ -33,7 +33,6 @@ router.get('/frontend/senators/view', protectedKey, SenatorController.Senators);
 router.get('/frontend/senators/viewId/:id', protectedKey, SenatorController.SenatorById);
 
 router.put("/senators/status/:id", SenatorController.updateSenatorStatus);
-//Undo senator update
-router.put("/senator/:id/undo", SenatorController.undoSenatorUpdate);
+
 
 module.exports = router;
