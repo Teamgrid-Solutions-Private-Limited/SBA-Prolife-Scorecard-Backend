@@ -212,7 +212,7 @@ class representativeController {
         return res.status(400).json({ message: "Missing representative ID" });
       }
 
-      if (!["draft", "published" , "reviewed"].includes(publishStatus)) {
+      if (!["draft", "published" , "under review"].includes(publishStatus)) {
         return res.status(400).json({ message: "Invalid status" });
       }
 
