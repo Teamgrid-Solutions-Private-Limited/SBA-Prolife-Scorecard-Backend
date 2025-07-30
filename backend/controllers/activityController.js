@@ -1,5 +1,6 @@
 const Activity = require("../models/activitySchema");
 const upload = require("../middlewares/fileUploads");
+const axios = require("axios");
 class activityController {
   // Create a new activity with file upload for readMore
   static async createActivity(req, res) {
