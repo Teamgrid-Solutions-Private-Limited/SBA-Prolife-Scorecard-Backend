@@ -24,5 +24,21 @@ router.put(
   "/update/bulk-update-track-activities",
   AC.bulkUpdateTrackActivities
 );
+// POST: Fetch sponsors for activities
+router.post('/fetch-sponsors', async (req, res) => {
+  try {
+    const { personIds, limit } = req.body;
+    if (!personIds || !Array.isArray(personIds)) {
+      return res.status(400).json({ message: 'personIds must be an array' });
+    }
+    const sponsorData = await AC.fetchSponsorsFromQuorum(personIds, limit);
+    res.json({ data: sponsorData });
+  } catch (error) {
+    res.status(500).json({ 
+      message: 'Error fetching sponsors', 
+      error: error.message 
+    });
+  }
+});
 
 module.exports = router;

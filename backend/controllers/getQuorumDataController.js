@@ -845,7 +845,113 @@ class QuorumDataController {
             console.error("Vote score update failed:", err.message);
         }
     }
+async  updateSponsorActivityScore(quorumId) {
+  try {
+    // 1. Fetch cosponsors
+    const res = await axios.get(process.env.SPONSOR_API_URL, {
+      params: {
+        api_key: process.env.QUORUM_API_KEY,
+        username: process.env.QUORUM_USERNAME,
+        bill__in: quorumId,
+      },
+    });
 
+    const sponsors = res.data?.objects || [];
+    if (!sponsors.length) return;
+
+    const sponsorIds = sponsors.map((s) => s.id?.toString()).filter(Boolean);
+
+    // 2. Fetch matching senators and representatives
+    const [senators, reps] = await Promise.all([
+      Senator.find({ senatorId: { $in: sponsorIds } }),
+      Representative.find({ repId: { $in: sponsorIds } }),
+    ]);
+
+    const senatorMap = Object.fromEntries(senators.map((s) => [s.senatorId, s]));
+    const repMap = Object.fromEntries(reps.map((r) => [r.repId, r]));
+
+    if (!Object.keys(senatorMap).length && !Object.keys(repMap).length) return;
+
+    // 3. Check if activity already exists or not
+    let activity = await Activity.findOne({ quorumId });
+
+    // 3a. If not exists, fetch bill details and create it
+    if (!activity) {
+      const billRes = await axios.get(process.env.BILL_DETAIL_API_URL, {
+        params: {
+          api_key: process.env.QUORUM_API_KEY,
+          username: process.env.QUORUM_USERNAME,
+          id: quorumId,
+        },
+      });
+
+      const billData = billRes.data?.objects?.[0];
+      if (!billData) return;
+
+      const title = billData.title || "Untitled Bill";
+      const date = billData.introduced_date ? new Date(billData.introduced_date) : new Date();
+      const type = billData.bill_type === "senate_bill" ? "senate" : "house";
+
+      activity = await Activity.create({
+        quorumId,
+        title,
+        date,
+        type,
+        trackActivities: "completed",
+        status: "published",
+      });
+    }
+
+    // 4. Build activity score updates
+    const updates = [];
+
+    for (const sponsor of sponsors) {
+      const sponsorId = sponsor.id?.toString();
+      const scoreEntry = { activityId: activity._id, score: "yea" };
+
+      if (senatorMap[sponsorId]) {
+        updates.push({
+          model: SenatorData,
+          filter: {
+            senateId: senatorMap[sponsorId]._id,
+            "activitiesScore.activityId": { $ne: activity._id },
+          },
+          update: {
+            $push: { activitiesScore: scoreEntry },
+          },
+        });
+      }
+
+      if (repMap[sponsorId]) {
+        updates.push({
+          model: RepresentativeData,
+          filter: {
+            houseId: repMap[sponsorId]._id,
+            "activitiesScore.activityId": { $ne: activity._id },
+          },
+          update: {
+            $push: { activitiesScore: scoreEntry },
+          },
+        });
+      }
+    }
+
+    // 5. Execute updates in batches
+    const BATCH_SIZE = 50;
+    for (let i = 0; i < updates.length; i += BATCH_SIZE) {
+      const batch = updates.slice(i, i + BATCH_SIZE);
+      await Promise.all(
+        batch.map(({ model, filter, update }) =>
+          model.updateOne(filter, update, { upsert: true })
+        )
+      );
+    }
+
+    console.log(`✅ Activity score updated for bill quorumId=${quorumId}`);
+  } catch (err) {
+    console.error("❌ updateSponsorActivityScore failed:", err.message);
+  }
+}
     // Method to check data status
     async getDataStatus(req, res) {
         try {
