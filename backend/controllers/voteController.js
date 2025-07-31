@@ -160,6 +160,7 @@ class voteController {
 
         if (updateData.status === "published") {
           updateData.editedFields = [];
+          updateData.fieldEditors = {};
         }
 
         // Update the vote in the database
