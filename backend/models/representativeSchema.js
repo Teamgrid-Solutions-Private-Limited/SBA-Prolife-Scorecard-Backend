@@ -25,7 +25,7 @@ const RepresentativeSchema = new mongoose.Schema({
       },
       { _id: false }
     ),
-    default: {},
+      default: {},
   },
 },{timestamps: true});
 

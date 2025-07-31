@@ -171,23 +171,21 @@ class representativeController {
       }
 
       // Parse the editedFields and fieldEditors if they were stringified
-      if (typeof updateData.editedFields === 'string') {
+      if (typeof updateData.editedFields === "string") {
         updateData.editedFields = JSON.parse(updateData.editedFields);
       }
-      if (typeof updateData.fieldEditors === 'string') {
+      if (typeof updateData.fieldEditors === "string") {
         updateData.fieldEditors = JSON.parse(updateData.fieldEditors);
       }
 
       // Clear editedFields if publishing
-      if (updateData.publishStatus === 'published') {
+      if (updateData.publishStatus === "published") {
         updateData.editedFields = [];
       }
 
-      const updatedHouse = await House.findByIdAndUpdate(
-        houseId,
-        updateData,
-        { new: true }
-      );
+      const updatedHouse = await House.findByIdAndUpdate(houseId, updateData, {
+        new: true,
+      });
 
       if (!updatedHouse) {
         return res.status(404).json({ message: "House not found" });
@@ -195,17 +193,16 @@ class representativeController {
 
       res.status(200).json({
         message: "House updated successfully",
-        house: updatedHouse
+        house: updatedHouse,
       });
     } catch (error) {
       console.error("Update error:", error);
       res.status(500).json({
         message: "Error updating house",
-        error: error.message
+        error: error.message,
       });
     }
   }
-
   // Delete a  House by ID
   static async deleteHouse(req, res) {
     try {
@@ -232,7 +229,7 @@ class representativeController {
         return res.status(400).json({ message: "Missing representative ID" });
       }
 
-      if (!["draft", "published" , "under review"].includes(publishStatus)) {
+      if (!["draft", "published", "under review"].includes(publishStatus)) {
         return res.status(400).json({ message: "Invalid status" });
       }
 
