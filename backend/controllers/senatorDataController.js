@@ -58,23 +58,36 @@ class senatorDataController {
   }
 
   // Update senator data by ID
-  static async updateSenatorData(req, res) {
-    try {
-      const updatedSenatorData = await SenatorData.findByIdAndUpdate(
-        req.params.id,
-        req.body,
-        { new: true } // Return the updated document
-      );
+// controller/senatorDataController.js
 
-      if (!updatedSenatorData) {
-        return res.status(404).json({ message: 'Senator data not found' });
+static async updateSenatorData(req, res) {
+  try {
+    const { id } = req.params;
+    const { changedBy, ...updateFields } = req.body;
+
+    const updatedSenatorData = await SenatorData.findOneAndUpdate(
+      { _id: id },
+      updateFields,
+      {
+        new: true,
+        runValidators: true,
+        context: "query",
+        changedBy: changedBy||null, // ✅ Pass in explicitly for logging
       }
+    );
 
-      res.status(200).json(updatedSenatorData);
-    } catch (error) {
-      res.status(500).json({ message: 'Error updating senator data', error });
+    if (!updatedSenatorData) {
+      return res.status(404).json({ message: "Senator data not found" });
     }
+
+    res.status(200).json(updatedSenatorData);
+  } catch (error) {
+    console.error("Update error:", error);
+    res.status(500).json({ message: "Error updating senator data", error });
   }
+}
+
+
 
   // Delete senator data by ID
   static async deleteSenatorData(req, res) {

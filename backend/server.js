@@ -19,6 +19,7 @@ const houseRoute = require('./routes/representativeRoutes');
 const dummyDataRoute = require('./routes/demoRoutes');
 const getquorumRoute = require('./routes/getQuorumRoutes');
 const sendInviteRoute = require('./routes/inviteUserRoute');
+const  undoLastChange  = require('./routes/undoRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -44,7 +45,8 @@ app.use('/activity',activityRoute);
 app.use('/house',houseRoute);
 app.use('/houseData',houseDataRoute);
 app.use('/fetch-quorum',getquorumRoute);
-app.use('/dummy-data',dummyDataRoute);
+app.use('/dummy-data', dummyDataRoute);
+app.use('/undo',undoLastChange);
 
 
 app.get("/", (req, res) => {

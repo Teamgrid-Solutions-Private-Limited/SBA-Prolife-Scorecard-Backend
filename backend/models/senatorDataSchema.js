@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const applyChangeLogger = require('../utils/logChange');
 
 const SenatorDataSchema = new mongoose.Schema({
   senateId: { type: mongoose.Schema.Types.ObjectId, ref: 'senators' },
@@ -20,6 +21,9 @@ const SenatorDataSchema = new mongoose.Schema({
   ]
 },{timestamps: true});
 
-module.exports = mongoose.model('senator_datas', SenatorDataSchema);
 
 SenatorDataSchema.index({ senateId: 1, currentTerm: 1 });
+// Attach middleware
+applyChangeLogger(SenatorDataSchema, "senator_datas");
+
+module.exports = mongoose.model('senator_datas', SenatorDataSchema);
