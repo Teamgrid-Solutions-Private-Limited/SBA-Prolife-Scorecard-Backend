@@ -27,6 +27,9 @@ const RepresentativeSchema = new mongoose.Schema({
     ),
       default: {},
   },
+    previousState: { type: Object },
+  modifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
+  modifiedAt: Date,
 },{timestamps: true});
 
 module.exports = mongoose.model("representatives", RepresentativeSchema);
