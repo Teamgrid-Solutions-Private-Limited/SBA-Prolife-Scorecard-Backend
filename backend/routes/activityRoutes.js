@@ -25,4 +25,6 @@ router.patch(
   AC.bulkUpdateTrackActivities
 );
 
+// Add this route to your activity routes
+router.post('/discard/:id', AC.discardActivityChanges);
 module.exports = router;

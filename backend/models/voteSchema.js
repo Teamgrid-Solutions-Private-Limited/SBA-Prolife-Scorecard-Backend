@@ -32,6 +32,12 @@ const VoteSchema = new mongoose.Schema({
     ),
     default: {},
   },
-},{timestamps: true});
+  // New fields for discard functionality
+      previousState: { type: Object }, // Stores the document state before editing
+      modifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: "users" }, // Who made the changes
+      modifiedAt: Date, // When changes were made
+    },
+  { timestamps: true }
+);
 
 module.exports = mongoose.model("votes", VoteSchema);
