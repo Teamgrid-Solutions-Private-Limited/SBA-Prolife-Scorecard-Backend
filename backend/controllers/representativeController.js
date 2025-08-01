@@ -161,48 +161,133 @@ class representativeController {
 
   // Update a  House by ID
   static async updateHouse(req, res) {
-    try {
-      const houseId = req.params.id;
-      let updateData = req.body;
+  try {
+    const houseId = req.params.id;
+    let updateData = { ...req.body };
 
-      // Handle file upload
-      if (req.file) {
-        updateData.photo = req.file.filename;
-      }
-
-      // Parse the editedFields and fieldEditors if they were stringified
-      if (typeof updateData.editedFields === "string") {
-        updateData.editedFields = JSON.parse(updateData.editedFields);
-      }
-      if (typeof updateData.fieldEditors === "string") {
-        updateData.fieldEditors = JSON.parse(updateData.fieldEditors);
-      }
-
-      // Clear editedFields if publishing
-      if (updateData.publishStatus === "published") {
-        updateData.editedFields = [];
-      }
-
-      const updatedHouse = await House.findByIdAndUpdate(houseId, updateData, {
-        new: true,
-      });
-
-      if (!updatedHouse) {
-        return res.status(404).json({ message: "House not found" });
-      }
-
-      res.status(200).json({
-        message: "House updated successfully",
-        house: updatedHouse,
-      });
-    } catch (error) {
-      console.error("Update error:", error);
-      res.status(500).json({
-        message: "Error updating house",
-        error: error.message,
-      });
+    const existingHouse = await House.findById(houseId);
+    if (!existingHouse) {
+      return res.status(404).json({ message: "House not found" });
     }
+
+    // Safe check for req.user
+    const userId = req.user?._id || null;
+    updateData.modifiedBy = userId;
+    updateData.modifiedAt = new Date();
+
+    // Handle file upload
+    if (req.file) {
+      updateData.photo = req.file.filename;
+    }
+
+    // Parse editedFields and fieldEditors if needed
+    if (typeof updateData.editedFields === "string") {
+      updateData.editedFields = JSON.parse(updateData.editedFields);
+    }
+    if (typeof updateData.fieldEditors === "string") {
+      updateData.fieldEditors = JSON.parse(updateData.fieldEditors);
+    }
+
+    // Clear edits if publishing
+    if (updateData.publishStatus === "published") {
+      updateData.editedFields = [];
+      updateData.fieldEditors = {};
+    }
+
+    // Save current state to previousState
+    const currentHouse = await House.findById(houseId);
+    const representativeDataList = await RepresentativeData.find({ houseId }).lean();
+
+    if (currentHouse) {
+      const currentState = currentHouse.toObject();
+      delete currentState._id;
+      delete currentState.createdAt;
+      delete currentState.updatedAt;
+      delete currentState.__v;
+
+      currentState.representativeData = representativeDataList;
+      updateData.previousState = currentState;
+    }
+
+    const updatedHouse = await House.findByIdAndUpdate(houseId, updateData, {
+      new: true,
+    });
+
+    if (!updatedHouse) {
+      return res.status(404).json({ message: "House not found after update" });
+    }
+
+    res.status(200).json({
+      message: "House updated successfully",
+      house: updatedHouse,
+    });
+  } catch (error) {
+    console.error("Error updating house:", error);
+    res.status(500).json({
+      message: "Error updating house",
+      error: error.message,
+    });
   }
+}
+
+
+ static async discardHouseChanges(req, res) {
+  try {
+    const house = await House.findById(req.params.id);
+    if (!house) {
+      return res.status(404).json({ message: "House not found" });
+    }
+
+    if (!house.previousState) {
+      return res.status(400).json({ message: "No previous state available" });
+    }
+
+    // Destructure previous state
+    const {
+      _id,
+      createdAt,
+      updatedAt,
+      __v,
+      representativeData,
+      ...revertedData
+    } = house.previousState;
+
+    // Restore RepresentativeData
+    if (Array.isArray(representativeData)) {
+      // Delete current data
+      await RepresentativeData.deleteMany({ houseId: house._id });
+
+      // Re-create from snapshot
+      for (const data of representativeData) {
+        const { _id, createdAt, updatedAt, __v, ...cleanData } = data;
+        await RepresentativeData.create({ ...cleanData, houseId: house._id });
+      }
+    }
+
+    // Restore house document
+    const revertedHouse = await House.findByIdAndUpdate(
+      req.params.id,
+      {
+        ...revertedData,
+        previousState: null,
+      },
+      { new: true }
+    );
+
+    res.status(200).json({
+      message: "Changes discarded and representative data restored.",
+      house: revertedHouse,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Failed to discard changes",
+      error: error.message,
+    });
+  }
+}
+
+
+
   // Delete a  House by ID
   static async deleteHouse(req, res) {
     try {
