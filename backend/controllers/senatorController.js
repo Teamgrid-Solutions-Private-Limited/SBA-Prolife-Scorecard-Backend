@@ -2,6 +2,7 @@ const Senator = require("../models/senatorSchema");
 const SenatorData = require("../models/senatorDataSchema");
 const upload = require("../middlewares/fileUploads");
 
+
 class senatorController {
   // Create a new senator with photo upload
   static createSenator = async (req, res) => {
@@ -159,52 +160,73 @@ class senatorController {
   // Update a senator by ID
   // In senatorController.js
 
- static async updateSenator(req, res) {
-  try {
-    const senatorId = req.params.id;
-    let updateData = req.body;
+  static async updateSenator(req, res) {
+    try {
+      const senatorId = req.params.id;
+      let updateData = req.body;
 
-    // Handle file upload
-    if (req.file) {
-      updateData.photo = req.file.filename;
+      // Handle file upload
+      if (req.file) {
+        updateData.photo = req.file.filename;
+      }
+
+      // Parse the editedFields and fieldEditors if they were stringified
+      if (typeof updateData.editedFields === 'string') {
+        updateData.editedFields = JSON.parse(updateData.editedFields);
+      }
+
+      if (typeof updateData.fieldEditors === 'string') {
+        updateData.fieldEditors = JSON.parse(updateData.fieldEditors);
+      }
+
+      // Clear editedFields if publishing
+      if (updateData.publishStatus === 'published') {
+        updateData.editedFields = [];
+      }
+      const existingSenator = await Senator.findById(senatorId);
+      if (!existingSenator) {
+        return res.status(404).json({ message: 'Senator not found' });
+      }
+
+      // Save history BEFORE update
+      // const updatedHistory = await SenatorHistory.findOneAndUpdate(
+      //   { senatorId: existingSenator._id },
+      //   {
+      //     $push: {
+      //       history: {
+      //         oldData: existingSenator.toObject(),
+      //         actionType: 'update'
+      //       }
+      //     }
+      //   },
+      //   { upsert: true, new: true }
+      // );
+
+      //console.log("Updated Senator History:", updatedHistory);
+
+
+      const updatedSenator = await Senator.findByIdAndUpdate(
+        senatorId,
+        updateData,
+        { new: true }
+      );
+
+      if (!updatedSenator) {
+        return res.status(404).json({ message: "Senator not found" });
+      }
+
+      res.status(200).json({
+        message: "Senator updated successfully",
+        senator: updatedSenator
+      });
+    } catch (error) {
+      console.error("Update error:", error);
+      res.status(500).json({
+        message: "Error updating senator",
+        error: error.message
+      });
     }
-
-    // Parse the editedFields and fieldEditors if they were stringified
-    if (typeof updateData.editedFields === 'string') {
-      updateData.editedFields = JSON.parse(updateData.editedFields);
-    }
-    
-    if (typeof updateData.fieldEditors === 'string') {
-      updateData.fieldEditors = JSON.parse(updateData.fieldEditors);
-    }
-
-    // Clear editedFields if publishing
-    if (updateData.publishStatus === 'published') {
-      updateData.editedFields = [];
-    }
-
-    const updatedSenator = await Senator.findByIdAndUpdate(
-      senatorId,
-      updateData,
-      { new: true }
-    );
-
-    if (!updatedSenator) {
-      return res.status(404).json({ message: "Senator not found" });
-    }
-
-    res.status(200).json({
-      message: "Senator updated successfully",
-      senator: updatedSenator
-    });
-  } catch (error) {
-    console.error("Update error:", error);
-    res.status(500).json({ 
-      message: "Error updating senator",
-      error: error.message 
-    });
   }
-}
   // Delete a senator by ID
   static async deleteSenator(req, res) {
     try {
@@ -305,6 +327,39 @@ class senatorController {
       });
     }
   }
+
+  // Undo senator update
+  static async undoSenatorUpdate(req, res) {
+  try {
+    const senatorId = req.params.id;
+
+    // Find the latest oldData for this senator
+    const historyDoc = await SenatorHistory.findOne({ senatorId })
+      .sort({ 'history.timestamp': -1 }) // optional if timestamps inside `history`
+      .lean();
+
+    if (!historyDoc || !historyDoc.history.length) {
+      return res.status(404).json({ message: "No history found for this senator." });
+    }
+
+    const lastHistoryEntry = historyDoc.history[historyDoc.history.length - 1];
+
+    // Restore the senator with oldData
+    const restoredSenator = await Senator.findByIdAndUpdate(
+      senatorId,
+      lastHistoryEntry.oldData,
+      { new: true }
+    );
+
+    return res.status(200).json({
+      message: "Undo successful. Senator restored to previous state.",
+      restoredSenator
+    });
+  } catch (error) {
+    console.error("Undo error:", error);
+    return res.status(500).json({ message: "Failed to undo senator update." });
+  }
+}
 }
 
 module.exports = senatorController;
