@@ -202,7 +202,7 @@ class senatorController {
         currentState.senatorData = senatorDataList
         updateData.previousState = currentState;
       }
-
+console.log(senatorDataList);
       const updatedSenator = await Senator.findByIdAndUpdate(
         senatorId,
         updateData,
