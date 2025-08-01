@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+
 const activitySchema = new mongoose.Schema(
   {
     type: { type: String, enum: ["senate", "house"] },
@@ -36,6 +37,10 @@ const activitySchema = new mongoose.Schema(
       ),
       default: {},
     },
+    // New fields for discard functionality
+    previousState: { type: Object }, // Stores the document state before editing
+    modifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: "users" }, // Who made the changes
+    modifiedAt: Date, // When changes were made
   },
   { timestamps: true }
 );

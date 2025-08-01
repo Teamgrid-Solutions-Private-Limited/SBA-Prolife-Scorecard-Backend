@@ -1,16 +1,13 @@
 const Activity = require("../models/activitySchema");
 const upload = require("../middlewares/fileUploads");
+
 class activityController {
   // Create a new activity with file upload for readMore
   static async createActivity(req, res) {
-    // Use multer to handle the file upload
     upload.single("readMore")(req, res, async (err) => {
-      if (err) {
-        return res.status(400).json({ message: err.message });
-      }
+      if (err) return res.status(400).json({ message: err.message });
 
       try {
-        // Extract other fields from the body
         const {
           type,
           title,
@@ -23,39 +20,33 @@ class activityController {
           trackActivities,
         } = req.body;
 
-        // Get the uploaded file path (null if no file is uploaded)
         const readMore = req.file
           ? `/uploads/documents/${req.file.filename}`
           : null;
 
-        // Accept editedFields from the request, default to [] if not provided
         const editedFields = req.body.editedFields || [];
-        // Create a new vote document
+
         const newActivity = new Activity({
           type,
           title,
           shortDesc,
           longDesc,
           rollCall,
-          readMore, // Attach the file path if a file is uploaded
+          readMore,
           date,
           congress,
           termId,
-          trackActivities, // Default status
+          trackActivities,
           status: "draft",
           editedFields,
         });
 
-        // Save the new vote to the database
         await newActivity.save();
 
-        // Send a successful response with the created vote data
-        res
-          .status(201)
-          .json({
-            message: "Activity created successfully",
-            info: newActivity,
-          });
+        res.status(201).json({
+          message: "Activity created successfully",
+          info: newActivity,
+        });
       } catch (error) {
         res
           .status(500)
@@ -64,7 +55,7 @@ class activityController {
     });
   }
 
-  // Get all votes with populated termId
+  // Get all activities
   static async getAllActivity(req, res) {
     try {
       const activity = await Activity.find().populate("termId");
@@ -74,115 +65,181 @@ class activityController {
     }
   }
 
-  // Get a vote by ID with populated termId
+  // Get a specific activity by ID
   static async getActivityById(req, res) {
     try {
       const activity = await Activity.findById(req.params.id).populate(
         "termId"
       );
-      if (!activity) {
-        return res.status(404).json({ message: "activity not found" });
-      }
-      // Always return editedFields in the response
+      if (!activity)
+        return res.status(404).json({ message: "Activity not found" });
+
       res.status(200).json(activity);
     } catch (error) {
       res.status(500).json({ message: "Error retrieving activity", error });
     }
   }
 
-  // Update a vote by ID
+  // Update activity with file and optional discard logic
   static async updateActivity(req, res) {
-    try {
-      // Use multer to handle file upload
-      upload.single("readMore")(req, res, async (err) => {
-        if (err) {
-          return res.status(400).json({ message: err.message });
-        }
+    upload.single("readMore")(req, res, async (err) => {
+      if (err) return res.status(400).json({ message: err.message });
 
+      try {
         const activityID = req.params.id;
-        let updateData = { ...req.body }; // Capture other fields from the request
+        let updateData = { ...req.body };
 
-        // If a new file is uploaded for 'readMore', save the file path
+        //  Safe check for req.user
+        const userId = req.user?._id || null;
+        updateData.modifiedBy = userId;
+        updateData.modifiedAt = new Date();
+
         if (req.file) {
           updateData.readMore = `/uploads/${req.file.filename}`;
         }
 
-        // Accept editedFields from the request if provided
+        // Handle discard logic
+        if (req.body.discardChanges === "true") {
+          const activity = await Activity.findById(activityID);
+          if (!activity?.previousState) {
+            return res
+              .status(400)
+              .json({ message: "No previous state available to discard to" });
+          }
+
+          const { _id, createdAt, updatedAt, ...previousData } =
+            activity.previousState;
+
+          const revertedActivity = await Activity.findByIdAndUpdate(
+            activityID,
+            {
+              ...previousData,
+              modifiedBy: userId,
+              modifiedAt: new Date(),
+              previousState: null,
+            },
+            { new: true }
+          ).populate("termId");
+
+          return res.status(200).json({
+            message: "Changes discarded successfully",
+            info: revertedActivity,
+          });
+        }
+
+        // Save current state to `previousState`
+        const currentActivity = await Activity.findById(activityID);
+        if (currentActivity) {
+          const currentState = currentActivity.toObject();
+          delete currentState._id;
+          delete currentState.createdAt;
+          delete currentState.updatedAt;
+          delete currentState.__v;
+          updateData.previousState = currentState;
+        }
+
+        // Optional: editedFields
         if (req.body.editedFields) {
           updateData.editedFields = req.body.editedFields;
         }
-        
-         if (updateData.status === 'published') {
-        updateData.editedFields = [];
-      }
 
-        // Update the vote in the database
+        // Clear fields if publishing
+        if (updateData.status === "published") {
+          updateData.editedFields = [];
+          updateData.fieldEditors = {};
+        }
+
         const updatedActivity = await Activity.findByIdAndUpdate(
           activityID,
           updateData,
           { new: true }
-        ).populate("termId"); // Populate the referenced term (optional)
+        ).populate("termId");
 
-        if (!updatedActivity) {
+        if (!updatedActivity)
           return res.status(404).json({ message: "Activity not found" });
-        }
 
-        // Send the updated vote in the response
+        res.status(200).json({
+          message: "Activity updated successfully",
+          info: updatedActivity,
+        });
+      } catch (error) {
         res
-          .status(200)
-          .json({
-            message: "Activity updated successfully",
-            info: updatedActivity,
-          });
-      });
+          .status(500)
+          .json({ message: "Error updating Activity", error: error.message });
+      }
+    });
+  }
+
+  // Discard changes (dedicated endpoint)
+  // In activityController.js
+  static async discardActivityChanges(req, res) {
+    try {
+      const activity = await Activity.findById(req.params.id);
+      if (!activity) {
+        return res.status(404).json({ message: "Activity not found" });
+      }
+
+      if (!activity.previousState) {
+        return res.status(400).json({ message: "No previous state available" });
+      }
+
+      // Revert to previous state while preserving certain fields
+      const { _id, createdAt, updatedAt, __v, ...revertedData } =
+        activity.previousState;
+
+      const revertedActivity = await Activity.findByIdAndUpdate(
+        req.params.id,
+        {
+          ...revertedData,
+          previousState: null, // Clear after discard
+        },
+        { new: true }
+      );
+
+      res.status(200).json(revertedActivity);
     } catch (error) {
-      res.status(500).json({ message: "Error updating Activity", error });
+      res.status(500).json({
+        message: "Failed to discard changes",
+        error: error.message,
+      });
     }
   }
 
-  // Delete a vote by ID
+  // Delete an activity
   static async deleteActivity(req, res) {
     try {
       const deletedActivity = await Activity.findByIdAndDelete(req.params.id);
+      if (!deletedActivity)
+        return res.status(404).json({ message: "Activity not found" });
 
-      if (!deletedActivity) {
-        return res.status(404).json({ message: "activity not found" });
-      }
-
-      res.status(200).json({ message: "activity deleted successfully" });
+      res.status(200).json({ message: "Activity deleted successfully" });
     } catch (error) {
       res.status(500).json({ message: "Error deleting activity", error });
     }
   }
 
+  // Update activity status
   static async updateActivityStatus(req, res) {
     try {
       const { status } = req.body;
       const { id } = req.params;
 
-      if (!id) {
-        return res.status(400).json({ message: "Missing activity ID" });
-      }
-
       if (!["draft", "published", "under review"].includes(status)) {
         return res.status(400).json({ message: "Invalid status" });
       }
 
-      // Always clear editedFields if publishing, regardless of request body
       const updateObj = { status };
-      if (status === 'published') {
+      if (status === "published") {
         updateObj.editedFields = [];
       }
 
-      const updatedActivity = await Activity.findByIdAndUpdate(
-        id,
-        updateObj,
-        { new: true, runValidators: true }
-      );
+      const updatedActivity = await Activity.findByIdAndUpdate(id, updateObj, {
+        new: true,
+        runValidators: true,
+      });
 
-      if (!updatedActivity) {
+      if (!updatedActivity)
         return res.status(404).json({ message: "Activity not found" });
-      }
 
       return res.status(200).json({
         message: "Status updated successfully",
@@ -196,14 +253,13 @@ class activityController {
     }
   }
 
-  // Controller to bulk PATCH trackActivities
+  // Bulk update trackActivities
   static async bulkUpdateTrackActivities(req, res) {
     try {
       const { ids, trackActivities } = req.body;
 
-      // Validate input
       if (!Array.isArray(ids) || ids.length === 0) {
-        return res.status(400).json({ message: 'No activity IDs provided' });
+        return res.status(400).json({ message: "No activity IDs provided" });
       }
 
     const validStatuses = ['pending', 'completed', 'failed'];
@@ -211,30 +267,28 @@ class activityController {
       return res.status(400).json({ message: 'Invalid trackActivities value' });
     }
 
-      // Bulk update
       const result = await Activity.updateMany(
         { _id: { $in: ids } },
         { $set: { trackActivities } }
       );
 
       if (result.modifiedCount === 0) {
-        return res.status(404).json({ message: 'No activities were updated' });
+        return res.status(404).json({ message: "No activities were updated" });
       }
 
       const updatedActivities = await Activity.find({ _id: { $in: ids } });
 
       res.status(200).json({
         message: `${result.modifiedCount} activities updated successfully`,
-        updatedActivities
+        updatedActivities,
       });
     } catch (error) {
       res.status(500).json({
-        message: 'Error bulk updating activities',
-        error: error.message
+        message: "Error bulk updating activities",
+        error: error.message,
       });
     }
   }
-
 }
 
 module.exports = activityController;

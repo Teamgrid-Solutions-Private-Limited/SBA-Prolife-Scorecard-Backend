@@ -154,12 +154,54 @@ class voteController {
         if (req.file) {
           updateData.readMore = `/uploads/${req.file.filename}`;
         }
+
+        // Handle discard logic
+        if (req.body.discardChanges === "true") {
+          const vote = await Vote.findById(voteID);
+          if (!vote?.previousState) {
+            return res
+              .status(400)
+              .json({ message: "No previous state available to discard to" });
+          }
+
+          const { _id, createdAt, updatedAt, ...previousData } =
+            vote.previousState;
+
+          const revertedVote = await Vote.findByIdAndUpdate(
+            voteID,
+            {
+              ...previousData,
+              modifiedBy: userId,
+              modifiedAt: new Date(),
+              previousState: null,
+            },
+            { new: true }
+          ).populate("termId");
+
+          return res.status(200).json({
+            message: "Changes discarded successfully",
+            info: revertedVote,
+          });
+        }
+
+        // Save current state to `previousState`
+        const currentVote = await Vote.findById(voteID);
+        if (currentVote) {
+          const currentState = currentVote.toObject();
+          delete currentState._id;
+          delete currentState.createdAt;
+          delete currentState.updatedAt;
+          delete currentState.__v;
+          updateData.previousState = currentState;
+        }
+
         if (req.body.editedFields) {
           updateData.editedFields = req.body.editedFields;
         }
 
         if (updateData.status === "published") {
           updateData.editedFields = [];
+          updateData.fieldEditors = {};
         }
 
         // Update the vote in the database
@@ -180,6 +222,43 @@ class voteController {
       res.status(500).json({ message: "Error updating vote", error });
     }
   }
+
+  static async discardVoteChanges(req, res) {
+    try {
+      const vote = await Vote.findById(req.params.id);
+      if (!vote) {
+        return res.status(404).json({ message: "Vote not found" });
+      }
+
+      if (!vote.previousState) {
+        return res.status(400).json({ message: "No previous state available" });
+      }
+
+      // Revert to previous state while preserving certain fields
+      const { _id, createdAt, updatedAt, __v, ...revertedData } =
+        vote.previousState;
+
+      const revertedVote = await Vote.findByIdAndUpdate(
+        req.params.id,
+        {
+          ...revertedData,
+          previousState: null, // Clear after discard
+        },
+        { new: true }
+      );
+
+      res.status(200).json(revertedVote);
+    } catch (error) {
+      res.status(500).json({
+        message: "Failed to discard changes",
+        error: error.message,
+      });
+    }
+  }
+
+  
+       
+        
 
   // Delete a vote by ID
   static async deleteVote(req, res) {
@@ -254,12 +333,10 @@ class voteController {
         vote: updatedVote,
       });
     } catch (error) {
-      res
-        .status(500)
-        .json({
-          message: "Error toggling publish status",
-          error: error.message,
-        });
+      res.status(500).json({
+        message: "Error toggling publish status",
+        error: error.message,
+      });
     }
   }
 }
