@@ -190,19 +190,40 @@ class senatorController {
       }
 
       // Save current state to previousState
-      const currentSenator = await Senator.findById(senatorId);
-      // Fetch all senatorData for this senator
-      const senatorDataList = await SenatorData.find({ senateId: senatorId }).lean();
-      if (currentSenator) {
-        const currentState = currentSenator.toObject();
+      const senator = await Senator.findById(senatorId);
+      const canTakeSnapshot =
+        !senator.previousState ||                     // No snapshot yet
+        Object.keys(senator.previousState).length === 0 ||  // Empty
+        senator.snapshotSource === "edited";          // Already published, normal update
+
+      if (canTakeSnapshot) {
+        const senatorDataList = await SenatorData.find({ senateId: senatorId }).lean();
+        const currentState = senator.toObject();
         delete currentState._id;
         delete currentState.createdAt;
         delete currentState.updatedAt;
         delete currentState.__v;
-        currentState.senatorData = senatorDataList
+        delete currentState.previousState;
+        currentState.senatorData = senatorDataList;
+
         updateData.previousState = currentState;
+        updateData.snapshotSource = "edited";
+      } else if (senator.snapshotSource === "deleted_pending_update") {
+        // Just clear the flag without updating previousState
+        updateData.snapshotSource = "edited"; // allow future updates to overwrite
       }
-console.log(senatorDataList);
+      // const currentSenator = await Senator.findById(senatorId);
+      // Fetch all senatorData for this senator
+      // const senatorDataList = await SenatorData.find({ senateId: senatorId }).lean();
+      // if (currentSenator) {
+      //   const currentState = currentSenator.toObject();
+      //   delete currentState._id;
+      //   delete currentState.createdAt;
+      //   delete currentState.updatedAt;
+      //   delete currentState.__v;
+      //   currentState.senatorData = senatorDataList
+      //   updateData.previousState = currentState;
+      // }
       const updatedSenator = await Senator.findByIdAndUpdate(
         senatorId,
         updateData,
@@ -425,55 +446,55 @@ console.log(senatorDataList);
       });
     }
   }
-  
-//   static async discardSenatorChanges(req, res) {
-//   try {
-//     const senator = await Senator.findById(req.params.id);
-//     if (!senator) {
-//       return res.status(404).json({ message: "Senator not found" });
-//     }
 
-//     if (!senator.previousState) {
-//       return res.status(400).json({ message: "No previous state available" });
-//     }
+  //   static async discardSenatorChanges(req, res) {
+  //   try {
+  //     const senator = await Senator.findById(req.params.id);
+  //     if (!senator) {
+  //       return res.status(404).json({ message: "Senator not found" });
+  //     }
 
-//     // Restore senator fields (except _id, createdAt, updatedAt, __v)
-//     const { _id, createdAt, updatedAt, __v, senatorData, ...revertedData } = senator.previousState;
+  //     if (!senator.previousState) {
+  //       return res.status(400).json({ message: "No previous state available" });
+  //     }
 
-//     // Restore all related SenatorData
-//     if (Array.isArray(senatorData)) {
-//       // Remove all current SenatorData for this senator
-//       await SenatorData.deleteMany({ senateId: senator._id });
+  //     // Restore senator fields (except _id, createdAt, updatedAt, __v)
+  //     const { _id, createdAt, updatedAt, __v, senatorData, ...revertedData } = senator.previousState;
 
-//       // Re-create each SenatorData from the snapshot
-//       for (const data of senatorData) {
-//         // Remove _id and timestamps to avoid duplicate key errors
-//         const { _id, createdAt, updatedAt, __v, ...cleanData } = data;
-//         await SenatorData.create({ ...cleanData, senateId: senator._id });
-//       }
-//     }
+  //     // Restore all related SenatorData
+  //     if (Array.isArray(senatorData)) {
+  //       // Remove all current SenatorData for this senator
+  //       await SenatorData.deleteMany({ senateId: senator._id });
 
-//     // Restore senator document
-//     const revertedSenator = await Senator.findByIdAndUpdate(
-//       req.params.id,
-//       {
-//         ...revertedData,
-//         previousState: null, // Clear after discard
-//       },
-//       { new: true }
-//     );
+  //       // Re-create each SenatorData from the snapshot
+  //       for (const data of senatorData) {
+  //         // Remove _id and timestamps to avoid duplicate key errors
+  //         const { _id, createdAt, updatedAt, __v, ...cleanData } = data;
+  //         await SenatorData.create({ ...cleanData, senateId: senator._id });
+  //       }
+  //     }
 
-//     res.status(200).json({
-//       message: "Changes discarded and senator data restored.",
-//       senator: revertedSenator,
-//     });
-//   } catch (error) {
-//     res.status(500).json({
-//       message: "Failed to discard changes",
-//       error: error.message,
-//     });
-//   }
-// }
+  //     // Restore senator document
+  //     const revertedSenator = await Senator.findByIdAndUpdate(
+  //       req.params.id,
+  //       {
+  //         ...revertedData,
+  //         previousState: null, // Clear after discard
+  //       },
+  //       { new: true }
+  //     );
+
+  //     res.status(200).json({
+  //       message: "Changes discarded and senator data restored.",
+  //       senator: revertedSenator,
+  //     });
+  //   } catch (error) {
+  //     res.status(500).json({
+  //       message: "Failed to discard changes",
+  //       error: error.message,
+  //     });
+  //   }
+  // }
 
 }
 
