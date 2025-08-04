@@ -41,4 +41,6 @@ router.post('/fetch-sponsors', async (req, res) => {
   }
 });
 
+// Add this route to your activity routes
+router.post('/discard/:id', AC.discardActivityChanges);
 module.exports = router;

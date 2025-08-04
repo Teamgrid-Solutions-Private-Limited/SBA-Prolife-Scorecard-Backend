@@ -25,4 +25,6 @@ router.patch('/votes/status/:id', VoteController.updateVoteStatus);
 //Patch bulk-update sba-position
 router.put('/update/bulk-update-sbaPosition', VoteController.bulkUpdateSbaPosition);
 
+router.post('/discard/:id', VoteController.discardVoteChanges);
+
 module.exports = router;

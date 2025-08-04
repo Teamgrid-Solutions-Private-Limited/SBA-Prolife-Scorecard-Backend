@@ -28,6 +28,13 @@ const SenatorSchema = new mongoose.Schema({
       ),
       default: {},
   },
+   // Add these fields for discard functionality
+  previousState: { type: Object },
+  snapshotSource: {
+  type: String, // 'deleted' | 'edited'
+  enum: ['deleted_pending_update', 'edited'],
+},
+  modifiedAt: Date,
 },{timestamps: true});
 
 module.exports = mongoose.model("senators", SenatorSchema);
