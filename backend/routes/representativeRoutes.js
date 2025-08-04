@@ -35,5 +35,6 @@ router.get('/frontend/house/view', protectedKey, RC.AllHouse);
 router.get('/frontend/house/viewId/:id', protectedKey, RC.HouseById);
 
 router.patch("/representatives/status/:id", RC.updateRepresentativeStatus);
+router.post('/discard/:id', RC.discardHouseChanges);
 
 module.exports = router;

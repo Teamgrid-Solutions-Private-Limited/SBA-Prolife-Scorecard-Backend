@@ -1,4 +1,5 @@
 const HouseData = require("../models/representativeDataSchema");
+const House = require("../models/representativeSchema");
 
 class houseDataController {
   // Create a new house data
@@ -118,11 +119,37 @@ class houseDataController {
   // Delete house data by ID
   static async deleteHouseData(req, res) {
     try {
-      const deletedHouseData = await HouseData.findByIdAndDelete(req.params.id);
+      const deletedHouseData = await HouseData.findById(req.params.id);
 
       if (!deletedHouseData) {
         return res.status(404).json({ message: "house data not found" });
       }
+          // 2. Find the parent senator
+      const houseId = deletedHouseData.houseId;
+      const house = await House.findById(houseId);
+      if (!house) {
+        return res.status(404).json({ message: "House not found" });
+      }
+ 
+      // 3. Fetch all current SenatorData for this senator (before deletion)
+      const RepresentativeDataList = await HouseData.find({houseId: houseId }).lean();
+ 
+      // 4. Save snapshot to previousState
+      const currentState = house.toObject();
+      delete currentState._id;
+      delete currentState.createdAt;
+      delete currentState.updatedAt;
+      delete currentState.__v;
+      delete currentState.previousState; // <-- Prevents nesting!
+      currentState.representativeData= RepresentativeDataList;
+      await House.findByIdAndUpdate(houseId, {
+        previousState: currentState,
+        snapshotSource: "deleted_pending_update",
+      });
+      console.log("House previousState before deletion:", currentState.houseData); // -- Add this line
+ 
+      // 5. Now delete the HouseData
+      await HouseData.findByIdAndDelete(req.params.id);
 
       res.status(200).json({ message: "house data deleted successfully" });
     } catch (error) {
