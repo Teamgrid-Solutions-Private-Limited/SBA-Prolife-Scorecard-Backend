@@ -13,8 +13,24 @@ const VoteSchema = new mongoose.Schema({
   sbaPosition: { type: String, enum: ["yes", "no"], default: "no" },
   status: {
     type: String,
-    enum: ["draft", "published", "reviewed"],
+    enum: ["draft", "published", "under review"],
     default: "draft",
+  },
+  editedFields: {
+    type: [String],
+    default: [],
+  },
+  fieldEditors: {
+    type: Map,
+    of: new mongoose.Schema(
+      {
+        editorId: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
+        editorName: String,
+        editedAt: { type: Date, default: Date.now },
+      },
+      { _id: false }
+    ),
+    default: {},
   },
 },{timestamps: true});
 

@@ -34,4 +34,5 @@ router.get('/frontend/senators/viewId/:id', protectedKey, SenatorController.Sena
 
 router.put("/senators/status/:id", SenatorController.updateSenatorStatus);
 
+
 module.exports = router;
