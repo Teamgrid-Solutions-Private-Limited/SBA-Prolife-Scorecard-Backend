@@ -195,19 +195,43 @@ class representativeController {
     }
 
     // Save current state to previousState
-    const currentHouse = await House.findById(houseId);
-    const representativeDataList = await RepresentativeData.find({ houseId }).lean();
 
-    if (currentHouse) {
-      const currentState = currentHouse.toObject();
-      delete currentState._id;
-      delete currentState.createdAt;
-      delete currentState.updatedAt;
-      delete currentState.__v;
+    const house = await House.findById(houseId);
+      const canTakeSnapshot =
+        !house.previousState ||                     // No snapshot yet
+        Object.keys(house.previousState).length === 0 ||  // Empty
+        house.snapshotSource === "edited";          // Already published, normal update
+ 
+      if (canTakeSnapshot) {
+        const representativeDataList = await RepresentativeData.find({ houseId: houseId }).lean();
+        const currentState = house.toObject();
+        delete currentState._id;
+        delete currentState.createdAt;
+        delete currentState.updatedAt;
+        delete currentState.__v;
+        delete currentState.previousState;
+        currentState.representativeData = representativeDataList;
+ 
+        updateData.previousState = currentState;
+        updateData.snapshotSource = "edited";
+      } else if (house.snapshotSource === "deleted_pending_update") {
+        // Just clear the flag without updating previousState
+        updateData.snapshotSource = "edited"; // allow future updates to overwrite
+      }
 
-      currentState.representativeData = representativeDataList;
-      updateData.previousState = currentState;
-    }
+    // const currentHouse = await House.findById(houseId);
+    // const representativeDataList = await RepresentativeData.find({ houseId }).lean();
+
+    // if (currentHouse) {
+    //   const currentState = currentHouse.toObject();
+    //   delete currentState._id;
+    //   delete currentState.createdAt;
+    //   delete currentState.updatedAt;
+    //   delete currentState.__v;
+
+    //   currentState.representativeData = representativeDataList;
+    //   updateData.previousState = currentState;
+    // }
 
     const updatedHouse = await House.findByIdAndUpdate(houseId, updateData, {
       new: true,

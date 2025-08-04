@@ -30,6 +30,10 @@ const RepresentativeSchema = new mongoose.Schema({
     previousState: { type: Object },
   modifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
   modifiedAt: Date,
+  snapshotSource: {
+  type: String, // 'deleted' | 'edited'
+  enum: ['deleted_pending_update', 'edited'],
+},
 },{timestamps: true});
 
 module.exports = mongoose.model("representatives", RepresentativeSchema);
