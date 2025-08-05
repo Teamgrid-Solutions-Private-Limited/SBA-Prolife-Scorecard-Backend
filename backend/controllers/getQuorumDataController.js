@@ -1,12 +1,15 @@
 require("dotenv").config();
 const axios = require("axios");
 const cacheConfig = require("../config/cache-config");
-
+const activitySchema = require("../models/activitySchema");
 const Senator = require("../models/senatorSchema");
 const Representative = require("../models/representativeSchema");
 const Bill = require("../models/voteSchema");
 const SenatorData = require("../models/senatorDataSchema");
 const RepresentativeData = require("../models/representativeDataSchema");
+const ActivityController = require("./activityController");
+
+
 
 // Circuit breaker implementation
 class CircuitBreaker {
@@ -703,45 +706,138 @@ class QuorumDataController {
         }
     }
 
-    async saveBills(req, res) {
-        try {
-            const { bills } = req.body;
-            if (!Array.isArray(bills) || !bills.length) return res.status(400).json({ error: "Invalid bills" });
+    // async saveBills(req, res) {
+    //     try {
+    //         const { bills } = req.body;
+    //         if (!Array.isArray(bills) || !bills.length) return res.status(400).json({ error: "Invalid bills" });
 
-            const { model, idField } = QuorumDataController.MODELS.bills;
+    //         const { model, idField } = QuorumDataController.MODELS.bills;
 
-            // Save bills (upsert) - do this in parallel for better performance
-            const savedPromises = bills.map(bill => 
-                model.updateOne({ [idField]: bill[idField] }, { $set: bill }, { upsert: true })
-                    .then(() => model.findOne({ [idField]: bill[idField] }))
-            );
+    //         // Save bills (upsert) - do this in parallel for better performance
+    //         const savedPromises = bills.map(bill => 
+    //             model.updateOne({ [idField]: bill[idField] }, { $set: bill }, { upsert: true })
+    //                 .then(() => model.findOne({ [idField]: bill[idField] }))
+    //         );
             
-            const saved = await Promise.all(savedPromises);
+    //         const saved = await Promise.all(savedPromises);
 
-            // Respond immediately
-            res.json({ message: "Bills saved. Summary and vote score updates running in background.", data: saved });
+    //         // Respond immediately
+    //         res.json({ message: "Bills saved. Summary and vote score updates running in background.", data: saved });
 
-            // Background: update summaries and vote scores (no await)
-            (async () => {
-                try {
-                    await this.updateBillShortDesc(saved);
+    //         // Background: update summaries and vote scores (no await)
+    //         (async () => {
+    //             try {
+    //                 await this.updateBillShortDesc(saved);
                     
-                    // Process vote scores in chunks to avoid overwhelming the API
-                    const CHUNK_SIZE = cacheConfig.BATCH_SIZES.VOTE_UPDATES;
-                    for (let i = 0; i < saved.length; i += CHUNK_SIZE) {
-                        const chunk = saved.slice(i, i + CHUNK_SIZE);
-                        await Promise.all(chunk.map(bill => this.updateVoteScore(bill.quorumId)));
-                    }
-                } catch (err) {
-                    console.error("Background update error:", err);
-                }
-            })();
+    //                 // Process vote scores in chunks to avoid overwhelming the API
+    //                 const CHUNK_SIZE = cacheConfig.BATCH_SIZES.VOTE_UPDATES;
+    //                 for (let i = 0; i < saved.length; i += CHUNK_SIZE) {
+    //                     const chunk = saved.slice(i, i + CHUNK_SIZE);
+    //                     await Promise.all(chunk.map(bill => this.updateVoteScore(bill.quorumId)));
+    //                 }
+    //             } catch (err) {
+    //                 console.error("Background update error:", err);
+    //             }
+    //         })();
 
-        } catch (err) {
-            console.error("Save bills error:", err);
-            res.status(500).json({ error: "Failed to store bills" });
-        }
+    //     } catch (err) {
+    //         console.error("Save bills error:", err);
+    //         res.status(500).json({ error: "Failed to store bills" });
+    //     }
+    // }
+    
+    async saveBills(req, res) {
+  try {
+    const { bills } = req.body;
+    if (!Array.isArray(bills) || bills.length === 0) {
+      return res.status(400).json({ error: "Invalid bills" });
     }
+
+    const { model, idField } = QuorumDataController.MODELS.bills;
+
+    // Save bills (upsert)
+    const savedPromises = bills.map(bill =>
+      model
+        .updateOne({ [idField]: bill[idField] }, { $set: bill }, { upsert: true })
+        .then(() => model.findOne({ [idField]: bill[idField] }))
+    );
+
+    const saved = await Promise.all(savedPromises);
+
+    // Respond immediately
+    res.json({
+      message: "Bills saved. Cosponsorship & vote updates running in background.",
+      data: saved
+    });
+
+    // Background processing
+    (async () => {
+      try {
+        await this.updateBillShortDesc(saved);
+
+        // Vote updates in chunks
+        const CHUNK_SIZE = cacheConfig.BATCH_SIZES.VOTE_UPDATES;
+        for (let i = 0; i < saved.length; i += CHUNK_SIZE) {
+          const chunk = saved.slice(i, i + CHUNK_SIZE);
+          await Promise.all(chunk.map(bill => this.updateVoteScore(bill.quorumId)));
+        }
+
+        // Cosponsorship fetch loop
+        for (const bill of saved) {
+          try {
+            console.log(`→ Fetching cosponsors for bill ${bill.quorumId} (${bill.title})...`);
+
+         const introducedDate = bill.date ? new Date(bill.date) : new Date();
+const introduced = introducedDate.toISOString();
+
+// 🧠 Correct Congress number calculation
+const year = introducedDate.getUTCFullYear();
+const congress = String(Math.floor((year - 1789) / 2) + 1);
+
+
+            // ⏭️ Check for existing activities
+            const existing = await activitySchema.find({
+              title: bill.title,
+              date: introduced,
+              congress
+            });
+
+            if (existing.length > 0) {
+              console.log(`⏭️ Skipping cosponsorship fetch for bill ${bill.quorumId} — already has ${existing.length} activity(ies).`);
+              continue;
+            }
+
+            console.log("🚧 Cosponsorship input check:", {
+              billId: String(bill.quorumId),
+              title: String(bill.title || "Untitled Bill"),
+              introduced,
+              congress
+            });
+
+            await ActivityController.fetchAndCreateFromCosponsorships(
+              String(bill.quorumId),
+              String(bill.title || "Untitled Bill"),
+              introduced,
+              congress
+              );
+               // 🧠 Auto-assign activity score to matching Senator/Rep
+    await ActivityController.updateActivityScoreFromCosponsorships(String(bill.quorumId));
+
+          } catch (err) {
+            console.warn(`❌ Cosponsorship fetch failed for ${bill.quorumId}:`, err.message);
+          }
+        }
+      } catch (err) {
+        console.error("Background update error:", err);
+      }
+    })();
+
+  } catch (err) {
+    console.error("Save bills error:", err);
+    res.status(500).json({ error: "Failed to store bills" });
+  }
+}
+
 
     async updateBillShortDesc(bills) {
         const { model, idField } = QuorumDataController.MODELS.bills;
@@ -845,113 +941,12 @@ class QuorumDataController {
             console.error("Vote score update failed:", err.message);
         }
     }
-async  updateSponsorActivityScore(quorumId) {
-  try {
-    // 1. Fetch cosponsors
-    const res = await axios.get(process.env.SPONSOR_API_URL, {
-      params: {
-        api_key: process.env.QUORUM_API_KEY,
-        username: process.env.QUORUM_USERNAME,
-        bill__in: quorumId,
-      },
-    });
 
-    const sponsors = res.data?.objects || [];
-    if (!sponsors.length) return;
 
-    const sponsorIds = sponsors.map((s) => s.id?.toString()).filter(Boolean);
 
-    // 2. Fetch matching senators and representatives
-    const [senators, reps] = await Promise.all([
-      Senator.find({ senatorId: { $in: sponsorIds } }),
-      Representative.find({ repId: { $in: sponsorIds } }),
-    ]);
 
-    const senatorMap = Object.fromEntries(senators.map((s) => [s.senatorId, s]));
-    const repMap = Object.fromEntries(reps.map((r) => [r.repId, r]));
 
-    if (!Object.keys(senatorMap).length && !Object.keys(repMap).length) return;
 
-    // 3. Check if activity already exists or not
-    let activity = await Activity.findOne({ quorumId });
-
-    // 3a. If not exists, fetch bill details and create it
-    if (!activity) {
-      const billRes = await axios.get(process.env.BILL_DETAIL_API_URL, {
-        params: {
-          api_key: process.env.QUORUM_API_KEY,
-          username: process.env.QUORUM_USERNAME,
-          id: quorumId,
-        },
-      });
-
-      const billData = billRes.data?.objects?.[0];
-      if (!billData) return;
-
-      const title = billData.title || "Untitled Bill";
-      const date = billData.introduced_date ? new Date(billData.introduced_date) : new Date();
-      const type = billData.bill_type === "senate_bill" ? "senate" : "house";
-
-      activity = await Activity.create({
-        quorumId,
-        title,
-        date,
-        type,
-        trackActivities: "completed",
-        status: "published",
-      });
-    }
-
-    // 4. Build activity score updates
-    const updates = [];
-
-    for (const sponsor of sponsors) {
-      const sponsorId = sponsor.id?.toString();
-      const scoreEntry = { activityId: activity._id, score: "yea" };
-
-      if (senatorMap[sponsorId]) {
-        updates.push({
-          model: SenatorData,
-          filter: {
-            senateId: senatorMap[sponsorId]._id,
-            "activitiesScore.activityId": { $ne: activity._id },
-          },
-          update: {
-            $push: { activitiesScore: scoreEntry },
-          },
-        });
-      }
-
-      if (repMap[sponsorId]) {
-        updates.push({
-          model: RepresentativeData,
-          filter: {
-            houseId: repMap[sponsorId]._id,
-            "activitiesScore.activityId": { $ne: activity._id },
-          },
-          update: {
-            $push: { activitiesScore: scoreEntry },
-          },
-        });
-      }
-    }
-
-    // 5. Execute updates in batches
-    const BATCH_SIZE = 50;
-    for (let i = 0; i < updates.length; i += BATCH_SIZE) {
-      const batch = updates.slice(i, i + BATCH_SIZE);
-      await Promise.all(
-        batch.map(({ model, filter, update }) =>
-          model.updateOne(filter, update, { upsert: true })
-        )
-      );
-    }
-
-    console.log(`✅ Activity score updated for bill quorumId=${quorumId}`);
-  } catch (err) {
-    console.error("❌ updateSponsorActivityScore failed:", err.message);
-  }
-}
     // Method to check data status
     async getDataStatus(req, res) {
         try {

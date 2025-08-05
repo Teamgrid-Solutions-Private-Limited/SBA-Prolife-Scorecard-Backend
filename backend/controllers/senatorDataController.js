@@ -169,29 +169,42 @@ static async updateSenatorData(req, res) {
   // }
 
   // Get senator data by senator ID with populated termId and senatorId
-  static async getSenatorDataBySenatorId(req, res) {
-    try {
-      const senateId = req.params.id;
-      const senatorData = await SenatorData.find({ senateId })
-        .populate("termId")
-        .populate("senateId")
-        .populate("votesScore.voteId")
-        .populate("activitiesScore.activityId");
+ static async getSenatorDataBySenatorId(req, res) {
+  try {
+    const senateId = req.params.id;
+    const senatorData = await SenatorData.find({ senateId })
+      .sort({ createdAt: 1 })
+      .populate("termId")
+      .populate("senateId")
+      .populate("votesScore.voteId")
+      .populate("activitiesScore.activityId")
+      .lean(); // Use lean() so you can mutate the returned data
 
-      if (!senatorData) {
-        return res.status(404).json({ message: "Senator data not found" });
-      }
-
-      res
-        .status(200)
-        .json({ message: "Retrive successfully", info: senatorData });
-    } catch (error) {
-      res.status(500).json({
-        message: "Error retrieving senator data",
-        error: error.message,
-      });
+    if (!senatorData || senatorData.length === 0) {
+      return res.status(404).json({ message: "Senator data not found" });
     }
+
+    // Filter out invalid (null) references
+    senatorData.forEach((data) => {
+      data.activitiesScore = data.activitiesScore?.filter(
+        (activity) => activity.activityId !== null
+      );
+      data.votesScore = data.votesScore?.filter(
+        (vote) => vote.voteId !== null
+      );
+    });
+
+    res
+      .status(200)
+      .json({ message: "Retrieved successfully", info: senatorData });
+  } catch (error) {
+    res.status(500).json({
+      message: "Error retrieving senator data",
+      error: error.message,
+    });
   }
+}
+
 }
 
 
