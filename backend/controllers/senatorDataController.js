@@ -169,6 +169,7 @@ class senatorDataController {
     try {
       const senateId = req.params.id;
       const senatorData = await SenatorData.find({ senateId })
+        .sort({ createdAt:1 })
         .populate("termId")
         .populate("senateId")
         .populate("votesScore.voteId")
