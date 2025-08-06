@@ -796,16 +796,11 @@ const congress = String(Math.floor((year - 1789) / 2) + 1);
 
 
             // ⏭️ Check for existing activities
-            const existing = await activitySchema.find({
-              title: bill.title,
-              date: introduced,
-              congress
-            });
-
-            if (existing.length > 0) {
-              console.log(`⏭️ Skipping cosponsorship fetch for bill ${bill.quorumId} — already has ${existing.length} activity(ies).`);
-              continue;
-            }
+            const existing = await activitySchema.find({ quorumId: bill.quorumId, congress });
+  if (existing.length > 0) {
+    console.log(`⏭️ Skipping bill ${bill.quorumId} — already has ${existing.length} activity(ies).`);
+    continue;
+  }
 
             console.log("🚧 Cosponsorship input check:", {
               billId: String(bill.quorumId),
@@ -820,8 +815,7 @@ const congress = String(Math.floor((year - 1789) / 2) + 1);
               introduced,
               congress
               );
-               // 🧠 Auto-assign activity score to matching Senator/Rep
-    await ActivityController.updateActivityScoreFromCosponsorships(String(bill.quorumId));
+  
 
           } catch (err) {
             console.warn(`❌ Cosponsorship fetch failed for ${bill.quorumId}:`, err.message);

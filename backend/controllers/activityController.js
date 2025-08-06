@@ -8,7 +8,55 @@ const RepresentativeData = require("../models/representativeDataSchema");
 const axios = require("axios");
   const BASE = process.env.QUORUM_BASE_URL || "https://www.quorum.us";
   const API_KEY = process.env.QUORUM_API_KEY;
-  const USERNAME = process.env.QUORUM_USERNAME;
+const USERNAME = process.env.QUORUM_USERNAME;
+  
+
+
+
+async function saveCosponsorshipToLegislator({ personId, activityId, score = "yes" }) {
+  personId = String(personId); // Force string match
+
+  let localPerson = await Senator.findOne({ senatorId: personId });
+  let dataModel = SenatorData;
+  let personField = "senateId";
+  let roleLabel = "Senator";
+
+  if (!localPerson) {
+    localPerson = await Representative.findOne({ repId: personId });
+    if (!localPerson) {
+      console.warn(`❌ No local legislator found for Quorum personId ${personId}`);
+      return false;
+    }
+    dataModel = RepresentativeData;
+    personField = "houseId";
+    roleLabel = "Representative";
+  }
+
+  const filter = { [personField]: localPerson._id };
+  const existing = await dataModel.findOne(filter);
+
+  const alreadyLinked = existing?.activitiesScore?.some(
+    (entry) => String(entry.activityId) === String(activityId)
+  );
+
+  if (alreadyLinked) {
+    console.log(`⚠️ Already linked activity ${activityId} to ${roleLabel}: ${localPerson.name || localPerson._id}`);
+    return false;
+  }
+
+  await dataModel.findOneAndUpdate(
+    filter,
+    {
+      $push: { activitiesScore: { activityId, score } }
+    },
+    { upsert: true, new: true }
+  );
+
+  console.log(`✅ Linked activity ${activityId} to ${roleLabel}: ${localPerson.fullName || localPerson._id}`);
+  return true;
+}
+
+
 class activityController {
 
 
@@ -301,6 +349,117 @@ class activityController {
   }
   //activty saved when bill saved
   
+ static async fetchAndCreateFromCosponsorships(billId, title, introduced, congress) {
+  console.log(`Starting cosponsorship fetch for billId: ${billId}`);
+  console.log("🚧 Cosponsorship input check:", { billId, title, introduced, congress });
+
+  if (!billId || !title || !introduced || !congress) {
+    console.warn("❌ Missing required bill data");
+    return 0;
+  }
+
+  const queryParams = {
+    api_key: API_KEY,
+    username: USERNAME,
+    dehydrate_extra: "sponsors"
+  };
+
+  const billUrl = `${BASE}/api/newbill/${billId}`;
+
+  try {
+    console.log(`🔎 Fetching bill data from: ${billUrl}`);
+    const billRes = await axios.get(billUrl, { params: queryParams });
+    const bill = billRes.data;
+
+    // ✅ Step 1: Determine activity type
+    let activityType = bill.type || null;
+
+    // ✅ Step 2: If not available, fallback to mapping bill.bill_type
+    if (!activityType && bill.bill_type) {
+      const fallbackType = bill.bill_type.toLowerCase();
+      if (fallbackType.includes("senate")) activityType = "senate";
+      else if (fallbackType.includes("house")) activityType = "house";
+    }
+
+    if (!activityType) {
+      console.warn(`❌ Unable to determine activity type for bill ${billId}`);
+      return 0;
+    }
+
+    if (!bill.sponsors || bill.sponsors.length === 0) {
+      console.log(`ℹ️ No cosponsors found for bill ${billId}`);
+      return 0;
+    }
+
+    let savedCount = 0;
+
+    for (const sponsorUri of bill.sponsors) {
+      const sponsorId = sponsorUri.split("/").filter(Boolean).pop();
+
+      try {
+        const sponsorRes = await axios.get(`${BASE}/api/newsponsor/${sponsorId}/`, {
+          params: { api_key: API_KEY, username: USERNAME }
+        });
+        const sponsor = sponsorRes.data;
+
+        let personId = null;
+        if (sponsor.person) {
+          personId = sponsor.person.split("/").filter(Boolean).pop();
+        }
+
+        if (!personId) {
+          console.warn(`❌ Skipping sponsor ${sponsorId} due to missing personId`);
+          continue;
+        }
+
+        let activity = await Activity.findOne({
+          activityquorumId: billId,
+          date: introduced,
+          congress,
+          type: activityType,
+        });
+
+        if (!activity) {
+          activity = new Activity({
+            type: activityType,
+            title,
+            shortDesc: "",
+            longDesc: "",
+            rollCall: null,
+            readMore: null,
+            date: introduced,
+            congress,
+            termId: null,
+            trackActivities: "pending",
+            status: "draft",
+            editedFields: [],
+            activityquorumId: billId
+          });
+          await activity.save();
+          console.log(`✅ Created new cosponsorship activity for ${sponsorId}`);
+          savedCount++;
+        }
+
+        await saveCosponsorshipToLegislator({
+          personId,
+          activityId: activity._id,
+          score: "yes"
+        });
+
+      } catch (err) {
+        console.warn(`❗ Error processing sponsor ${sponsorId}:`, err.message);
+      }
+    }
+
+    console.log(`🎉 Finished processing cosponsors. New activities: ${savedCount}`);
+    return savedCount;
+  } catch (err) {
+    console.error(`❌ Failed to fetch cosponsorships for bill ${billId}:`, err.message);
+    return 0;
+  }
+}
+
+
 //   static async fetchAndCreateFromCosponsorships(billId, title, introduced, congress) {
 //   console.log(`Starting cosponsorship fetch for billId: ${billId}`);
 //   console.log("🚧 Cosponsorship input check:", { billId, title, introduced, congress });
@@ -402,208 +561,431 @@ class activityController {
 //     console.error(`❌ Failed to fetch cosponsorships for bill ${billId}:`, err.message);
 //     return 0;
 //   }
-  //   }
+//     }
   
-  static async fetchAndCreateFromCosponsorships(billId, title, introduced, congress) {
-  console.log(`Starting cosponsorship fetch for billId: ${billId}`);
-  console.log("🚧 Cosponsorship input check:", { billId, title, introduced, congress });
+//   static async fetchAndCreateFromCosponsorships(billId, title, introduced, congress) {
+//   console.log(`Starting cosponsorship fetch for billId: ${billId}`);
+//   console.log("🚧 Cosponsorship input check:", { billId, title, introduced, congress });
 
-  if (!billId || !title || !introduced || !congress) {
-    console.warn("❌ Missing required bill data");
-    return 0;
-  }
+//   if (!billId || !title || !introduced || !congress) {
+//     console.warn("❌ Missing required bill data");
+//     return 0;
+//   }
 
-  const BASE = process.env.QUORUM_BASE_URL || "https://www.quorum.us";
-  const API_KEY = process.env.QUORUM_API_KEY;
-  const USERNAME = process.env.QUORUM_USERNAME;
+//   const BASE = process.env.QUORUM_BASE_URL || "https://www.quorum.us";
+//   const API_KEY = process.env.QUORUM_API_KEY;
+//   const USERNAME = process.env.QUORUM_USERNAME;
 
-  const queryParams = {
-    api_key: API_KEY,
-    username: USERNAME,
-    dehydrate_extra: "sponsors"
-  };
+//   const queryParams = {
+//     api_key: API_KEY,
+//     username: USERNAME,
+//     dehydrate_extra: "sponsors"
+//   };
 
-  const billUrl = `${BASE}/api/newbill/${billId}`;
+//   const billUrl = `${BASE}/api/newbill/${billId}`;
 
-  try {
-    console.log(`🔎 Fetching bill data from: ${billUrl}`);
-    const billRes = await axios.get(billUrl, { params: queryParams });
-    const bill = billRes.data;
+//   try {
+//     console.log(`🔎 Fetching bill data from: ${billUrl}`);
+//     const billRes = await axios.get(billUrl, { params: queryParams });
+//     const bill = billRes.data;
 
-    if (!bill.sponsors || bill.sponsors.length === 0) {
-      console.log(`ℹ️ No cosponsors found for bill ${billId}`);
-      return 0;
-    }
+//     if (!bill.sponsors || bill.sponsors.length === 0) {
+//       console.log(`ℹ️ No cosponsors found for bill ${billId}`);
+//       return 0;
+//     }
 
-    let savedCount = 0;
+//     let savedCount = 0;
 
-    for (const sponsorUri of bill.sponsors) {
-      const sponsorId = sponsorUri.split("/").filter(Boolean).pop();
+//     for (const sponsorUri of bill.sponsors) {
+//       const sponsorId = sponsorUri.split("/").filter(Boolean).pop();
 
-      try {
-        const sponsorRes = await axios.get(`${BASE}/api/newsponsor/${sponsorId}/`, {
-          params: { api_key: API_KEY, username: USERNAME }
-        });
-        const sponsor = sponsorRes.data;
+//       try {
+//         const sponsorRes = await axios.get(`${BASE}/api/newsponsor/${sponsorId}/`, {
+//           params: { api_key: API_KEY, username: USERNAME }
+//         });
+//         const sponsor = sponsorRes.data;
 
-        let chamber = null;
-        if (sponsor.person) {
-          const personId = sponsor.person.split("/").filter(Boolean).pop();
-          try {
-            const personRes = await axios.get(`${BASE}/api/newperson/${personId}/`, {
-              params: { api_key: API_KEY, username: USERNAME }
-            });
-            chamber = personRes.data.chamber === "senate" ? "senate" : "house";
-          } catch (err) {
-            console.warn(`  ⚠️ Failed to fetch person ${sponsor.person}:`, err.message);
-          }
-        }
+//         let chamber = null;
+//         if (sponsor.person) {
+//           const personId = sponsor.person.split("/").filter(Boolean).pop();
+//           try {
+//             const personRes = await axios.get(`${BASE}/api/newperson/${personId}/`, {
+//               params: { api_key: API_KEY, username: USERNAME }
+//             });
+//             chamber = personRes.data.chamber === "senate" ? "senate" : "house";
+//           } catch (err) {
+//             console.warn(`  ⚠️ Failed to fetch person ${sponsor.person}:`, err.message);
+//           }
+//         }
 
-        if (!chamber) {
-          console.warn(`❌ Skipping sponsor ${sponsorId} due to missing chamber`);
-          continue;
-        }
+//         if (!chamber) {
+//           console.warn(`❌ Skipping sponsor ${sponsorId} due to missing chamber`);
+//           continue;
+//         }
 
-        const alreadyExists = await Activity.findOne({
-          title,
-          date: introduced,
-          congress,
-          type: chamber
-        });
+//         const alreadyExists = await Activity.findOne({
+//           title,
+//           date: introduced,
+//           congress,
+//           type: chamber
+//         });
 
-        if (alreadyExists) {
-          continue;
-        }
+//         if (alreadyExists) {
+//           continue;
+//         }
 
-        const activity = new Activity({
-          type: chamber,
-          title,
-          shortDesc: "",
-          longDesc: "",
-          rollCall: null,
-          readMore: null,
-          date: introduced,
-          congress,
-          activityquorumId: String(billId), // ← Save the quorum ID
-          termId: null,
-          trackActivities: "pending",
-          status: "draft",
-          editedFields: []
-        });
+//         const activity = new Activity({
+//           type: chamber,
+//           title,
+//           shortDesc: "",
+//           longDesc: "",
+//           rollCall: null,
+//           readMore: null,
+//           date: introduced,
+//           congress,
+//           activityquorumId: String(billId), // ← Save the quorum ID
+//           termId: null,
+//           trackActivities: "pending",
+//           status: "draft",
+//           editedFields: []
+//         });
 
-        await activity.save();
-        console.log(`✅ Saved cosponsorship activity for sponsor ${sponsorId}`);
-        savedCount++;
-      } catch (err) {
-        console.warn(`❗ Error processing sponsor ${sponsorId}:`, err.message);
-      }
-    }
+//         await activity.save();
+//         console.log(`✅ Saved cosponsorship activity for sponsor ${sponsorId}`);
+//         savedCount++;
+//       } catch (err) {
+//         console.warn(`❗ Error processing sponsor ${sponsorId}:`, err.message);
+//       }
+//     }
 
-    if (savedCount > 0) {
-      console.log(`🧠 Triggering activity score update for bill ${billId}`);
-      await updateActivityScoreFromCosponsorships(billId); // ⬅️ New line added
-    }
+//     if (savedCount > 0) {
+//       console.log(`🧠 Triggering activity score update for bill ${billId}`);
+//       await updateActivityScoreFromCosponsorships(billId); // ⬅️ New line added
+//     }
 
-    console.log(`🎉 Finished saving ${savedCount} cosponsorship(s) for bill ${billId}`);
-    return savedCount;
-  } catch (err) {
-    console.error(`❌ Failed to fetch cosponsorships for bill ${billId}:`, err.message);
-    return 0;
-  }
-}
+//     console.log(`🎉 Finished saving ${savedCount} cosponsorship(s) for bill ${billId}`);
+//     return savedCount;
+//   } catch (err) {
+//     console.error(`❌ Failed to fetch cosponsorships for bill ${billId}:`, err.message);
+//     return 0;
+//   }
+// }
 
-static async updateActivityScoreFromCosponsorships(quorumBillId) {
-  try {
-    const BASE = process.env.QUORUM_BASE_URL || "https://www.quorum.us";
-    const API_KEY = process.env.QUORUM_API_KEY;
-    const USERNAME = process.env.QUORUM_USERNAME;
+// static async updateActivityScoreFromCosponsorships(quorumBillId) {
+//   try {
+//     const BASE = process.env.QUORUM_BASE_URL || "https://www.quorum.us";
+//     const API_KEY = process.env.QUORUM_API_KEY;
+//     const USERNAME = process.env.QUORUM_USERNAME;
 
-    const billUrl = `${BASE}/api/newbill/${quorumBillId}`;
-    const billRes = await axios.get(billUrl, {
-      params: { api_key: API_KEY, username: USERNAME, dehydrate_extra: "sponsors" }
-    });
+//     const billUrl = `${BASE}/api/newbill/${quorumBillId}`;
+//     const billRes = await axios.get(billUrl, {
+//       params: { api_key: API_KEY, username: USERNAME, dehydrate_extra: "sponsors" }
+//     });
 
-    const bill = billRes.data;
-    if (!bill?.sponsors || bill.sponsors.length === 0) {
-      console.log(`❗ No sponsors found for bill ${quorumBillId}`);
-      return;
-    }
+//     const bill = billRes.data;
+//     if (!bill?.sponsors || bill.sponsors.length === 0) {
+//       console.log(`❗ No sponsors found for bill ${quorumBillId}`);
+//       return;
+//     }
 
-    const activity = await Activity.findOne({ activityquorumId: quorumBillId });
-    if (!activity) {
-      console.log(`❗ No activity found for bill ${quorumBillId}`);
-      return;
-    }
+//     const activity = await Activity.findOne({ activityquorumId: quorumBillId });
+//     if (!activity) {
+//       console.log(`❗ No activity found for bill ${quorumBillId}`);
+//       return;
+//     }
 
-    console.log(`🔄 Assigning cosponsorship activity score for bill: ${quorumBillId}`);
+//     console.log(`🔄 Assigning cosponsorship activity score for bill: ${quorumBillId}`);
 
-    const sponsorIds = bill.sponsors.map(uri =>
-      uri.split("/").filter(Boolean).pop()
-    ).filter(Boolean);
+//     const sponsorIds = bill.sponsors.map(uri =>
+//       uri.split("/").filter(Boolean).pop()
+//     ).filter(Boolean);
 
-    for (const sponsorId of sponsorIds) {
-      try {
-        const sponsorRes = await axios.get(`${BASE}/api/newsponsor/${sponsorId}/`, {
-          params: { api_key: API_KEY, username: USERNAME }
-        });
-        const sponsor = sponsorRes.data;
+//     for (const sponsorId of sponsorIds) {
+//       try {
+//         const sponsorRes = await axios.get(`${BASE}/api/newsponsor/${sponsorId}/`, {
+//           params: { api_key: API_KEY, username: USERNAME }
+//         });
+//         const sponsor = sponsorRes.data;
 
-        const personId = sponsor.person?.split("/").filter(Boolean).pop();
-        if (!personId) {
-          console.log(`⚠️ Skipping sponsor ${sponsorId} - No personId`);
-          continue;
-        }
+//         const personId = sponsor.person?.split("/").filter(Boolean).pop();
+//         if (!personId) {
+//           console.log(`⚠️ Skipping sponsor ${sponsorId} - No personId`);
+//           continue;
+//         }
 
-        const personRes = await axios.get(`${BASE}/api/newperson/${personId}/`, {
-          params: { api_key: API_KEY, username: USERNAME }
-        });
+//         const personRes = await axios.get(`${BASE}/api/newperson/${personId}/`, {
+//           params: { api_key: API_KEY, username: USERNAME }
+//         });
 
-        const chamber = personRes.data.chamber;
-        const isSenator = chamber === "senate";
+//         const chamber = personRes.data.chamber;
+//         const isSenator = chamber === "senate";
 
-        const personModel = isSenator ? Senator : Representative;
-        const DataModel = isSenator ? SenatorData : RepresentativeData;
-        const idField = isSenator ? "senateId" : "houseId";
-        const refField = isSenator ? "senatorId" : "repId";
+//         const personModel = isSenator ? Senator : Representative;
+//         const DataModel = isSenator ? SenatorData : RepresentativeData;
+//         const idField = isSenator ? "senateId" : "houseId";
+//         const refField = isSenator ? "senatorId" : "repId";
 
-        const personDoc = await personModel.findOne({ [refField]: personId });
+//         const personDoc = await personModel.findOne({ [refField]: personId });
 
-        if (!personDoc) {
-          console.log(`❗ ${isSenator ? "Senator" : "Representative"} ${personId} not found in DB`);
-          continue;
-        }
+//         if (!personDoc) {
+//           console.log(`❗ ${isSenator ? "Senator" : "Representative"} ${personId} not found in DB`);
+//           continue;
+//         }
 
-        const dataDoc = await DataModel.findOne({ [idField]: personDoc._id });
+//         const dataDoc = await DataModel.findOne({ [idField]: personDoc._id });
 
-        const alreadyScored = dataDoc?.activitiesScore?.some(
-          a => a.activityId?.toString() === activity._id.toString()
-        );
+//         const alreadyScored = dataDoc?.activitiesScore?.some(
+//           a => a.activityId?.toString() === activity._id.toString()
+//         );
 
-        if (alreadyScored) {
-          console.log(`⏩ Activity score already exists for ${personId}`);
-          continue;
-        }
+//         if (alreadyScored) {
+//           console.log(`⏩ Activity score already exists for ${personId}`);
+//           continue;
+//         }
 
-        await DataModel.updateOne(
-          { [idField]: personDoc._id },
-          { $push: { activitiesScore: { activityId: activity._id, score: "yea" } } },
-          { upsert: true }
-        );
+//         await DataModel.updateOne(
+//           { [idField]: personDoc._id },
+//           { $push: { activitiesScore: { activityId: activity._id, score: "yea" } } },
+//           { upsert: true }
+//         );
 
-        console.log(`📌 Updated ${isSenator ? "Senator" : "Rep"} with activity score`, {
-          personId,
-          activityId: activity._id,
-          score: "yea"
-        });
-      } catch (err) {
-        console.warn(`⚠️ Error processing sponsor ${sponsorId}: ${err.message}`);
-      }
-    }
-  } catch (err) {
-    console.error(`❌ updateActivityScoreFromCosponsorships failed:`, err.message);
-  }
-}
+//         console.log(`📌 Updated ${isSenator ? "Senator" : "Rep"} with activity score`, {
+//           personId,
+//           activityId: activity._id,
+//           score: "cosponsor"
+//         });
+//       } catch (err) {
+//         console.warn(`⚠️ Error processing sponsor ${sponsorId}: ${err.message}`);
+//       }
+//     }
+//   } catch (err) {
+//     console.error(`❌ updateActivityScoreFromCosponsorships failed:`, err.message);
+//   }
+  // }
+  
 
+//   static async fetchAndCreateFromCosponsorships(billId, title, introduced, congress) {
+//   console.log(`Starting cosponsorship fetch for billId: ${billId}`);
+//   console.log("🚧 Cosponsorship input check:", { billId, title, introduced, congress });
+
+//   if (!billId || !title || !introduced || !congress) {
+//     console.warn("❌ Missing required bill data");
+//     return 0;
+//   }
+
+//   const BASE = process.env.QUORUM_BASE_URL || "https://www.quorum.us";
+//   const API_KEY = process.env.QUORUM_API_KEY;
+//   const USERNAME = process.env.QUORUM_USERNAME;
+
+//   const queryParams = {
+//     api_key: API_KEY,
+//     username: USERNAME,
+//     dehydrate_extra: "sponsors"
+//   };
+
+//   const billUrl = `${BASE}/api/newbill/${billId}`;
+
+//   try {
+//     console.log(`🔎 Fetching bill data from: ${billUrl}`);
+//     const billRes = await axios.get(billUrl, { params: queryParams });
+//     const bill = billRes.data;
+
+//     if (!bill.sponsors || bill.sponsors.length === 0) {
+//       console.log(`ℹ️ No cosponsors found for bill ${billId}`);
+//       return 0;
+//     }
+
+//     // Check if activity already exists for this billId (avoid duplicates)
+//     const alreadyExists = await Activity.findOne({
+//       activityquorumId: String(billId),
+//       activityType: "cosponsorship"
+//     });
+
+//     if (alreadyExists) {
+//       console.log(`✅ Cosponsorship activity already exists for bill ${billId}`);
+//       return 0;
+//     }
+
+//     // Try to determine chamber by inspecting first sponsor
+//     let chamber = "house"; // Default
+//     for (const sponsorUri of bill.sponsors) {
+//       const sponsorId = sponsorUri.split("/").filter(Boolean).pop();
+//       try {
+//         const sponsorRes = await axios.get(`${BASE}/api/newsponsor/${sponsorId}/`, {
+//           params: { api_key: API_KEY, username: USERNAME }
+//         });
+
+//         const sponsor = sponsorRes.data;
+//         if (sponsor.person) {
+//           const personId = sponsor.person.split("/").filter(Boolean).pop();
+//           const personRes = await axios.get(`${BASE}/api/newperson/${personId}/`, {
+//             params: { api_key: API_KEY, username: USERNAME }
+//           });
+
+//           const chamberValue = personRes.data.chamber;
+//           if (chamberValue === "senate" || chamberValue === "house") {
+//             chamber = chamberValue;
+//             break;
+//           }
+//         }
+//       } catch (err) {
+//         console.warn(`⚠️ Could not resolve chamber for sponsor ${sponsorId}`);
+//       }
+//     }
+
+//     // ✅ Create new Activity only once per bill
+//     const activity = new Activity({
+//       type: chamber,
+//       title,
+//       shortDesc: "",
+//       longDesc: "",
+//       rollCall: null,
+//       readMore: null,
+//       date: introduced,
+//       congress,
+//       activityquorumId: String(billId),
+//       termId: null,
+//       trackActivities: "pending",
+//       status: "draft",
+//       editedFields: [],
+//       activityType: "cosponsorship" // ✅ Important
+//     });
+
+//     await activity.save();
+//     console.log(`✅ Saved new cosponsorship activity for bill ${billId}`);
+
+//     // ⏳ Background score assignment
+//     console.log(`🧠 Triggering activity score update for cosponsorship bill ${billId}`);
+//      await activityController.updateActivityScoreFromCosponsorships(String(billId));
+
+//     console.log(`🎉 Finished processing cosponsorships for bill ${billId}`);
+//     return 1;
+//   } catch (err) {
+//     console.error(`❌ Failed to fetch cosponsorships for bill ${billId}:`, err.message);
+//     return 0;
+//   }
+// }
+// static async  updateActivityScoreFromCosponsorships(billId) {
+//   console.log(`🧠 Updating activity scores for cosponsorship bill ${billId}`);
+
+//   if (!billId) {
+//     console.warn("❌ No billId provided to updateActivityScoreFromCosponsorships");
+//     return;
+//   }
+
+//   const BASE = process.env.QUORUM_BASE_URL || "https://www.quorum.us";
+//   const API_KEY = process.env.QUORUM_API_KEY;
+//   const USERNAME = process.env.QUORUM_USERNAME;
+
+//   const queryParams = {
+//     api_key: API_KEY,
+//     username: USERNAME,
+//     dehydrate_extra: "sponsors"
+//   };
+
+//   try {
+//     // Find activity associated with this bill
+//     const activity = await Activity.findOne({
+//       activityquorumId: String(billId),
+//       activityType: "cosponsorship"
+//     });
+
+//     if (!activity) {
+//       console.warn(`⚠️ No activity found for billId ${billId}`);
+//       return;
+//     }
+
+//     const billUrl = `${BASE}/api/newbill/${billId}`;
+//     const billRes = await axios.get(billUrl, { params: queryParams });
+//     const bill = billRes.data;
+
+//     if (!bill.sponsors || bill.sponsors.length === 0) {
+//       console.warn(`ℹ️ No sponsors found for bill ${billId}`);
+//       return;
+//     }
+
+//     for (const sponsorUri of bill.sponsors) {
+//       const sponsorId = sponsorUri.split("/").filter(Boolean).pop();
+
+//       try {
+//         const sponsorRes = await axios.get(`${BASE}/api/newsponsor/${sponsorId}/`, {
+//           params: queryParams
+//         });
+
+//         const sponsor = sponsorRes.data;
+//         if (!sponsor.person) continue;
+
+//         const personId = sponsor.person.split("/").filter(Boolean).pop();
+
+//         const personRes = await axios.get(`${BASE}/api/newperson/${personId}/`, {
+//           params: queryParams
+//         });
+
+//         const person = personRes.data;
+//         const chamber = person.chamber === "senate" ? "senate" : "house";
+
+//         if (chamber === "senate") {
+//           const senator = await Senator.findOne({ quorumId: personId });
+//           if (!senator) continue;
+
+//           const senatorData = await SenatorData.findOne({
+//             senateId: senator._id,
+//             currentTerm: true
+//           });
+
+//           if (!senatorData) continue;
+
+//           const alreadyScored = senatorData.activitiesScore.some(
+//             s => String(s.activityId) === String(activity._id)
+//           );
+
+//           if (!alreadyScored) {
+//             senatorData.activitiesScore.push({
+//               activityId: activity._id,
+//               score: "cosponsor"
+//             });
+
+//             await senatorData.save();
+//            console.log(`✅ Activity score assigned to Senator: ${senator.name} (senatorId: ${senator.senatorId}, quorumId: ${senator.quorumId})`);
+
+//           }
+
+//         } else if (chamber === "house") {
+//           const rep = await Representative.findOne({ quorumId: personId });
+//           if (!rep) continue;
+
+//           const repData = await RepresentativeData.findOne({
+//             houseId: rep._id,
+//             currentTerm: true
+//           });
+
+//           if (!repData) continue;
+
+//           const alreadyScored = repData.activitiesScore.some(
+//             s => String(s.activityId) === String(activity._id)
+//           );
+
+//           if (!alreadyScored) {
+//             repData.activitiesScore.push({
+//               activityId: activity._id,
+//               score: "cosponsor"
+//             });
+
+//             await repData.save();
+//            console.log(`✅ Activity score assigned to Representative: ${rep.name} (repId: ${rep.repId}, personId: ${personId})`);
+
+//           }
+//         }
+//       } catch (err) {
+//         console.warn(`⚠️ Failed processing sponsor ${sponsorId}: ${err.message}`);
+//       }
+//     }
+
+//     console.log(`🎯 Finished assigning cosponsorship activity scores for bill ${billId}`);
+//   } catch (err) {
+//     console.error(`❌ Error in updateActivityScoreFromCosponsorships: ${err.message}`);
+//   }
+// }
 
 }
 
