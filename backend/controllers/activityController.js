@@ -316,10 +316,12 @@ class activityController {
         return res.status(400).json({ message: "No activity IDs provided" });
       }
 
-    const validStatuses = ['pending', 'completed', 'failed'];
-    if (!validStatuses.includes(trackActivities)) {
-      return res.status(400).json({ message: 'Invalid trackActivities value' });
-    }
+      const validStatuses = ["pending", "completed", "failed"];
+      if (!validStatuses.includes(trackActivities)) {
+        return res
+          .status(400)
+          .json({ message: "Invalid trackActivities value" });
+      }
 
       const result = await Activity.updateMany(
         { _id: { $in: ids } },
@@ -343,116 +345,144 @@ class activityController {
       });
     }
   }
-static async fetchAndCreateFromCosponsorships(billId, title, introduced, congress) {
-  console.log(`Starting cosponsorship fetch for billId: ${billId}`);
-  console.log("🚧 Cosponsorship input check:", { billId, title, introduced, congress });
+  static async fetchAndCreateFromCosponsorships(
+    billId,
+    title,
+    introduced,
+    congress
+  ) {
+    console.log(`Starting cosponsorship fetch for billId: ${billId}`);
+    console.log("🚧 Cosponsorship input check:", {
+      billId,
+      title,
+      introduced,
+      congress,
+    });
 
-  if (!billId || !title || !introduced || !congress) {
-    console.warn("❌ Missing required bill data");
-    return 0;
-  }
-
-  const queryParams = {
-    api_key: API_KEY,
-    username: USERNAME,
-    dehydrate_extra: "sponsors"
-  };
-
-  const billUrl = `${BASE}/api/newbill/${billId}`;
-
-  try {
-    console.log(`🔎 Fetching bill data from: ${billUrl}`);
-    const billRes = await axios.get(billUrl, { params: queryParams });
-    const bill = billRes.data;
-
-    // ✅ Step 1: Determine activity type
-    let activityType = bill.type || null;
-
-    // ✅ Step 2: If not available, fallback to mapping bill.bill_type
-    if (!activityType && bill.bill_type) {
-      const fallbackType = bill.bill_type.toLowerCase();
-      if (fallbackType.includes("senate")) activityType = "senate";
-      else if (fallbackType.includes("house")) activityType = "house";
-    }
-
-    if (!activityType) {
-      console.warn(`❌ Unable to determine activity type for bill ${billId}`);
+    if (!billId || !title || !introduced || !congress) {
+      console.warn("❌ Missing required bill data");
       return 0;
     }
 
-    if (!bill.sponsors || bill.sponsors.length === 0) {
-      console.log(`ℹ️ No cosponsors found for bill ${billId}`);
-      return 0;
-    }
+    const queryParams = {
+      api_key: API_KEY,
+      username: USERNAME,
+      dehydrate_extra: "sponsors",
+    };
 
-    let savedCount = 0;
+    const billUrl = `${BASE}/api/newbill/${billId}`;
 
-    for (const sponsorUri of bill.sponsors) {
-      const sponsorId = sponsorUri.split("/").filter(Boolean).pop();
+    try {
+      const billRes = await axios.get(billUrl, { params: queryParams });
+      const bill = billRes.data;
 
-      try {
-        const sponsorRes = await axios.get(`${BASE}/api/newsponsor/${sponsorId}/`, {
-          params: { api_key: API_KEY, username: USERNAME }
-        });
-        const sponsor = sponsorRes.data;
+      // ✅ Step 1: Determine activity type
+      let activityType = bill.type || null;
 
-        let personId = null;
-        if (sponsor.person) {
-          personId = sponsor.person.split("/").filter(Boolean).pop();
-        }
+      // ✅ Step 2: Fallback to bill_type if type not found
+      if (!activityType && bill.bill_type) {
+        const fallbackType = bill.bill_type.toLowerCase();
+        if (fallbackType.includes("senate")) activityType = "senate";
+        else if (fallbackType.includes("house")) activityType = "house";
+      }
 
-        if (!personId) {
-          console.warn(`❌ Skipping sponsor ${sponsorId} due to missing personId`);
-          continue;
-        }
+      if (!activityType) {
+        console.warn(`❌ Unable to determine activity type for bill ${billId}`);
+        return 0;
+      }
 
-        let activity = await Activity.findOne({
-          activityquorumId: billId,
+      if (!bill.sponsors || bill.sponsors.length === 0) {
+        console.log(`ℹ️ No cosponsors found for bill ${billId}`);
+        return 0;
+      }
+
+      // ✅ Only create activity once outside the loop
+      let activity = await Activity.findOne({
+        activityquorumId: billId,
+        date: introduced,
+        congress,
+        type: activityType,
+      });
+
+      if (!activity) {
+        activity = new Activity({
+          type: activityType,
+          title,
+          shortDesc: "",
+          longDesc: "",
+          rollCall: null,
+          readMore: null,
           date: introduced,
           congress,
-          type: activityType,
+          termId: null,
+          trackActivities: "pending",
+          status: "draft",
+          editedFields: [],
+          activityquorumId: billId,
         });
-
-        if (!activity) {
-          activity = new Activity({
-            type: activityType,
-            title,
-            shortDesc: "",
-            longDesc: "",
-            rollCall: null,
-            readMore: null,
-            date: introduced,
-            congress,
-            termId: null,
-            trackActivities: "pending",
-            status: "draft",
-            editedFields: [],
-            activityquorumId: billId
-          });
-          await activity.save();
-          console.log(`✅ Created new cosponsorship activity for ${sponsorId}`);
-          savedCount++;
-        }
-
-        await saveCosponsorshipToLegislator({
-          personId,
-          activityId: activity._id,
-          score: "yes"
-        });
-
-      } catch (err) {
-        console.warn(`❗ Error processing sponsor ${sponsorId}:`, err.message);
+        await activity.save();
+        console.log(`✅ Created new cosponsorship activity for bill ${billId}`);
       }
+
+      let savedCount = 0;
+
+      for (const sponsorUri of bill.sponsors) {
+        const sponsorId = sponsorUri.split("/").filter(Boolean).pop();
+
+        try {
+          const sponsorRes = await axios.get(
+            `${BASE}/api/newsponsor/${sponsorId}/`,
+            { params: { api_key: API_KEY, username: USERNAME } }
+          );
+          const sponsor = sponsorRes.data;
+
+          const personId = sponsor.person?.split("/").filter(Boolean).pop();
+
+          if (!personId) {
+            console.warn(
+              `❌ Skipping sponsor ${sponsorId} due to missing personId`
+            );
+            continue;
+          }
+
+          // ✅ Lookup both Senator and Rep in parallel
+          const [senator, rep] = await Promise.all([
+            Senator.findOne({ senatorId: personId }),
+            Representative.findOne({ repId: personId }),
+          ]);
+
+          if (!senator && !rep) {
+            console.warn(
+              `⚠️ No matching local legislator found for personId ${personId}`
+            );
+            continue;
+          }
+
+          const linked = await saveCosponsorshipToLegislator({
+            personId,
+            activityId: activity._id,
+            score: "yes",
+          });
+
+          if (linked) savedCount++;
+        } catch (err) {
+          console.warn(
+            `❗ Error processing sponsor ${sponsorId}:`,
+            err.message
+          );
+        }
+      }
+
+      console.log(`🎉 Finished processing cosponsors. Linked: ${savedCount}`);
+      return savedCount;
+    } catch (err) {
+      console.error(
+        `❌ Failed to fetch cosponsorships for bill ${billId}:`,
+        err.message
+      );
+      return 0;
     }
-
-    console.log(`🎉 Finished processing cosponsors. New activities: ${savedCount}`);
-    return savedCount;
-  } catch (err) {
-    console.error(`❌ Failed to fetch cosponsorships for bill ${billId}:`, err.message);
-    return 0;
   }
-}
-
 }
 
 module.exports = activityController;
