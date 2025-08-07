@@ -1,12 +1,13 @@
 require("dotenv").config();
 const axios = require("axios");
 const cacheConfig = require("../config/cache-config");
-
+const activitySchema = require("../models/activitySchema");
 const Senator = require("../models/senatorSchema");
 const Representative = require("../models/representativeSchema");
 const Bill = require("../models/voteSchema");
 const SenatorData = require("../models/senatorDataSchema");
 const RepresentativeData = require("../models/representativeDataSchema");
+const ActivityController = require("../controllers/activityController");
 
 // Circuit breaker implementation
 class CircuitBreaker {
@@ -703,45 +704,134 @@ class QuorumDataController {
         }
     }
 
-    async saveBills(req, res) {
-        try {
-            const { bills } = req.body;
-            if (!Array.isArray(bills) || !bills.length) return res.status(400).json({ error: "Invalid bills" });
+    // async saveBills(req, res) {
+    //     try {
+    //         const { bills } = req.body;
+    //         if (!Array.isArray(bills) || !bills.length) return res.status(400).json({ error: "Invalid bills" });
 
-            const { model, idField } = QuorumDataController.MODELS.bills;
+    //         const { model, idField } = QuorumDataController.MODELS.bills;
 
-            // Save bills (upsert) - do this in parallel for better performance
-            const savedPromises = bills.map(bill => 
-                model.updateOne({ [idField]: bill[idField] }, { $set: bill }, { upsert: true })
-                    .then(() => model.findOne({ [idField]: bill[idField] }))
-            );
+    //         // Save bills (upsert) - do this in parallel for better performance
+    //         const savedPromises = bills.map(bill => 
+    //             model.updateOne({ [idField]: bill[idField] }, { $set: bill }, { upsert: true })
+    //                 .then(() => model.findOne({ [idField]: bill[idField] }))
+    //         );
             
-            const saved = await Promise.all(savedPromises);
+    //         const saved = await Promise.all(savedPromises);
 
-            // Respond immediately
-            res.json({ message: "Bills saved. Summary and vote score updates running in background.", data: saved });
+    //         // Respond immediately
+    //         res.json({ message: "Bills saved. Summary and vote score updates running in background.", data: saved });
 
-            // Background: update summaries and vote scores (no await)
-            (async () => {
-                try {
-                    await this.updateBillShortDesc(saved);
+    //         // Background: update summaries and vote scores (no await)
+    //         (async () => {
+    //             try {
+    //                 await this.updateBillShortDesc(saved);
                     
-                    // Process vote scores in chunks to avoid overwhelming the API
-                    const CHUNK_SIZE = cacheConfig.BATCH_SIZES.VOTE_UPDATES;
-                    for (let i = 0; i < saved.length; i += CHUNK_SIZE) {
-                        const chunk = saved.slice(i, i + CHUNK_SIZE);
-                        await Promise.all(chunk.map(bill => this.updateVoteScore(bill.quorumId)));
-                    }
-                } catch (err) {
-                    console.error("Background update error:", err);
-                }
-            })();
+    //                 // Process vote scores in chunks to avoid overwhelming the API
+    //                 const CHUNK_SIZE = cacheConfig.BATCH_SIZES.VOTE_UPDATES;
+    //                 for (let i = 0; i < saved.length; i += CHUNK_SIZE) {
+    //                     const chunk = saved.slice(i, i + CHUNK_SIZE);
+    //                     await Promise.all(chunk.map(bill => this.updateVoteScore(bill.quorumId)));
+    //                 }
+    //             } catch (err) {
+    //                 console.error("Background update error:", err);
+    //             }
+    //         })();
 
-        } catch (err) {
-            console.error("Save bills error:", err);
-            res.status(500).json({ error: "Failed to store bills" });
-        }
+    //     } catch (err) {
+    //         console.error("Save bills error:", err);
+    //         res.status(500).json({ error: "Failed to store bills" });
+    //     }
+    // }
+    
+    
+       async saveBills(req, res) {
+  try {
+    const { bills } = req.body;
+    if (!Array.isArray(bills) || bills.length === 0) {
+      return res.status(400).json({ error: "Invalid bills" });
     }
+
+    const { model, idField } = QuorumDataController.MODELS.bills;
+
+    // Save bills (upsert)
+    const savedPromises = bills.map(bill =>
+      model
+        .updateOne({ [idField]: bill[idField] }, { $set: bill }, { upsert: true })
+        .then(() => model.findOne({ [idField]: bill[idField] }))
+    );
+
+    const saved = await Promise.all(savedPromises);
+
+    // Respond immediately
+    res.json({
+      message: "Bills saved. Cosponsorship & vote updates running in background.",
+      data: saved
+    });
+
+    // Background processing
+    (async () => {
+      try {
+        await this.updateBillShortDesc(saved);
+
+        // Vote updates in chunks
+        const CHUNK_SIZE = cacheConfig.BATCH_SIZES.VOTE_UPDATES;
+        for (let i = 0; i < saved.length; i += CHUNK_SIZE) {
+          const chunk = saved.slice(i, i + CHUNK_SIZE);
+          await Promise.all(chunk.map(bill => this.updateVoteScore(bill.quorumId)));
+        }
+
+        // Cosponsorship fetch loop
+        for (const bill of saved) {
+          try {
+            console.log(`→ Fetching cosponsors for bill ${bill.quorumId} (${bill.title})...`);
+
+         const introducedDate = bill.date ? new Date(bill.date) : new Date();
+const introduced = introducedDate.toISOString();
+
+// 🧠 Correct Congress number calculation
+const year = introducedDate.getUTCFullYear();
+const congress = String(Math.floor((year - 1789) / 2) + 1);
+
+
+            // ⏭️ Check for existing activities
+            const existing = await activitySchema.find({ quorumId: bill.quorumId, congress });
+  if (existing.length > 0) {
+    console.log(`⏭️ Skipping bill ${bill.quorumId} — already has ${existing.length} activity(ies).`);
+    continue;
+  }
+
+            console.log("🚧 Cosponsorship input check:", {
+              billId: String(bill.quorumId),
+              title: String(bill.title || "Untitled Bill"),
+              introduced,
+              congress
+            });
+
+            await ActivityController.fetchAndCreateFromCosponsorships(
+              String(bill.quorumId),
+              String(bill.title || "Untitled Bill"),
+              introduced,
+              congress
+              );
+  
+
+          } catch (err) {
+            console.warn(`❌ Cosponsorship fetch failed for ${bill.quorumId}:`, err.message);
+          }
+        }
+      } catch (err) {
+        console.error("Background update error:", err);
+      }
+    })();
+
+  } catch (err) {
+    console.error("Save bills error:", err);
+    res.status(500).json({ error: "Failed to store bills" });
+  }
+}
+
+    
 
     async updateBillShortDesc(bills) {
         const { model, idField } = QuorumDataController.MODELS.bills;

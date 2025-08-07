@@ -1,5 +1,59 @@
 const Activity = require("../models/activitySchema");
 const upload = require("../middlewares/fileUploads");
+const Senator = require("../models/senatorSchema");
+const Representative = require("../models/representativeSchema");
+const SenatorData = require("../models/senatorDataSchema");
+const RepresentativeData = require("../models/representativeDataSchema");
+
+const axios = require("axios");
+  const BASE = process.env.QUORUM_BASE_URL || "https://www.quorum.us";
+  const API_KEY = process.env.QUORUM_API_KEY;
+const USERNAME = process.env.QUORUM_USERNAME;
+
+async function saveCosponsorshipToLegislator({ personId, activityId, score = "yes" }) {
+  personId = String(personId); // Force string match
+
+  let localPerson = await Senator.findOne({ senatorId: personId });
+  let dataModel = SenatorData;
+  let personField = "senateId";
+  let roleLabel = "Senator";
+
+  if (!localPerson) {
+    localPerson = await Representative.findOne({ repId: personId });
+    if (!localPerson) {
+      console.warn(`❌ No local legislator found for Quorum personId ${personId}`);
+      return false;
+    }
+    dataModel = RepresentativeData;
+    personField = "houseId";
+    roleLabel = "Representative";
+  }
+
+  const filter = { [personField]: localPerson._id };
+  const existing = await dataModel.findOne(filter);
+
+  const alreadyLinked = existing?.activitiesScore?.some(
+    (entry) => String(entry.activityId) === String(activityId)
+  );
+
+  if (alreadyLinked) {
+    console.log(`⚠️ Already linked activity ${activityId} to ${roleLabel}: ${localPerson.name || localPerson._id}`);
+    return false;
+  }
+
+  await dataModel.findOneAndUpdate(
+    filter,
+    {
+      $push: { activitiesScore: { activityId, score } }
+    },
+    { upsert: true, new: true }
+  );
+
+  console.log(`✅ Linked activity ${activityId} to ${roleLabel}: ${localPerson.fullName || localPerson._id}`);
+  return true;
+}
+
+
 
 class activityController {
   // Create a new activity with file upload for readMore
@@ -289,6 +343,116 @@ class activityController {
       });
     }
   }
+static async fetchAndCreateFromCosponsorships(billId, title, introduced, congress) {
+  console.log(`Starting cosponsorship fetch for billId: ${billId}`);
+  console.log("🚧 Cosponsorship input check:", { billId, title, introduced, congress });
+
+  if (!billId || !title || !introduced || !congress) {
+    console.warn("❌ Missing required bill data");
+    return 0;
+  }
+
+  const queryParams = {
+    api_key: API_KEY,
+    username: USERNAME,
+    dehydrate_extra: "sponsors"
+  };
+
+  const billUrl = `${BASE}/api/newbill/${billId}`;
+
+  try {
+    console.log(`🔎 Fetching bill data from: ${billUrl}`);
+    const billRes = await axios.get(billUrl, { params: queryParams });
+    const bill = billRes.data;
+
+    // ✅ Step 1: Determine activity type
+    let activityType = bill.type || null;
+
+    // ✅ Step 2: If not available, fallback to mapping bill.bill_type
+    if (!activityType && bill.bill_type) {
+      const fallbackType = bill.bill_type.toLowerCase();
+      if (fallbackType.includes("senate")) activityType = "senate";
+      else if (fallbackType.includes("house")) activityType = "house";
+    }
+
+    if (!activityType) {
+      console.warn(`❌ Unable to determine activity type for bill ${billId}`);
+      return 0;
+    }
+
+    if (!bill.sponsors || bill.sponsors.length === 0) {
+      console.log(`ℹ️ No cosponsors found for bill ${billId}`);
+      return 0;
+    }
+
+    let savedCount = 0;
+
+    for (const sponsorUri of bill.sponsors) {
+      const sponsorId = sponsorUri.split("/").filter(Boolean).pop();
+
+      try {
+        const sponsorRes = await axios.get(`${BASE}/api/newsponsor/${sponsorId}/`, {
+          params: { api_key: API_KEY, username: USERNAME }
+        });
+        const sponsor = sponsorRes.data;
+
+        let personId = null;
+        if (sponsor.person) {
+          personId = sponsor.person.split("/").filter(Boolean).pop();
+        }
+
+        if (!personId) {
+          console.warn(`❌ Skipping sponsor ${sponsorId} due to missing personId`);
+          continue;
+        }
+
+        let activity = await Activity.findOne({
+          activityquorumId: billId,
+          date: introduced,
+          congress,
+          type: activityType,
+        });
+
+        if (!activity) {
+          activity = new Activity({
+            type: activityType,
+            title,
+            shortDesc: "",
+            longDesc: "",
+            rollCall: null,
+            readMore: null,
+            date: introduced,
+            congress,
+            termId: null,
+            trackActivities: "pending",
+            status: "draft",
+            editedFields: [],
+            activityquorumId: billId
+          });
+          await activity.save();
+          console.log(`✅ Created new cosponsorship activity for ${sponsorId}`);
+          savedCount++;
+        }
+
+        await saveCosponsorshipToLegislator({
+          personId,
+          activityId: activity._id,
+          score: "yes"
+        });
+
+      } catch (err) {
+        console.warn(`❗ Error processing sponsor ${sponsorId}:`, err.message);
+      }
+    }
+
+    console.log(`🎉 Finished processing cosponsors. New activities: ${savedCount}`);
+    return savedCount;
+  } catch (err) {
+    console.error(`❌ Failed to fetch cosponsorships for bill ${billId}:`, err.message);
+    return 0;
+  }
+}
+
 }
 
 module.exports = activityController;
