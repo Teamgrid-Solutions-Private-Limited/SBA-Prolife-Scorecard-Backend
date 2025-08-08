@@ -108,63 +108,66 @@ class senatorDataController {
   }
 
   // Delete senator data by ID
-  static async deleteSenatorData(req, res) {
-    try {
-      // 1. Find the SenatorData to be deleted
-      const senatorDataToDelete = await SenatorData.findById(req.params.id);
-      if (!senatorDataToDelete) {
-        return res.status(404).json({ message: "Senator data not found" });
-      }
-
-      // 2. Find the parent senator
-      const senatorId = senatorDataToDelete.senateId;
-      const senator = await Senator.findById(senatorId);
-      if (!senator) {
-        return res.status(404).json({ message: "Senator not found" });
-      }
-
-      // 3. Fetch all current SenatorData for this senator (before deletion)
-      const senatorDataList = await SenatorData.find({ senateId: senatorId }).lean();
-
-      // 4. Save snapshot to previousState
-      const currentState = senator.toObject();
-      delete currentState._id;
-      delete currentState.createdAt;
-      delete currentState.updatedAt;
-      delete currentState.__v;
-      delete currentState.previousState; // <-- Prevents nesting!
-      currentState.senatorData = senatorDataList;
-      await Senator.findByIdAndUpdate(senatorId, {
-        previousState: currentState,
-        snapshotSource: "deleted_pending_update",
-      });
-      console.log("Senator previousState before deletion:", currentState.senatorData); // -- Add this line
-
-      // 5. Now delete the SenatorData
-      await SenatorData.findByIdAndDelete(req.params.id);
-
-      res.status(200).json({ message: "Senator data deleted successfully", data: senatorDataToDelete });
-    } catch (error) {
-      res.status(500).json({ message: "Error deleting senator data", error });
+static async deleteSenatorData(req, res) {
+  try {
+    // 1. Find the SenatorData to be deleted
+    const senatorDataToDelete = await SenatorData.findById(req.params.id);
+    if (!senatorDataToDelete) {
+      return res.status(404).json({ message: "Senator data not found" });
     }
+
+    // 2. Find the parent senator
+    const senatorId = senatorDataToDelete.senateId;
+    const senator = await Senator.findById(senatorId);
+    if (!senator) {
+      return res.status(404).json({ message: "Senator not found" });
+    }
+
+    // 3. Fetch all current SenatorData for this senator (before deletion)
+    const senatorDataList = await SenatorData.find({ senateId: senatorId }).lean();
+
+    // 4. Prepare current state for history
+    const currentState = senator.toObject();
+    delete currentState._id;
+    delete currentState.createdAt;
+    delete currentState.updatedAt;
+    delete currentState.__v;
+    delete currentState.history;
+    currentState.senatorData = senatorDataList;
+
+    // 5. Create history entry for the deletion
+    const historyEntry = {
+      oldData: currentState,
+      timestamp: new Date(),
+      actionType: 'delete',
+      deletedDataId: req.params.id, // Store the ID of the deleted data
+      deletedData: senatorDataToDelete.toObject() // Store the actual deleted data
+    };
+
+    // 6. Update senator with history and delete the data
+    await Promise.all([
+      Senator.findByIdAndUpdate(
+        senatorId,
+        {
+          $push: { history: historyEntry },
+          snapshotSource: "deleted_pending_update"
+        }
+      ),
+      SenatorData.findByIdAndDelete(req.params.id)
+    ]);
+
+    res.status(200).json({ 
+      message: "Senator data deleted successfully", 
+      data: senatorDataToDelete 
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      message: "Error deleting senator data", 
+      error: error.message 
+    });
   }
-  // static async deleteSenatorData(req, res) {
-  //   try {
-  //     const deletedSenatorData = await SenatorData.findByIdAndDelete(
-  //       req.params.id
-  //     );
+}
 
-  //     if (!deletedSenatorData) {
-  //       return res.status(404).json({ message: "Senator data not found" });
-  //     }
-
-  //     res.status(200).json({ message: "Senator data deleted successfully" });
-  //   } catch (error) {
-  //     res.status(500).json({ message: "Error deleting senator data", error });
-  //   }
-  // }
-
-  // Get senator data by senator ID with populated termId and senatorId
   static async getSenatorDataBySenatorId(req, res) {
     try {
       const senateId = req.params.id;
