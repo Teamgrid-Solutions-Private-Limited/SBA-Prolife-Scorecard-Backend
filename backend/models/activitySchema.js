@@ -37,8 +37,26 @@ const activitySchema = new mongoose.Schema(
       ),
       default: {},
     },
+     // Replace previousState with history array
+    history: [
+      {
+        oldData: Object,
+        timestamp: {
+          type: Date,
+          default: Date.now,
+        },
+        actionType: {
+          type: String,
+          enum: ['update', 'delete'],
+          default: 'update',
+        },
+      },
+    ],
+    snapshotSource: {
+      type: String, // 'deleted' | 'edited'
+      enum: ['deleted_pending_update', 'edited'],
+    },
     // New fields for discard functionality
-    previousState: { type: Object }, // Stores the document state before editing
     modifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: "users" }, // Who made the changes
     modifiedAt: Date, // When changes were made
   },
