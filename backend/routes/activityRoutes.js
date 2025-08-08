@@ -16,7 +16,7 @@ router.get('/activity/viewId/:id', protectedKey, AC.getActivityById);
 router.put('/activity/update/:id', AC.updateActivity);
 
 // DELETE: Delete a activity by ID
-router.delete('/activity/delete/:id', AC.deleteActivity);
+router.delete("/activity/delete/:id", AC.deleteActivity);
 
 router.put("/activity/status/:id", AC.updateActivityStatus);
 // PATCH: Bulk update activity status
