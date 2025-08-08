@@ -22,7 +22,7 @@ async function saveCosponsorshipToLegislator({ personId, activityId, score = "ye
   if (!localPerson) {
     localPerson = await Representative.findOne({ repId: personId });
     if (!localPerson) {
-      console.warn(`❌ No local legislator found for Quorum personId ${personId}`);
+     // console.warn(`❌ No local legislator found for Quorum personId ${personId}`);
       return false;
     }
     dataModel = RepresentativeData;
@@ -50,7 +50,7 @@ async function saveCosponsorshipToLegislator({ personId, activityId, score = "ye
     { upsert: true, new: true }
   );
 
-  console.log(`✅ Linked activity ${activityId} to ${roleLabel}: ${localPerson.fullName || localPerson._id}`);
+  //console.log(`✅ Linked activity ${activityId} to ${roleLabel}: ${localPerson.fullName || localPerson._id}`);
   return true;
 }
 
@@ -269,7 +269,16 @@ class activityController {
     try {
       const { id } = req.params;
 
-      // 1️⃣ Find activity
+     // console.log("🗑 Delete request for Activity ID:", id);
+
+      // Make sure ID is valid
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(400).json({ message: "Invalid activity ID" });
+      }
+
+      // 1️⃣ Find the activity
       const activity = await Activity.findById(id).session(session);
       if (!activity) {
         await session.abortTransaction();
@@ -277,20 +286,77 @@ class activityController {
         return res.status(404).json({ message: "Activity not found" });
       }
 
-      // 2️⃣ Delete activity
+      const activityObjectId = activity._id;
+      const activityStringId = activity._id.toString();
+
+      //console.log("📌 Found activity:", activity);
+
+      // 2️⃣ Debug: Check SenatorData matches before delete
+      const senatorMatches = await SenatorData.find({
+        $or: [
+          { "activitiesScore.activityId": activityObjectId },
+          { "activitiesScore.activityId": activityStringId },
+        ],
+      }).session(session);
+
+     // console.log(`👀 Senator matches: ${senatorMatches.length}`);
+      senatorMatches.forEach((doc) =>
+        console.log("   - SenatorData ID:", doc._id.toString())
+      );
+
+      // 3️⃣ Debug: Check RepresentativeData matches before delete
+      const repMatches = await RepresentativeData.find({
+        $or: [
+          { "activitiesScore.activityId": activityObjectId },
+          { "activitiesScore.activityId": activityStringId },
+        ],
+      }).session(session);
+
+     // console.log(`👀 Representative matches: ${repMatches.length}`);
+      repMatches.forEach((doc) =>
+        console.log("   - RepresentativeData ID:", doc._id.toString())
+      );
+
+      // 4️⃣ Delete activity
       await Activity.findByIdAndDelete(id).session(session);
 
-      // 3️⃣ Remove references depending on type
+      // 5️⃣ Remove from SenatorData / RepresentativeData
       if (activity.type === "senate") {
         await SenatorData.updateMany(
-          { "activitiesScore.activityId": id },
-          { $pull: { activitiesScore: { activityId: id } } }
+          {
+            $or: [
+              { "activitiesScore.activityId": activityObjectId },
+              { "activitiesScore.activityId": activityStringId },
+            ],
+          },
+          {
+            $pull: {
+              activitiesScore: {
+                activityId: { $in: [activityObjectId, activityStringId] },
+              },
+            },
+          }
         ).session(session);
-      } else if (activity.type === "house") {
+        console.log("✅ Removed activity from SenatorData references");
+      }
+
+      if (activity.type === "house") {
         await RepresentativeData.updateMany(
-          { "activitiesScore.activityId": id },
-          { $pull: { activitiesScore: { activityId: id } } }
+          {
+            $or: [
+              { "activitiesScore.activityId": activityObjectId },
+              { "activitiesScore.activityId": activityStringId },
+            ],
+          },
+          {
+            $pull: {
+              activitiesScore: {
+                activityId: { $in: [activityObjectId, activityStringId] },
+              },
+            },
+          }
         ).session(session);
+        console.log("✅ Removed activity from RepresentativeData references");
       }
 
       // ✅ Commit transaction
@@ -301,7 +367,7 @@ class activityController {
     } catch (err) {
       await session.abortTransaction();
       session.endSession();
-      console.error("Error deleting activity:", err);
+      console.error("❌ Error deleting activity:", err);
       res.status(500).json({ message: "Server error" });
     }
   }
