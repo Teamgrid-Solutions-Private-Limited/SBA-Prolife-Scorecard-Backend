@@ -4,6 +4,7 @@ const Senator = require("../models/senatorSchema");
 const Representative = require("../models/representativeSchema");
 const SenatorData = require("../models/senatorDataSchema");
 const RepresentativeData = require("../models/representativeDataSchema");
+const mongoose = require("mongoose");
 
 const axios = require("axios");
   const BASE = process.env.QUORUM_BASE_URL || "https://www.quorum.us";
@@ -260,15 +261,48 @@ class activityController {
   }
 
   // Delete an activity
+  // Delete activity and clean references
   static async deleteActivity(req, res) {
-    try {
-      const deletedActivity = await Activity.findByIdAndDelete(req.params.id);
-      if (!deletedActivity)
-        return res.status(404).json({ message: "Activity not found" });
+    const session = await mongoose.startSession();
+    session.startTransaction();
 
-      res.status(200).json({ message: "Activity deleted successfully" });
-    } catch (error) {
-      res.status(500).json({ message: "Error deleting activity", error });
+    try {
+      const { id } = req.params;
+
+      // 1️⃣ Find activity
+      const activity = await Activity.findById(id).session(session);
+      if (!activity) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(404).json({ message: "Activity not found" });
+      }
+
+      // 2️⃣ Delete activity
+      await Activity.findByIdAndDelete(id).session(session);
+
+      // 3️⃣ Remove references depending on type
+      if (activity.type === "senate") {
+        await SenatorData.updateMany(
+          { "activitiesScore.activityId": id },
+          { $pull: { activitiesScore: { activityId: id } } }
+        ).session(session);
+      } else if (activity.type === "house") {
+        await RepresentativeData.updateMany(
+          { "activitiesScore.activityId": id },
+          { $pull: { activitiesScore: { activityId: id } } }
+        ).session(session);
+      }
+
+      // ✅ Commit transaction
+      await session.commitTransaction();
+      session.endSession();
+
+      res.json({ message: "Activity deleted and related references removed" });
+    } catch (err) {
+      await session.abortTransaction();
+      session.endSession();
+      console.error("Error deleting activity:", err);
+      res.status(500).json({ message: "Server error" });
     }
   }
 
@@ -483,6 +517,7 @@ class activityController {
       return 0;
     }
   }
+  // Cleanup function to remove orphaned activity references
 }
 
 module.exports = activityController;
