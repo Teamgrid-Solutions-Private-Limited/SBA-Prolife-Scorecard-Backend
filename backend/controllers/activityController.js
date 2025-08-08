@@ -50,7 +50,7 @@ async function saveCosponsorshipToLegislator({ personId, activityId, score = "ye
     { upsert: true, new: true }
   );
 
-  console.log(`✅ Linked activity ${activityId} to ${roleLabel}: ${localPerson.fullName || localPerson._id}`);
+  console.log(` Linked activity ${activityId} to ${roleLabel}: ${localPerson.fullName || localPerson._id}`);
   return true;
 }
 
