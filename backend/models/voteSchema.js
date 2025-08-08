@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+
 const VoteSchema = new mongoose.Schema({
   type: { type: String },
   title: { type: String },
@@ -32,12 +33,27 @@ const VoteSchema = new mongoose.Schema({
     ),
     default: {},
   },
-  // New fields for discard functionality
-      previousState: { type: Object }, // Stores the document state before editing
-      modifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: "users" }, // Who made the changes
-      modifiedAt: Date, // When changes were made
+  // Replaced previousState with history array
+  history: [
+    {
+      oldData: Object,
+      timestamp: {
+        type: Date,
+        default: Date.now,
+      },
+      actionType: {
+        type: String,
+        enum: ['update', 'delete'],
+        default: 'update',
+      },
     },
-  { timestamps: true }
-);
+  ],
+  snapshotSource: {
+    type: String, // 'deleted' | 'edited'
+    enum: ['deleted_pending_update', 'edited'],
+  },
+  modifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
+  modifiedAt: Date,
+}, { timestamps: true });
 
 module.exports = mongoose.model("votes", VoteSchema);
