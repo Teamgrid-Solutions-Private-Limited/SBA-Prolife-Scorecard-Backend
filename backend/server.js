@@ -16,7 +16,6 @@ const voteRoute = require('./routes/voteRoutes');
 const activityRoute = require('./routes/activityRoutes');
 const houseDataRoute = require('./routes/representativeDataRoutes');
 const houseRoute = require('./routes/representativeRoutes');
-const dummyDataRoute = require('./routes/demoRoutes');
 const getquorumRoute = require('./routes/getQuorumRoutes');
 const sendInviteRoute = require('./routes/inviteUserRoute');
 
@@ -44,7 +43,7 @@ app.use('/activity',activityRoute);
 app.use('/house',houseRoute);
 app.use('/houseData',houseDataRoute);
 app.use('/fetch-quorum',getquorumRoute);
-app.use('/dummy-data',dummyDataRoute);
+
 
 
 app.get("/", (req, res) => {
