@@ -57,7 +57,15 @@ class representativeController {
   // Get all House for frontend display
   static async AllHouse(req, res) {
     try {
-      const houses = await House.find().lean(); // fast read-only fetch
+       const { district, party, name } = req.query;
+
+            // Build filter object dynamically
+            const filter = {};
+            if (district) filter.district = new RegExp(`^${district}$`, "i"); // exact match, case-insensitive
+            if (party) filter.party = new RegExp(`^${party}$`, "i"); // exact match, case-insensitive
+            if (name) filter.name = new RegExp(name, "i"); // partial match in name
+
+            const houses = await House.find(filter).lean();
 
       const housesWithRatings = await Promise.all(
         houses.map(async (house) => {
@@ -78,11 +86,12 @@ class representativeController {
               .select("rating currentTerm summary")
               .lean();
           }
-
+          // Remove "Sen." or "Sen" from start of name
+          const cleanName = house.name.replace(/^Rep\.?\s+/i, "");
           // Clean fast mapping
           return {
             id: house._id,
-            name: house.name,
+            name: cleanName,
             district: house.district,
             party: house.party,
             photo: house.photo,
