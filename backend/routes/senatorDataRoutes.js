@@ -21,4 +21,7 @@ router.delete('/senator-data/delete/:id', SenatorDataController.deleteSenatorDat
 //GET : Retrieve senator data by senatorID
 router.get('/senator-data/viewbysenator/:id', protectedKey, SenatorDataController.getSenatorDataBySenatorId);
 
+//frontend ui display
+router.get('/frontend/senator-data/viewbysenator/:id', protectedKey, SenatorDataController.SenatorDataBySenatorId);
+
 module.exports = router;
