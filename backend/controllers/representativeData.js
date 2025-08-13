@@ -118,64 +118,64 @@ class houseDataController {
 
   // Delete house data by ID
   static async deleteHouseData(req, res) {
-  try {
-    // 1. Find the HouseData to be deleted
-    const houseDataToDelete = await HouseData.findById(req.params.id);
-    if (!houseDataToDelete) {
-      return res.status(404).json({ message: "House data not found" });
+    try {
+      // 1. Find the HouseData to be deleted
+      const houseDataToDelete = await HouseData.findById(req.params.id);
+      if (!houseDataToDelete) {
+        return res.status(404).json({ message: "House data not found" });
+      }
+
+      // 2. Find the parent house
+      const houseId = houseDataToDelete.houseId;
+      const house = await House.findById(houseId);
+      if (!house) {
+        return res.status(404).json({ message: "House not found" });
+      }
+
+      // 3. Fetch all current HouseData for this house (before deletion)
+      const houseDataList = await HouseData.find({ houseId: houseId }).lean();
+
+      // 4. Prepare current state for history
+      const currentState = house.toObject();
+      delete currentState._id;
+      delete currentState.createdAt;
+      delete currentState.updatedAt;
+      delete currentState.__v;
+      delete currentState.history;
+      currentState.representativeData = houseDataList;
+
+      // 5. Create history entry for the deletion
+      const historyEntry = {
+        oldData: currentState,
+        timestamp: new Date(),
+        actionType: "delete",
+        deletedDataId: req.params.id,
+        deletedData: houseDataToDelete.toObject()
+      };
+
+      // 6. Update house with history and delete the data
+      await Promise.all([
+        House.findByIdAndUpdate(
+          houseId,
+          {
+            $push: { history: historyEntry },
+            snapshotSource: "deleted_pending_update"
+          }
+        ),
+        HouseData.findByIdAndDelete(req.params.id)
+      ]);
+
+      res.status(200).json({
+        message: "House data deleted successfully",
+        data: houseDataToDelete
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: "Error deleting house data",
+        error: error.message
+      });
     }
- 
-    // 2. Find the parent house
-    const houseId = houseDataToDelete.houseId;
-    const house = await House.findById(houseId);
-    if (!house) {
-      return res.status(404).json({ message: "House not found" });
-    }
- 
-    // 3. Fetch all current HouseData for this house (before deletion)
-    const houseDataList = await HouseData.find({ houseId: houseId }).lean();
- 
-    // 4. Prepare current state for history
-    const currentState = house.toObject();
-    delete currentState._id;
-    delete currentState.createdAt;
-    delete currentState.updatedAt;
-    delete currentState.__v;
-    delete currentState.history;
-    currentState.representativeData = houseDataList;
- 
-    // 5. Create history entry for the deletion
-    const historyEntry = {
-      oldData: currentState,
-      timestamp: new Date(),
-      actionType: "delete",
-      deletedDataId: req.params.id,
-      deletedData: houseDataToDelete.toObject()
-    };
- 
-    // 6. Update house with history and delete the data
-    await Promise.all([
-      House.findByIdAndUpdate(
-        houseId,
-        {
-          $push: { history: historyEntry },
-          snapshotSource: "deleted_pending_update"
-        }
-      ),
-      HouseData.findByIdAndDelete(req.params.id)
-    ]);
- 
-    res.status(200).json({
-      message: "House data deleted successfully",
-      data: houseDataToDelete
-    });
-  } catch (error) {
-    res.status(500).json({
-      message: "Error deleting house data",
-      error: error.message
-    });
   }
-}
   // static async deleteHouseData(req, res) {
   //   try {
   //     const deletedHouseData = await HouseData.findById(req.params.id);
@@ -189,10 +189,10 @@ class houseDataController {
   //     if (!house) {
   //       return res.status(404).json({ message: "House not found" });
   //     }
- 
+
   //     // 3. Fetch all current SenatorData for this senator (before deletion)
   //     const RepresentativeDataList = await HouseData.find({houseId: houseId }).lean();
- 
+
   //     // 4. Save snapshot to previousState
   //     const currentState = house.toObject();
   //     delete currentState._id;
@@ -206,7 +206,7 @@ class houseDataController {
   //       snapshotSource: "deleted_pending_update",
   //     });
   //     console.log("House previousState before deletion:", currentState.houseData); // -- Add this line
- 
+
   //     // 5. Now delete the HouseData
   //     await HouseData.findByIdAndDelete(req.params.id);
 
@@ -217,26 +217,69 @@ class houseDataController {
   //       .json({ message: "Error deleting house data", error: error.message });
   //   }
   // }
+  // static async getHouseDataByHouseId(req, res) {
+  //   try {
+  //     const houseId = req.params.id;
+  //     const houseData = await HouseData.find({ houseId })
+  //       .populate("termId")
+  //       .populate("houseId")
+  //       .populate("votesScore.voteId")
+  //       .populate("activitiesScore.activityId");
+
+  //     if (!houseData) {
+  //       return res.status(404).json({ message: "house data not found" });
+  //     }
+
+  //     res
+  //       .status(200)
+  //       .json({ message: "Retrive successfully", info: houseData });
+  //   } catch (error) {
+  //     res
+  //       .status(500)
+  //       .json({ message: "Error retrieving house data", error: error.message });
+  //   }
+  // }
   static async getHouseDataByHouseId(req, res) {
     try {
       const houseId = req.params.id;
-      const houseData = await HouseData.find({ houseId })
+
+      let houseData = await HouseData.find({ houseId })
+        .sort({ createdAt: 1 })
         .populate("termId")
         .populate("houseId")
-        .populate("votesScore.voteId")
-        .populate("activitiesScore.activityId");
+        .populate({
+          path: "votesScore.voteId",
+          populate: { path: "termId" } // Also populate vote's termId
+        })
+        .populate("activitiesScore.activityId")
+        .lean(); // Convert to plain JS objects
 
-      if (!houseData) {
-        return res.status(404).json({ message: "house data not found" });
+      // Inject termId from votesScore if missing
+      houseData = houseData.map(hd => {
+        if (!hd.termId && hd.votesScore?.length) {
+          for (const vote of hd.votesScore) {
+            if (vote.voteId?.termId) {
+              hd.termId = vote.voteId.termId; // Set from vote
+              break;
+            }
+          }
+        }
+        return hd;
+      });
+
+      if (!houseData.length) {
+        return res.status(404).json({ message: "House data not found" });
       }
 
-      res
-        .status(200)
-        .json({ message: "Retrive successfully", info: houseData });
+      res.status(200).json({
+        message: "Retrieved successfully",
+        info: houseData
+      });
     } catch (error) {
-      res
-        .status(500)
-        .json({ message: "Error retrieving house data", error: error.message });
+      res.status(500).json({
+        message: "Error retrieving house data",
+        error: error.message,
+      });
     }
   }
 }
