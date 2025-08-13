@@ -154,7 +154,7 @@ class activityController {
  
       // Handle discard logic
       if (req.body.discardChanges === "true") {
-        return ActivityController.discardActivityChanges(req, res);
+        return activityController.discardActivityChanges(req, res);
       }
  
       const existingActivity = await Activity.findById(activityID);
