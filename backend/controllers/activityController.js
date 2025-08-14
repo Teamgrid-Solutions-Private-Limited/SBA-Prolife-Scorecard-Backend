@@ -50,10 +50,9 @@ async function saveCosponsorshipToLegislator({ personId, activityId, score = "ye
     { upsert: true, new: true }
   );
 
-  //console.log(`✅ Linked activity ${activityId} to ${roleLabel}: ${localPerson.fullName || localPerson._id}`);
+  //console.log(` Linked activity ${activityId} to ${roleLabel}: ${localPerson.fullName || localPerson._id}`);
   return true;
 }
-
 
 class activityController {
   // Create a new activity with file upload for readMore
@@ -156,6 +155,7 @@ class activityController {
       if (req.body.discardChanges === "true") {
         return activityController.discardActivityChanges(req, res);
       }
+ 
  
       const existingActivity = await Activity.findById(activityID);
       if (!existingActivity) {
