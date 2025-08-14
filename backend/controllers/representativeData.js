@@ -171,93 +171,73 @@ class houseDataController {
       });
     }
   }
-  // static async deleteHouseData(req, res) {
-  //   try {
-  //     const deletedHouseData = await HouseData.findById(req.params.id);
-
-  //     if (!deletedHouseData) {
-  //       return res.status(404).json({ message: "house data not found" });
-  //     }
-  //         // 2. Find the parent senator
-  //     const houseId = deletedHouseData.houseId;
-  //     const house = await House.findById(houseId);
-  //     if (!house) {
-  //       return res.status(404).json({ message: "House not found" });
-  //     }
-
-  //     // 3. Fetch all current SenatorData for this senator (before deletion)
-  //     const RepresentativeDataList = await HouseData.find({houseId: houseId }).lean();
-
-  //     // 4. Save snapshot to previousState
-  //     const currentState = house.toObject();
-  //     delete currentState._id;
-  //     delete currentState.createdAt;
-  //     delete currentState.updatedAt;
-  //     delete currentState.__v;
-  //     delete currentState.previousState; // <-- Prevents nesting!
-  //     currentState.representativeData= RepresentativeDataList;
-  //     await House.findByIdAndUpdate(houseId, {
-  //       previousState: currentState,
-  //       snapshotSource: "deleted_pending_update",
-  //     });
-  //     console.log("House previousState before deletion:", currentState.houseData); // -- Add this line
-
-  //     // 5. Now delete the HouseData
-  //     await HouseData.findByIdAndDelete(req.params.id);
-
-  //     res.status(200).json({ message: "house data deleted successfully" });
-  //   } catch (error) {
-  //     res
-  //       .status(500)
-  //       .json({ message: "Error deleting house data", error: error.message });
-  //   }
-  // }
-  static async getHouseDataByHouseId(req, res) {
+  
+static async getHouseDataByHouseId(req, res) {
     try {
       const houseId = req.params.id;
-      const houseData = await HouseData.find({ houseId })
+
+      let houseData = await HouseData.find({ houseId })
+        .sort({ createdAt: 1 })
         .populate("termId")
         .populate("houseId")
-        .populate("votesScore.voteId")
-        .populate("activitiesScore.activityId");
+        .populate({
+          path: "votesScore.voteId",
+          populate: { path: "termId" } // Also populate vote's termId
+        })
+        .populate("activitiesScore.activityId")
+        .lean(); // Convert to plain JS objects
 
-      if (!houseData) {
-        return res.status(404).json({ message: "house data not found" });
+      // Inject termId from votesScore if missing
+      houseData = houseData.map(hd => {
+        if (!hd.termId && hd.votesScore?.length) {
+          for (const vote of hd.votesScore) {
+            if (vote.voteId?.termId) {
+              hd.termId = vote.voteId.termId; // Set from vote
+              break;
+            }
+          }
+        }
+        return hd;
+      });
+
+      if (!houseData.length) {
+        return res.status(404).json({ message: "House data not found" });
       }
 
-      res
-        .status(200)
-        .json({ message: "Retrive successfully", info: houseData });
+      res.status(200).json({
+        message: "Retrieved successfully",
+        info: houseData
+      });
     } catch (error) {
-      res
-        .status(500)
-        .json({ message: "Error retrieving house data", error: error.message });
+      res.status(500).json({
+        message: "Error retrieving house data",
+        error: error.message,
+      });
     }
   }
   //frontend getRepresentativeDataByHouseId
-
   static async HouseDataByHouseId(req, res) {
     try {
       const houseId = req.params.id;
-
+ 
       // Fetch all terms for this house
       const houseData = await HouseData.find({ houseId })
         .populate("termId")
         .populate("houseId")
         .populate("votesScore.voteId")
         .populate("activitiesScore.activityId");
-
+ 
       if (!houseData.length) {
         return res.status(404).json({ message: "House data not found" });
       }
-
+ 
       // Sort: currentTerm first, then latest by createdAt
       let sortedData = houseData.sort((a, b) => {
         if (a.currentTerm && !b.currentTerm) return -1;
         if (!a.currentTerm && b.currentTerm) return 1;
         return new Date(b.createdAt) - new Date(a.createdAt);
       });
-
+ 
       // If multiple currentTerm entries exist, keep only the latest
       const currentTerms = sortedData.filter((d) => d.currentTerm);
       if (currentTerms.length > 1) {
@@ -269,16 +249,16 @@ class houseDataController {
           ...sortedData.filter((d) => !d.currentTerm),
         ];
       }
-
+ 
       // House details from the first record
       const latestHouseDetails = sortedData[0].houseId;
-
+ 
       // Remove houseId from term records
       const termData = sortedData.map((term) => {
         const { houseId, ...rest } = term.toObject();
         return rest;
       });
-
+ 
       res.status(200).json({
         message: "Retrieved successfully",
         house: latestHouseDetails,
