@@ -1,5 +1,6 @@
 const Vote = require("../models/voteSchema");
 const upload = require("../middlewares/fileUploads");
+const Term =require("../models/termSchema");
 class voteController {
   // Create a new vote with file upload for readMore
 
@@ -63,21 +64,45 @@ class voteController {
   // Get all votes with optional filtering by 'published' and populated termId
   static async getAllVotes(req, res) {
     try {
-      const filter = {};
+      let filter = {};
 
-      // Check if query param is present and valid
-      if (req.query.published === "true") {
-        filter.published = true;
-      } else if (req.query.published === "false") {
-        filter.published = false;
+      // Handle frontend/admin published filter
+      if (req.query.frontend === "true") {
+        filter.status = "published";
+      } else {
+        if (req.query.published === "true") {
+          filter.status = "published";
+        } else if (req.query.published === "false") {
+          filter.status = { $ne: "published" };
+        }
       }
 
-      const votes = await Vote.find(filter).populate("termId");
+      // If term name is provided, resolve termId first
+      if (req.query.termName) {
+        const term = await Term.findOne({
+          name: { $regex: `^${req.query.termName}$`, $options: "i" }, // case-insensitive exact match
+        }).lean();
+
+        if (term) {
+          filter.termId = term._id;
+        } else {
+          return res.status(404).json({ message: "Term not found" });
+        }
+      }
+
+      const votes = await Vote.find(filter)
+        .populate({
+          path: "termId",
+          select: "name",
+        })
+        .lean();
+
       res.status(200).json(votes);
     } catch (error) {
-      res
-        .status(500)
-        .json({ message: "Error retrieving votes", error: error.message });
+      res.status(500).json({
+        message: "Error retrieving votes",
+        error: error.message,
+      });
     }
   }
 
