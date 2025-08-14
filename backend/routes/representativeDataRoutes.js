@@ -20,4 +20,7 @@ router.delete('/house-data/delete/:id', HD.deleteHouseData);
 
 router.get('/house-data/viewbyhouse/:id', protectedKey, HD.getHouseDataByHouseId);
 
+//frontend getHouseDataByHouseId
+router.get('/frontend/house-data/viewbyhouse/:id', protectedKey, HD.HouseDataByHouseId);
+
 module.exports = router;

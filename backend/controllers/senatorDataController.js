@@ -108,66 +108,65 @@ class senatorDataController {
   }
 
   // Delete senator data by ID
-static async deleteSenatorData(req, res) {
-  try {
-    // 1. Find the SenatorData to be deleted
-    const senatorDataToDelete = await SenatorData.findById(req.params.id);
-    if (!senatorDataToDelete) {
-      return res.status(404).json({ message: "Senator data not found" });
-    }
+  static async deleteSenatorData(req, res) {
+    try {
+      // 1. Find the SenatorData to be deleted
+      const senatorDataToDelete = await SenatorData.findById(req.params.id);
+      if (!senatorDataToDelete) {
+        return res.status(404).json({ message: "Senator data not found" });
+      }
 
-    // 2. Find the parent senator
-    const senatorId = senatorDataToDelete.senateId;
-    const senator = await Senator.findById(senatorId);
-    if (!senator) {
-      return res.status(404).json({ message: "Senator not found" });
-    }
+      // 2. Find the parent senator
+      const senatorId = senatorDataToDelete.senateId;
+      const senator = await Senator.findById(senatorId);
+      if (!senator) {
+        return res.status(404).json({ message: "Senator not found" });
+      }
 
-    // 3. Fetch all current SenatorData for this senator (before deletion)
-    const senatorDataList = await SenatorData.find({ senateId: senatorId }).lean();
+      // 3. Fetch all current SenatorData for this senator (before deletion)
+      const senatorDataList = await SenatorData.find({
+        senateId: senatorId,
+      }).lean();
 
-    // 4. Prepare current state for history
-    const currentState = senator.toObject();
-    delete currentState._id;
-    delete currentState.createdAt;
-    delete currentState.updatedAt;
-    delete currentState.__v;
-    delete currentState.history;
-    currentState.senatorData = senatorDataList;
+      // 4. Prepare current state for history
+      const { _id, createdAt, updatedAt, __v, history, ...currentState } =
+        senator.toObject();
+      const stateWithData = {
+        ...currentState,
+        senatorData: senatorDataList,
+      };
 
-    // 5. Create history entry for the deletion
-    const historyEntry = {
-      oldData: currentState,
-      timestamp: new Date(),
-      actionType: 'delete',
-      deletedDataId: req.params.id, // Store the ID of the deleted data
-      deletedData: senatorDataToDelete.toObject() // Store the actual deleted data
-    };
+      // 5. Create history entry for the deletion
+      const historyEntry = {
+        oldData: stateWithData,
+        timestamp: new Date(),
+        actionType: "delete",
+        deletedDataId: req.params.id, // Store the ID of the deleted data
+        deletedData: senatorDataToDelete.toObject(), // Store the actual deleted data
+      };
 
-    // 6. Update senator with history and delete the data
-    await Promise.all([
-      Senator.findByIdAndUpdate(
-        senatorId,
-        {
+      // 6. Update senator with history and delete the data
+      await Promise.all([
+        Senator.findByIdAndUpdate(senatorId, {
           $push: { history: historyEntry },
-          snapshotSource: "deleted_pending_update"
-        }
-      ),
-      SenatorData.findByIdAndDelete(req.params.id)
-    ]);
+          snapshotSource: "deleted_pending_update",
+        }),
+        SenatorData.findByIdAndDelete(req.params.id),
+      ]);
 
-    res.status(200).json({ 
-      message: "Senator data deleted successfully", 
-      data: senatorDataToDelete 
-    });
-  } catch (error) {
-    res.status(500).json({ 
-      message: "Error deleting senator data", 
-      error: error.message 
-    });
+      res.status(200).json({
+        message: "Senator data deleted successfully",
+        data: senatorDataToDelete,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: "Error deleting senator data",
+        error: error.message,
+      });
+    }
   }
-}
-static async getSenatorDataBySenatorId(req, res) {
+
+  static async getSenatorDataBySenatorId(req, res) {
   try {
     const senateId = req.params.id;
 
@@ -207,30 +206,51 @@ static async getSenatorDataBySenatorId(req, res) {
     });
   }
 }
-  // static async getSenatorDataBySenatorId(req, res) {
-  //   try {
-  //     const senateId = req.params.id;
-  //     const senatorData = await SenatorData.find({ senateId })
-  //       .sort({ createdAt:1 })
-  //       .populate("termId")
-  //       .populate("senateId")
-  //       .populate("votesScore.voteId")
-  //       .populate("activitiesScore.activityId");
 
-  //     if (!senatorData) {
-  //       return res.status(404).json({ message: "Senator data not found" });
-  //     }
+  ////frontend ui display
+  static async SenatorDataBySenatorId(req, res) {
+    try {
+      const senateId = req.params.id;
 
-  //     res
-  //       .status(200)
-  //       .json({ message: "Retrive successfully", info: senatorData });
-  //   } catch (error) {
-  //     res.status(500).json({
-  //       message: "Error retrieving senator data",
-  //       error: error.message,
-  //     });
-  //   }
-  // }
+      // Fetch all terms for this senator
+      const senatorData = await SenatorData.find({ senateId })
+        .populate("termId")
+        .populate("senateId")
+        .populate("votesScore.voteId")
+        .populate("activitiesScore.activityId");
+
+      if (!senatorData.length) {
+        return res.status(404).json({ message: "Senator data not found" });
+      }
+
+      // Sort: currentTerm first, then latest by createdAt
+      const sortedData = senatorData.sort((a, b) => {
+        if (a.currentTerm && !b.currentTerm) return -1;
+        if (!a.currentTerm && b.currentTerm) return 1;
+        return new Date(b.createdAt) - new Date(a.createdAt);
+      });
+
+      // Senator details from the latest record (first after sorting)
+      const latestSenatorDetails = sortedData[0].senateId;
+
+      // Remove senateId from term records
+      const termData = sortedData.map((term) => {
+        const { senateId, ...rest } = term.toObject();
+        return rest;
+      });
+
+      res.status(200).json({
+        message: "Retrieved successfully",
+        senator: latestSenatorDetails,
+        terms: termData,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: "Error retrieving senator data",
+        error: error.message,
+      });
+    }
+  }
 }
 
 module.exports = senatorDataController;
