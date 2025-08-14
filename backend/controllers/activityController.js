@@ -111,10 +111,38 @@ class activityController {
   // Get all activities
   static async getAllActivity(req, res) {
     try {
-      const activity = await Activity.find().populate("termId");
-      res.status(200).json(activity);
+      let filter = {};
+
+      // Frontend filter
+      if (req.query.frontend === "true") {
+        filter.status = "published";
+      } else {
+        // Admin optional filters
+        if (req.query.published === "true") {
+          filter.status = "published";
+        } else if (req.query.published === "false") {
+          filter.status = { $ne: "published" };
+        }
+      }
+
+      // Congress filter
+      if (req.query.congress) {
+        filter.congress = req.query.congress;
+      }
+
+      const activities = await Activity.find(filter)
+        .populate({
+          path: "termId",
+          select: "name",
+        })
+        .lean();
+
+      res.status(200).json(activities);
     } catch (error) {
-      res.status(500).json({ message: "Error retrieving activity", error });
+      res.status(500).json({
+        message: "Error retrieving activity",
+        error: error.message,
+      });
     }
   }
 
@@ -134,100 +162,102 @@ class activityController {
   }
 
   // Update activity with file and optional discard logic
-  static async updateActivity(req, res) {
+static async updateActivity(req, res) {
   upload.single("readMore")(req, res, async (err) => {
     if (err) return res.status(400).json({ message: err.message });
- 
+
     try {
       const activityID = req.params.id;
       let updateData = { ...req.body };
- 
+
       // Safe check for req.user
       const userId = req.user?._id || null;
       updateData.modifiedBy = userId;
       updateData.modifiedAt = new Date();
- 
+
+      // Handle file upload
       if (req.file) {
         updateData.readMore = `/uploads/${req.file.filename}`;
       }
- 
+
       // Handle discard logic
       if (req.body.discardChanges === "true") {
         return activityController.discardActivityChanges(req, res);
       }
- 
- 
+
+      // Find existing activity
       const existingActivity = await Activity.findById(activityID);
       if (!existingActivity) {
-        return res.status(404).json({ message: 'Activity not found' });
+        return res.status(404).json({ message: "Activity not found" });
       }
- 
-      // Parse fields if needed
-      if (typeof updateData.editedFields === 'string') {
+
+      // Parse JSON fields if they come as strings
+      if (typeof updateData.editedFields === "string") {
         updateData.editedFields = JSON.parse(updateData.editedFields);
       }
-      if (typeof updateData.fieldEditors === 'string') {
+      if (typeof updateData.fieldEditors === "string") {
         updateData.fieldEditors = JSON.parse(updateData.fieldEditors);
       }
- 
-      // Initialize update operations
+
+      // Prepare update operations
       const updateOperations = {
         $set: {
           ...updateData,
           modifiedBy: userId,
-          modifiedAt: new Date()
-        }
+          modifiedAt: new Date(),
+        },
       };
- 
-      // Clear fields if publishing
+
+      // If publishing, clear draft-related fields
       if (updateData.status === "published") {
         updateOperations.$set.editedFields = [];
         updateOperations.$set.fieldEditors = {};
         updateOperations.$set.history = [];
       }
- 
-      // Determine if we should take a snapshot (only if not publishing)
+
+      // If not publishing, consider snapshot for history
       if (updateData.status !== "published") {
         const canTakeSnapshot =
           !existingActivity.history ||
           existingActivity.history.length === 0 ||
           existingActivity.snapshotSource === "edited";
- 
+
         if (canTakeSnapshot) {
           const currentState = existingActivity.toObject();
-         
-          // Clean up the current state object
+
+          // Remove unnecessary properties
           delete currentState._id;
           delete currentState.createdAt;
           delete currentState.updatedAt;
           delete currentState.__v;
           delete currentState.history;
- 
-          // Create history entry
+
           const historyEntry = {
             oldData: currentState,
             timestamp: new Date(),
-            actionType: 'update'
+            actionType: "update",
           };
- 
-          // Add to update operations
+
           updateOperations.$push = { history: historyEntry };
           updateOperations.$set.snapshotSource = "edited";
-        } else if (existingActivity.snapshotSource === "deleted_pending_update") {
+        } else if (
+          existingActivity.snapshotSource === "deleted_pending_update"
+        ) {
           updateOperations.$set.snapshotSource = "edited";
         }
       }
- 
+
+      // Apply update
       const updatedActivity = await Activity.findByIdAndUpdate(
         activityID,
-        updateOperations, // Use the structured operations
+        updateOperations,
         { new: true }
       ).populate("termId");
- 
+
       if (!updatedActivity) {
         return res.status(404).json({ message: "Activity not found" });
       }
- 
+
       res.status(200).json({
         message: "Activity updated successfully",
         info: updatedActivity,
@@ -240,6 +270,7 @@ class activityController {
     }
   });
 }
+
   // static async updateActivity(req, res) {
   //   upload.single("readMore")(req, res, async (err) => {
   //     if (err) return res.status(400).json({ message: err.message });
@@ -332,44 +363,46 @@ class activityController {
   // Discard changes (dedicated endpoint)
   // In activityController.js
   static async discardActivityChanges(req, res) {
-  try {
-    const activity = await Activity.findById(req.params.id);
-    if (!activity) {
-      return res.status(404).json({ message: "Activity not found" });
+    try {
+      const activity = await Activity.findById(req.params.id);
+      if (!activity) {
+        return res.status(404).json({ message: "Activity not found" });
+      }
+
+      // Check if there's any history available
+      if (!activity.history || activity.history.length === 0) {
+        return res
+          .status(400)
+          .json({ message: "No history available to restore" });
+      }
+
+      // Get the original state (index 0)
+      const originalState = activity.history[0].oldData;
+
+      // Restore the activity to its original state and empty the history
+      const restoredActivity = await Activity.findByIdAndUpdate(
+        req.params.id,
+        {
+          ...originalState,
+          history: [], // Empty the history array
+          snapshotSource: "edited", // Reset snapshot source
+          modifiedAt: new Date(), // Update modification timestamp
+          modifiedBy: req.user?._id, // Track who performed the discard
+        },
+        { new: true }
+      ).populate("termId");
+
+      res.status(200).json({
+        message: "Restored to original state and history cleared",
+        info: restoredActivity,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: "Failed to discard changes",
+        error: error.message,
+      });
     }
- 
-    // Check if there's any history available
-    if (!activity.history || activity.history.length === 0) {
-      return res.status(400).json({ message: "No history available to restore" });
-    }
- 
-    // Get the original state (index 0)
-    const originalState = activity.history[0].oldData;
- 
-    // Restore the activity to its original state and empty the history
-    const restoredActivity = await Activity.findByIdAndUpdate(
-      req.params.id,
-      {
-        ...originalState,
-        history: [], // Empty the history array
-        snapshotSource: "edited", // Reset snapshot source
-        modifiedAt: new Date(), // Update modification timestamp
-        modifiedBy: req.user?._id // Track who performed the discard
-      },
-      { new: true }
-    ).populate("termId");
- 
-    res.status(200).json({
-      message: "Restored to original state and history cleared",
-      info: restoredActivity
-    });
-  } catch (error) {
-    res.status(500).json({
-      message: "Failed to discard changes",
-      error: error.message,
-    });
   }
-}
 
   // Delete an activity
   // Delete activity and clean references
@@ -380,7 +413,7 @@ class activityController {
     try {
       const { id } = req.params;
 
-     // console.log("🗑 Delete request for Activity ID:", id);
+      // console.log("🗑 Delete request for Activity ID:", id);
 
       // Make sure ID is valid
       if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -410,7 +443,7 @@ class activityController {
         ],
       }).session(session);
 
-     // console.log(`👀 Senator matches: ${senatorMatches.length}`);
+      // console.log(`👀 Senator matches: ${senatorMatches.length}`);
       senatorMatches.forEach((doc) =>
         console.log("   - SenatorData ID:", doc._id.toString())
       );
@@ -423,7 +456,7 @@ class activityController {
         ],
       }).session(session);
 
-     // console.log(`👀 Representative matches: ${repMatches.length}`);
+      // console.log(`👀 Representative matches: ${repMatches.length}`);
       repMatches.forEach((doc) =>
         console.log("   - RepresentativeData ID:", doc._id.toString())
       );
