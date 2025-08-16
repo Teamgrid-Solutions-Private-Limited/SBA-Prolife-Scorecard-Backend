@@ -2,16 +2,24 @@ const Activity = require("../models/activitySchema");
 const upload = require("../middlewares/fileUploads");
 const Senator = require("../models/senatorSchema");
 const Representative = require("../models/representativeSchema");
-const SenatorData = require("../models/senatorDataSchema");
 const RepresentativeData = require("../models/representativeDataSchema");
+const SenatorData = require("../models/senatorDataSchema");
+const Vote = require("../models/voteSchema");
+const { buildSupportData } = require("../helper/supportDataHelper");
+
+
 const mongoose = require("mongoose");
 
 const axios = require("axios");
-  const BASE = process.env.QUORUM_BASE_URL || "https://www.quorum.us";
-  const API_KEY = process.env.QUORUM_API_KEY;
+const BASE = process.env.QUORUM_BASE_URL || "https://www.quorum.us";
+const API_KEY = process.env.QUORUM_API_KEY;
 const USERNAME = process.env.QUORUM_USERNAME;
 
-async function saveCosponsorshipToLegislator({ personId, activityId, score = "yes" }) {
+async function saveCosponsorshipToLegislator({
+  personId,
+  activityId,
+  score = "yes",
+}) {
   personId = String(personId); // Force string match
 
   let localPerson = await Senator.findOne({ senatorId: personId });
@@ -22,7 +30,7 @@ async function saveCosponsorshipToLegislator({ personId, activityId, score = "ye
   if (!localPerson) {
     localPerson = await Representative.findOne({ repId: personId });
     if (!localPerson) {
-     // console.warn(`❌ No local legislator found for Quorum personId ${personId}`);
+      // console.warn(`❌ No local legislator found for Quorum personId ${personId}`);
       return false;
     }
     dataModel = RepresentativeData;
@@ -38,14 +46,18 @@ async function saveCosponsorshipToLegislator({ personId, activityId, score = "ye
   );
 
   if (alreadyLinked) {
-    console.log(`⚠️ Already linked activity ${activityId} to ${roleLabel}: ${localPerson.name || localPerson._id}`);
+    console.log(
+      `⚠️ Already linked activity ${activityId} to ${roleLabel}: ${
+        localPerson.name || localPerson._id
+      }`
+    );
     return false;
   }
 
   await dataModel.findOneAndUpdate(
     filter,
     {
-      $push: { activitiesScore: { activityId, score } }
+      $push: { activitiesScore: { activityId, score } },
     },
     { upsert: true, new: true }
   );
@@ -147,129 +159,216 @@ class activityController {
   }
 
   // Get a specific activity by ID
+  // static async getActivityById(req, res) {
+  //   try {
+  //     const activity = await Activity.findById(req.params.id).populate(
+  //       "termId"
+  //     );
+  //     if (!activity)
+  //       return res.status(404).json({ message: "Activity not found" });
+
+  //     res.status(200).json(activity);
+  //   } catch (error) {
+  //     res.status(500).json({ message: "Error retrieving activity", error });
+  //   }
+  // }
+
+  //2nd
+  // static async getActivityById(req, res) {
+  //   try {
+  //     const activity = await Activity.findById(req.params.id)
+  //       .populate("termId")
+  //       .lean();
+
+  //     if (!activity) {
+  //       return res.status(404).json({ message: "Activity not found" });
+  //     }
+
+  //     let supportData = { yea: [], nay: [], other: [] };
+
+  //     if (activity.activityquorumId) {
+  //       // 1. Get the vote linked to this quorumId
+  //       const vote = await Vote.findOne({
+  //         quorumId: activity.activityquorumId,
+  //       }).lean();
+  //       if (vote) {
+  //         const voteId = vote._id;
+
+  //         // 2. Get Senators
+  //         const senators = await SenatorData.find({
+  //           "votesScore.voteId": voteId,
+  //         })
+  //           .populate("senateId")
+  //           .lean();
+  //         const reps = await Representative.find({
+  //           "votesScore.voteId": voteId,
+  //         })
+  //           .populate("repId")
+  //           .lean();
+
+  //         // 3. Group by score
+  //         for (const s of senators) {
+  //           const match = s.votesScore.find(
+  //             (v) => String(v.voteId) === String(voteId)
+  //           );
+  //           if (match) supportData[match.score]?.push(s.senateId);
+  //         }
+  //         for (const r of reps) {
+  //           const match = r.votesScore.find(
+  //             (v) => String(v.voteId) === String(voteId)
+  //           );
+  //           if (match) supportData[match.score]?.push(r.repId);
+  //         }
+  //       }
+  //     }
+
+  //     res.status(200).json({
+  //       ...activity,
+  //       supportData,
+  //     });
+  //   } catch (error) {
+  //     console.error("Error retrieving activity:", error);
+  //     res.status(500).json({ message: "Error retrieving activity", error });
+  //   }
+  // }
+
   static async getActivityById(req, res) {
     try {
-      const activity = await Activity.findById(req.params.id).populate(
-        "termId"
-      );
-      if (!activity)
-        return res.status(404).json({ message: "Activity not found" });
+      const activity = await Activity.findById(req.params.id)
+        .populate("termId")
+        .lean();
 
-      res.status(200).json(activity);
-    } catch (error) {
-      res.status(500).json({ message: "Error retrieving activity", error });
-    }
-  }
-
-  // Update activity with file and optional discard logic
-static async updateActivity(req, res) {
-  upload.single("readMore")(req, res, async (err) => {
-    if (err) return res.status(400).json({ message: err.message });
-
-    try {
-      const activityID = req.params.id;
-      let updateData = { ...req.body };
-
-      // Safe check for req.user
-      const userId = req.user?._id || null;
-      updateData.modifiedBy = userId;
-      updateData.modifiedAt = new Date();
-
-      // Handle file upload
-      if (req.file) {
-        updateData.readMore = `/uploads/${req.file.filename}`;
-      }
-
-      // Handle discard logic
-      if (req.body.discardChanges === "true") {
-        return activityController.discardActivityChanges(req, res);
-      }
-
-      // Find existing activity
-      const existingActivity = await Activity.findById(activityID);
-      if (!existingActivity) {
+      if (!activity) {
         return res.status(404).json({ message: "Activity not found" });
       }
 
-      // Parse JSON fields if they come as strings
-      if (typeof updateData.editedFields === "string") {
-        updateData.editedFields = JSON.parse(updateData.editedFields);
-      }
-      if (typeof updateData.fieldEditors === "string") {
-        updateData.fieldEditors = JSON.parse(updateData.fieldEditors);
-      }
+      let supportData = { yea: [], nay: [], other: [] };
 
-      // Prepare update operations
-      const updateOperations = {
-        $set: {
-          ...updateData,
-          modifiedBy: userId,
-          modifiedAt: new Date(),
-        },
-      };
-
-      // If publishing, clear draft-related fields
-      if (updateData.status === "published") {
-        updateOperations.$set.editedFields = [];
-        updateOperations.$set.fieldEditors = {};
-        updateOperations.$set.history = [];
-      }
-
-      // If not publishing, consider snapshot for history
-      if (updateData.status !== "published") {
-        const canTakeSnapshot =
-          !existingActivity.history ||
-          existingActivity.history.length === 0 ||
-          existingActivity.snapshotSource === "edited";
-
-        if (canTakeSnapshot) {
-          const currentState = existingActivity.toObject();
-
-          // Remove unnecessary properties
-          delete currentState._id;
-          delete currentState.createdAt;
-          delete currentState.updatedAt;
-          delete currentState.__v;
-          delete currentState.history;
-
-          const historyEntry = {
-            oldData: currentState,
-            timestamp: new Date(),
-            actionType: "update",
-          };
-
-          updateOperations.$push = { history: historyEntry };
-          updateOperations.$set.snapshotSource = "edited";
-        } else if (
-          existingActivity.snapshotSource === "deleted_pending_update"
-        ) {
-          updateOperations.$set.snapshotSource = "edited";
-        }
-      }
-
-      // Apply update
-      const updatedActivity = await Activity.findByIdAndUpdate(
-        activityID,
-        updateOperations,
-        { new: true }
-      ).populate("termId");
-
-      if (!updatedActivity) {
-        return res.status(404).json({ message: "Activity not found" });
+      if (activity.activityquorumId) {
+        const vote = await Vote.findOne({
+          quorumId: activity.activityquorumId,
+        }).lean();
+        supportData = await buildSupportData(vote);
       }
 
       res.status(200).json({
-        message: "Activity updated successfully",
-        info: updatedActivity,
+        ...activity,
+        supportData,
       });
     } catch (error) {
-      res.status(500).json({
-        message: "Error updating Activity",
-        error: error.message,
-      });
+      console.error("Error retrieving activity:", error);
+      res.status(500).json({ message: "Error retrieving activity", error });
     }
-  });
-}
+  }
+  // Update activity with file and optional discard logic
+  static async updateActivity(req, res) {
+    upload.single("readMore")(req, res, async (err) => {
+      if (err) return res.status(400).json({ message: err.message });
+
+      try {
+        const activityID = req.params.id;
+        let updateData = { ...req.body };
+
+        // Safe check for req.user
+        const userId = req.user?._id || null;
+        updateData.modifiedBy = userId;
+        updateData.modifiedAt = new Date();
+
+        // Handle file upload
+        if (req.file) {
+          updateData.readMore = `/uploads/${req.file.filename}`;
+        }
+
+        // Handle discard logic
+        if (req.body.discardChanges === "true") {
+          return activityController.discardActivityChanges(req, res);
+        }
+
+        // Find existing activity
+        const existingActivity = await Activity.findById(activityID);
+        if (!existingActivity) {
+          return res.status(404).json({ message: "Activity not found" });
+        }
+
+        // Parse JSON fields if they come as strings
+        if (typeof updateData.editedFields === "string") {
+          updateData.editedFields = JSON.parse(updateData.editedFields);
+        }
+        if (typeof updateData.fieldEditors === "string") {
+          updateData.fieldEditors = JSON.parse(updateData.fieldEditors);
+        }
+
+        // Prepare update operations
+        const updateOperations = {
+          $set: {
+            ...updateData,
+            modifiedBy: userId,
+            modifiedAt: new Date(),
+          },
+        };
+
+        // If publishing, clear draft-related fields
+        if (updateData.status === "published") {
+          updateOperations.$set.editedFields = [];
+          updateOperations.$set.fieldEditors = {};
+          updateOperations.$set.history = [];
+        }
+
+        // If not publishing, consider snapshot for history
+        if (updateData.status !== "published") {
+          const canTakeSnapshot =
+            !existingActivity.history ||
+            existingActivity.history.length === 0 ||
+            existingActivity.snapshotSource === "edited";
+
+          if (canTakeSnapshot) {
+            const currentState = existingActivity.toObject();
+
+            // Remove unnecessary properties
+            delete currentState._id;
+            delete currentState.createdAt;
+            delete currentState.updatedAt;
+            delete currentState.__v;
+            delete currentState.history;
+
+            const historyEntry = {
+              oldData: currentState,
+              timestamp: new Date(),
+              actionType: "update",
+            };
+
+            updateOperations.$push = { history: historyEntry };
+            updateOperations.$set.snapshotSource = "edited";
+          } else if (
+            existingActivity.snapshotSource === "deleted_pending_update"
+          ) {
+            updateOperations.$set.snapshotSource = "edited";
+          }
+        }
+
+        // Apply update
+        const updatedActivity = await Activity.findByIdAndUpdate(
+          activityID,
+          updateOperations,
+          { new: true }
+        ).populate("termId");
+
+        if (!updatedActivity) {
+          return res.status(404).json({ message: "Activity not found" });
+        }
+
+        res.status(200).json({
+          message: "Activity updated successfully",
+          info: updatedActivity,
+        });
+      } catch (error) {
+        res.status(500).json({
+          message: "Error updating Activity",
+          error: error.message,
+        });
+      }
+    });
+  }
 
   // static async updateActivity(req, res) {
   //   upload.single("readMore")(req, res, async (err) => {

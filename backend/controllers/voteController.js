@@ -1,6 +1,9 @@
 const Vote = require("../models/voteSchema");
 const upload = require("../middlewares/fileUploads");
-const Term =require("../models/termSchema");
+const Term = require("../models/termSchema");
+const { buildSupportData } = require("../helper/supportDataHelper");
+const senatorDataSchema = require("../models/senatorDataSchema");
+const representativeDataSchema = require("../models/representativeDataSchema");
 class voteController {
   // Create a new vote with file upload for readMore
 
@@ -107,14 +110,109 @@ class voteController {
   }
 
   // Get a vote by ID with populated termId
+  // static async getVoteById(req, res) {
+  //   try {
+  //     const vote = await Vote.findById(req.params.id).populate("termId");
+  //     if (!vote) {
+  //       return res.status(404).json({ message: "Vote not found" });
+  //     }
+  //     res.status(200).json(vote);
+  //   } catch (error) {
+  //     res.status(500).json({ message: "Error retrieving vote", error });
+  //   }
+  // }
+
+  //2nd
+  // static async getVoteById(req, res) {
+  //   try {
+  //     const vote = await Vote.findById(req.params.id).populate("termId").lean();
+  //     if (!vote) {
+  //       return res.status(404).json({ message: "Vote not found" });
+  //     }
+
+  //     let supportData = { yea: [], nay: [], other: [] };
+
+  //     if (vote.type?.toLowerCase() === "senate") {
+  //       const senatorVotes = await senatorDataSchema.find({
+  //         "votesScore.voteId": vote._id,
+  //       })
+  //         .populate("senateId", "name party state photo") // Only fetch required fields
+  //         .lean();
+
+  //       senatorVotes.forEach((senData) => {
+  //         const scoreEntry = senData.votesScore.find(
+  //           (v) => v.voteId.toString() === vote._id.toString()
+  //         );
+  //         if (scoreEntry) {
+  //           const info = {
+  //             name: senData.senateId?.name,
+  //             party: senData.senateId?.party,
+  //             state: senData.senateId?.state,
+  //             photo: senData.senateId?.photo,
+  //           };
+  //           if (scoreEntry.score?.toLowerCase() === "yea") {
+  //             supportData.yea.push(info);
+  //           } else if (scoreEntry.score?.toLowerCase() === "nay") {
+  //             supportData.nay.push(info);
+  //           } else {
+  //             supportData.other.push(info);
+  //           }
+  //         }
+  //       });
+  //     } else if (vote.type?.toLowerCase() === "house") {
+  //       const repVotes = await representativeDataSchema.find({
+  //         "votesScore.voteId": vote._id,
+  //       })
+  //         .populate("repId", "name party state") // Only fetch required fields
+  //         .lean();
+
+  //       repVotes.forEach((repData) => {
+  //         const scoreEntry = repData.votesScore.find(
+  //           (v) => v.voteId.toString() === vote._id.toString()
+  //         );
+  //         if (scoreEntry) {
+  //           const info = {
+  //             name: repData.repId?.name,
+  //             party: repData.repId?.party,
+  //             state: repData.repId?.state,
+  //           };
+  //           if (scoreEntry.score?.toLowerCase() === "yea") {
+  //             supportData.yea.push(info);
+  //           } else if (scoreEntry.score?.toLowerCase() === "nay") {
+  //             supportData.nay.push(info);
+  //           } else {
+  //             supportData.other.push(info);
+  //           }
+  //         }
+  //       });
+  //     }
+
+  //     res.status(200).json({
+  //       ...vote,
+  //       supportData,
+  //     });
+  //   } catch (error) {
+  //     console.error("Error retrieving vote:", error);
+  //     res.status(500).json({ message: "Error retrieving vote", error });
+  //   }
+  // }
+
   static async getVoteById(req, res) {
     try {
-      const vote = await Vote.findById(req.params.id).populate("termId");
+      const vote = await Vote.findById(req.params.id).populate("termId").lean();
+
       if (!vote) {
         return res.status(404).json({ message: "Vote not found" });
       }
-      res.status(200).json(vote);
+
+      const supportData = await buildSupportData(vote);
+
+      res.status(200).json({
+        ...vote,
+        supportData,
+      });
     } catch (error) {
+      console.error("Error retrieving vote:", error);
       res.status(500).json({ message: "Error retrieving vote", error });
     }
   }
