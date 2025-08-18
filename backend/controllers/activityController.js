@@ -68,10 +68,10 @@ async function saveCosponsorshipToLegislator({
 
 class activityController {
   // Create a new activity with file upload for readMore
-  static async createActivity(req, res) {
+   static async createActivity(req, res) {
     upload.single("readMore")(req, res, async (err) => {
       if (err) return res.status(400).json({ message: err.message });
-
+ 
       try {
         const {
           type,
@@ -84,13 +84,11 @@ class activityController {
           termId,
           trackActivities,
         } = req.body;
-
+ 
         const readMore = req.file
           ? `/uploads/documents/${req.file.filename}`
           : null;
-
-        const editedFields = req.body.editedFields || [];
-
+ 
         const newActivity = new Activity({
           type,
           title,
@@ -103,11 +101,10 @@ class activityController {
           termId,
           trackActivities,
           status: "draft",
-          editedFields,
         });
-
+ 
         await newActivity.save();
-
+ 
         res.status(201).json({
           message: "Activity created successfully",
           info: newActivity,
@@ -158,79 +155,7 @@ class activityController {
     }
   }
 
-  // Get a specific activity by ID
-  // static async getActivityById(req, res) {
-  //   try {
-  //     const activity = await Activity.findById(req.params.id).populate(
-  //       "termId"
-  //     );
-  //     if (!activity)
-  //       return res.status(404).json({ message: "Activity not found" });
-
-  //     res.status(200).json(activity);
-  //   } catch (error) {
-  //     res.status(500).json({ message: "Error retrieving activity", error });
-  //   }
-  // }
-
-  //2nd
-  // static async getActivityById(req, res) {
-  //   try {
-  //     const activity = await Activity.findById(req.params.id)
-  //       .populate("termId")
-  //       .lean();
-
-  //     if (!activity) {
-  //       return res.status(404).json({ message: "Activity not found" });
-  //     }
-
-  //     let supportData = { yea: [], nay: [], other: [] };
-
-  //     if (activity.activityquorumId) {
-  //       // 1. Get the vote linked to this quorumId
-  //       const vote = await Vote.findOne({
-  //         quorumId: activity.activityquorumId,
-  //       }).lean();
-  //       if (vote) {
-  //         const voteId = vote._id;
-
-  //         // 2. Get Senators
-  //         const senators = await SenatorData.find({
-  //           "votesScore.voteId": voteId,
-  //         })
-  //           .populate("senateId")
-  //           .lean();
-  //         const reps = await Representative.find({
-  //           "votesScore.voteId": voteId,
-  //         })
-  //           .populate("repId")
-  //           .lean();
-
-  //         // 3. Group by score
-  //         for (const s of senators) {
-  //           const match = s.votesScore.find(
-  //             (v) => String(v.voteId) === String(voteId)
-  //           );
-  //           if (match) supportData[match.score]?.push(s.senateId);
-  //         }
-  //         for (const r of reps) {
-  //           const match = r.votesScore.find(
-  //             (v) => String(v.voteId) === String(voteId)
-  //           );
-  //           if (match) supportData[match.score]?.push(r.repId);
-  //         }
-  //       }
-  //     }
-
-  //     res.status(200).json({
-  //       ...activity,
-  //       supportData,
-  //     });
-  //   } catch (error) {
-  //     console.error("Error retrieving activity:", error);
-  //     res.status(500).json({ message: "Error retrieving activity", error });
-  //   }
-  // }
+ 
 
   static async getActivityById(req, res) {
     try {
