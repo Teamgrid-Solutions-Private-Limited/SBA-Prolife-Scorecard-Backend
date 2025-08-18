@@ -36,13 +36,13 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.use('/user', userRoute);
 app.use('/api',sendInviteRoute);
-app.use('/senator',senatorRoute);
-app.use('/senatorData',senatorDataRoute);
+app.use('/api/v1',senatorRoute);
+app.use('/api/v1',senatorDataRoute);
 app.use('/term',termRoute);
-app.use('/vote',voteRoute);
-app.use('/activity',activityRoute);
-app.use('/house',houseRoute);
-app.use('/houseData',houseDataRoute);
+app.use('/api/v1',voteRoute);
+app.use('/api/v1',activityRoute);
+app.use('/api/v1',houseRoute);
+app.use('/api/v1',houseDataRoute);
 app.use('/fetch-quorum',getquorumRoute);
 app.use('/dummy-data',dummyDataRoute);
 
