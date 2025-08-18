@@ -218,7 +218,7 @@ static async getHouseDataByHouseId(req, res) {
   //frontend getRepresentativeDataByHouseId
   static async HouseDataByHouseId(req, res) {
     try {
-      const houseId = req.params.id;
+      const houseId = req.params.repId;
  
       // Fetch all terms for this house
       const houseData = await HouseData.find({ houseId })

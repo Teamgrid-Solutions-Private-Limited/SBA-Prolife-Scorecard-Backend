@@ -21,6 +21,6 @@ router.put('/admin/house-data/:id', HD.updateHouseData);
 router.delete('/admin/house-data/:id', HD.deleteHouseData);
 
 //frontend getHouseDataByHouseId
-router.get('/frontend/house-data/viewbyhouse/:id', protectedKey, HD.HouseDataByHouseId);
+router.get('/house-data/:repId', protectedKey, HD.HouseDataByHouseId);
 
 module.exports = router;

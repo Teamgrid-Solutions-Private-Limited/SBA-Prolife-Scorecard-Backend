@@ -167,50 +167,52 @@ class senatorDataController {
   }
 
   static async getSenatorDataBySenatorId(req, res) {
-  try {
-    const senateId = req.params.id;
+    try {
+      const senateId = req.params.id;
 
-    let senatorData = await SenatorData.find({ senateId })
-      .sort({ createdAt: 1 })
-      .populate("termId")
-      .populate("senateId")
-      .populate({
-        path: "votesScore.voteId",
-        populate: { path: "termId" } // also populate vote's termId
-      })
-      .populate("activitiesScore.activityId")
-      .lean();
+      let senatorData = await SenatorData.find({ senateId })
+        .sort({ createdAt: 1 })
+        .populate("termId")
+        .populate("senateId")
+        .populate({
+          path: "votesScore.voteId",
+          populate: { path: "termId" }, // also populate vote's termId
+        })
+        .populate("activitiesScore.activityId")
+        .lean();
 
-    // Inject termId from votesScore if missing
-    senatorData = senatorData.map(sd => {
-      if (!sd.termId && sd.votesScore?.length) {
-        for (const vote of sd.votesScore) {
-          if (vote.voteId?.termId) {
-            sd.termId = vote.voteId.termId; // set from vote
-            break;
+      // Inject termId from votesScore if missing
+      senatorData = senatorData.map((sd) => {
+        if (!sd.termId && sd.votesScore?.length) {
+          for (const vote of sd.votesScore) {
+            if (vote.voteId?.termId) {
+              sd.termId = vote.voteId.termId; // set from vote
+              break;
+            }
           }
         }
+        return sd;
+      });
+
+      if (!senatorData.length) {
+        return res.status(404).json({ message: "Senator data not found" });
       }
-      return sd;
-    });
 
-    if (!senatorData.length) {
-      return res.status(404).json({ message: "Senator data not found" });
+      res
+        .status(200)
+        .json({ message: "Retrieve successfully", info: senatorData });
+    } catch (error) {
+      res.status(500).json({
+        message: "Error retrieving senator data",
+        error: error.message,
+      });
     }
-
-    res.status(200).json({ message: "Retrieve successfully", info: senatorData });
-  } catch (error) {
-    res.status(500).json({
-      message: "Error retrieving senator data",
-      error: error.message,
-    });
   }
-}
 
   ////frontend ui display
   static async SenatorDataBySenatorId(req, res) {
     try {
-      const senateId = req.params.id;
+      const senateId = req.params.senatorId;
 
       // Fetch all terms for this senator
       const senatorData = await SenatorData.find({ senateId })
