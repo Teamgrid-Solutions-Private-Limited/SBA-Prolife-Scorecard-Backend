@@ -171,8 +171,8 @@ class houseDataController {
       });
     }
   }
-  
-static async getHouseDataByHouseId(req, res) {
+
+  static async getHouseDataByHouseId(req, res) {
     try {
       const houseId = req.params.id;
 
@@ -182,13 +182,13 @@ static async getHouseDataByHouseId(req, res) {
         .populate("houseId")
         .populate({
           path: "votesScore.voteId",
-          populate: { path: "termId" } // Also populate vote's termId
+          populate: { path: "termId" }, // Also populate vote's termId
         })
         .populate("activitiesScore.activityId")
         .lean(); // Convert to plain JS objects
 
       // Inject termId from votesScore if missing
-      houseData = houseData.map(hd => {
+      houseData = houseData.map((hd) => {
         if (!hd.termId && hd.votesScore?.length) {
           for (const vote of hd.votesScore) {
             if (vote.voteId?.termId) {
@@ -206,7 +206,7 @@ static async getHouseDataByHouseId(req, res) {
 
       res.status(200).json({
         message: "Retrieved successfully",
-        info: houseData
+        info: houseData,
       });
     } catch (error) {
       res.status(500).json({
@@ -216,53 +216,188 @@ static async getHouseDataByHouseId(req, res) {
     }
   }
   //frontend getRepresentativeDataByHouseId
+  // static async HouseDataByHouseId(req, res) {
+  //   try {
+  //     const houseId = req.params.repId;
+
+  //     // Fetch all terms for this house
+  //     const houseData = await HouseData.find({ houseId })
+  //       .populate("termId")
+  //       .populate("houseId")
+  //       .populate("votesScore.voteId")
+  //       .populate("activitiesScore.activityId");
+
+  //     if (!houseData.length) {
+  //       return res.status(404).json({ message: "House data not found" });
+  //     }
+
+  //     // Sort: currentTerm first, then latest by createdAt
+  //     let sortedData = houseData.sort((a, b) => {
+  //       if (a.currentTerm && !b.currentTerm) return -1;
+  //       if (!a.currentTerm && b.currentTerm) return 1;
+  //       return new Date(b.createdAt) - new Date(a.createdAt);
+  //     });
+
+  //     // If multiple currentTerm entries exist, keep only the latest
+  //     const currentTerms = sortedData.filter((d) => d.currentTerm);
+  //     if (currentTerms.length > 1) {
+  //       const latestCurrentTerm = currentTerms.sort(
+  //         (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+  //       )[0];
+  //       sortedData = [
+  //         latestCurrentTerm,
+  //         ...sortedData.filter((d) => !d.currentTerm),
+  //       ];
+  //     }
+
+  //     // House details from the first record
+  //     const latestHouseDetails = sortedData[0].houseId;
+
+  //     // Remove houseId from term records
+  //     const termData = sortedData.map((term) => {
+  //       const { houseId, ...rest } = term.toObject();
+  //       return rest;
+  //     });
+
+  //     res.status(200).json({
+  //       message: "Retrieved successfully",
+  //       house: latestHouseDetails,
+  //       terms: termData,
+  //     });
+  //   } catch (error) {
+  //     res.status(500).json({
+  //       message: "Error retrieving house data",
+  //       error: error.message,
+  //     });
+  //   }
+  // }
+
+  //   static async HouseDataByHouseId(req, res) {
+  //     try {
+  //       const houseId = req.params.repId;
+
+  //       // Fetch all terms for this house
+  //       const houseData = await HouseData.find({ houseId })
+  //         .populate("termId")
+  //         .populate("houseId")
+  //         .populate("votesScore.voteId")
+  //         .populate("activitiesScore.activityId")
+  //         .lean();
+
+  //       if (!houseData.length) {
+  //         return res.status(404).json({ message: "House data not found" });
+  //       }
+
+  //       // Sort: currentTerm first, then by term start year (or createdAt as fallback)
+  //       let sortedData = houseData.sort((a, b) => {
+  //         if (a.currentTerm && !b.currentTerm) return -1;
+  //         if (!a.currentTerm && b.currentTerm) return 1;
+  //         if (a.termId?.startYear && b.termId?.startYear) {
+  //           return b.termId.startYear - a.termId.startYear;
+  //         }
+  //         return new Date(b.createdAt) - new Date(a.createdAt);
+  //       });
+
+  //       // House details from the first record
+  //       const latestHouseDetails = sortedData[0].houseId;
+
+  //       // Remove houseId field from each term
+  //       const termData = sortedData.map(({ houseId, ...rest }) => rest);
+
+  //       res.status(200).json({
+  //         message: "Retrieved successfully",
+  //         house: latestHouseDetails,
+  //         terms: termData, // includes ALL terms, current + past
+  //       });
+  //     } catch (error) {
+  //       res.status(500).json({
+  //         message: "Error retrieving house data",
+  //         error: error.message,
+  //       });
+  //     }
+  //   }
+  // static async HouseDataByHouseId(req, res) {
+  //   try {
+  //     const houseId = req.params.repId;
+
+  //     // Fetch all terms for this representative (houseId)
+  //     const houseData = await HouseData.find({ houseId })
+  //       .populate("termId")
+  //       .populate("houseId")
+  //       .populate("votesScore.voteId")
+  //       .populate("activitiesScore.activityId")
+  //       .lean();
+
+  //     if (!houseData.length) {
+  //       return res.status(404).json({ message: "House data not found" });
+  //     }
+
+  //     // Separate currentTerm from past terms
+  //     const currentTerm = houseData.find((t) => t.currentTerm);
+  //     const pastTerms = houseData
+  //       .filter((t) => !t.currentTerm)
+  //       .sort((a, b) => {
+  //         if (a.termId?.startYear && b.termId?.startYear) {
+  //           return b.termId.startYear - a.termId.startYear;
+  //         }
+  //         return new Date(b.createdAt) - new Date(a.createdAt);
+  //       });
+
+  //     // House details come from the first record’s populated houseId
+  //     const houseDetails = houseData[0].houseId;
+
+  //     res.status(200).json({
+  //       message: "Retrieved successfully",
+  //       house: houseDetails,
+  //       currentTerm: currentTerm
+  //         ? { ...currentTerm, houseId: undefined }
+  //         : null,
+  //       pastTerms: pastTerms.map(({ houseId, ...rest }) => rest),
+  //     });
+  //   } catch (error) {
+  //     res.status(500).json({
+  //       message: "Error retrieving house data",
+  //       error: error.message,
+  //     });
+  //   }
+  // }
   static async HouseDataByHouseId(req, res) {
     try {
       const houseId = req.params.repId;
- 
-      // Fetch all terms for this house
-      const houseData = await HouseData.find({ houseId })
-        .populate("termId")
-        .populate("houseId")
-        .populate("votesScore.voteId")
-        .populate("activitiesScore.activityId");
- 
-      if (!houseData.length) {
+
+      // Run queries in parallel
+      const [currentTerm, pastTerms] = await Promise.all([
+        // ✅ Get currentTerm (only one, enforced by index)
+        HouseData.findOne({ houseId, currentTerm: true })
+          .populate("termId")
+          .populate("houseId")
+          .populate("votesScore.voteId")
+          .populate("activitiesScore.activityId")
+          .lean(),
+
+        // ✅ Get past terms, sorted by startYear (or createdAt fallback)
+        HouseData.find({ houseId, currentTerm: { $ne: true } })
+          .populate("termId")
+          .populate("votesScore.voteId")
+          .populate("activitiesScore.activityId")
+          .sort({ "termId.startYear": -1, createdAt: -1 })
+          .lean(),
+      ]);
+
+      if (!currentTerm && !pastTerms.length) {
         return res.status(404).json({ message: "House data not found" });
       }
- 
-      // Sort: currentTerm first, then latest by createdAt
-      let sortedData = houseData.sort((a, b) => {
-        if (a.currentTerm && !b.currentTerm) return -1;
-        if (!a.currentTerm && b.currentTerm) return 1;
-        return new Date(b.createdAt) - new Date(a.createdAt);
-      });
- 
-      // If multiple currentTerm entries exist, keep only the latest
-      const currentTerms = sortedData.filter((d) => d.currentTerm);
-      if (currentTerms.length > 1) {
-        const latestCurrentTerm = currentTerms.sort(
-          (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
-        )[0];
-        sortedData = [
-          latestCurrentTerm,
-          ...sortedData.filter((d) => !d.currentTerm),
-        ];
-      }
- 
-      // House details from the first record
-      const latestHouseDetails = sortedData[0].houseId;
- 
-      // Remove houseId from term records
-      const termData = sortedData.map((term) => {
-        const { houseId, ...rest } = term.toObject();
-        return rest;
-      });
- 
+
+      // ✅ House details from either currentTerm or first pastTerm
+      const houseDetails = currentTerm?.houseId || pastTerms[0]?.houseId;
+
       res.status(200).json({
         message: "Retrieved successfully",
-        house: latestHouseDetails,
-        terms: termData,
+        house: houseDetails,
+        currentTerm: currentTerm
+          ? { ...currentTerm, houseId: undefined }
+          : null,
+        pastTerms: pastTerms.map(({ houseId, ...rest }) => rest),
       });
     } catch (error) {
       res.status(500).json({
