@@ -4,27 +4,35 @@ const VoteController = require('../controllers/voteController');
 const protectedKey = require('../middlewares/protectedKey');
 const { auth, authorizeRoles } = require('../middlewares/authentication');
 
-// POST: Create a new vote with file upload for readMore
-router.post('/votes/create/', VoteController.createVote);
+/* ---------- GET ROUTES ---------- */
+// All votes
+router.get('/admin/votes/', protectedKey, VoteController.getAllVotes);
+// Single vote by ID (last so it doesn't catch other GET routes)
+router.get('/admin/votes/:id', protectedKey, VoteController.getVoteById);
 
-// GET: Retrieve all votes
-router.get('/votes/viewAll/', protectedKey, VoteController.getAllVotes);
+/* ---------- POST ROUTES ---------- */
+// Create new vote
+router.post('/admin/votes/', VoteController.createVote);
+// Discard changes
+router.post('/admin/votes/discard/:id', VoteController.discardVoteChanges);
 
-// GET: Retrieve a vote by ID
-router.get('/votes/viewId/:id', protectedKey, VoteController.getVoteById);
+/* ---------- PUT ROUTES ---------- */
+// Bulk update SBA position (static first)
+router.put('/admin/votes/bulk-update', VoteController.bulkUpdateSbaPosition);
+// Update a vote by ID (dynamic last)
+router.put('/admin/votes/:id', VoteController.updateVote);
 
-// PUT: Update a vote by ID
-router.put('/votes/update/:id', VoteController.updateVote);
+/* ---------- PATCH ROUTES ---------- */
+// Update vote status
+router.patch('/admin/votes/status/:id', VoteController.updateVoteStatus);
 
-// DELETE: Delete a vote by ID
-router.delete('/votes/delete/:id',auth,authorizeRoles("admin"),VoteController.deleteVote);
-
-// PATCH: Update vote status (draft → published or vice versa)
-router.patch('/votes/status/:id', VoteController.updateVoteStatus);
-
-//Patch bulk-update sba-position
-router.put('/update/bulk-update-sbaPosition', VoteController.bulkUpdateSbaPosition);
-
-router.post('/discard/:id', VoteController.discardVoteChanges);
+/* ---------- DELETE ROUTES ---------- */
+// Delete vote by ID
+router.delete(
+  '/admin/votes/:id',
+  auth,
+  authorizeRoles("admin"),
+  VoteController.deleteVote
+);
 
 module.exports = router;

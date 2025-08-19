@@ -179,6 +179,7 @@ static async updateVote(req, res) {
       // Handle publishing case
       if (updateData.status === "published") {
         updateOperations.$set = {
+          ...updateData,
           editedFields: [],
           fieldEditors: {},
           history: [],

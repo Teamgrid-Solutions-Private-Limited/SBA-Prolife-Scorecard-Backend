@@ -24,8 +24,6 @@ class activityController {
           ? `/uploads/documents/${req.file.filename}`
           : null;
 
-        const editedFields = req.body.editedFields || [];
-
         const newActivity = new Activity({
           type,
           title,
@@ -38,7 +36,6 @@ class activityController {
           termId,
           trackActivities,
           status: "draft",
-          editedFields,
         });
 
         await newActivity.save();

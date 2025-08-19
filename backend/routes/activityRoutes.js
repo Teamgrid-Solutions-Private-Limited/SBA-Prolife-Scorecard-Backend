@@ -3,28 +3,28 @@ const router = express.Router();
 const AC = require('../controllers/activityController');
 const protectedKey = require('../middlewares/protectedKey');
 
-// POST: Create a new activity with file upload for readMore
-router.post('/activity/create/', AC.createActivity);
+/* ---------- GET ROUTES ---------- */
+// All activities
+router.get('/admin/activities/', protectedKey, AC.getAllActivity);
+// Single activity by ID (last in GET group)
+router.get('/admin/activities/:id', protectedKey, AC.getActivityById);
 
-// GET: Retrieve all  activity
-router.get('/activity/viewAll/', protectedKey, AC.getAllActivity);
+/* ---------- POST ROUTES ---------- */
+// Create new activity
+router.post('/admin/activities/', AC.createActivity);
+// Discard changes
+router.post('/admin/activities/discard/:id', AC.discardActivityChanges);
 
-// GET: Retrieve a  activity by ID
-router.get('/activity/viewId/:id', protectedKey, AC.getActivityById);
+/* ---------- PUT ROUTES ---------- */
+// Bulk update tracked activities
+router.put('/admin/activities/update-track-activities', AC.bulkUpdateTrackActivities);
+// Update publish status
+router.put('/admin/activities/status/:id', AC.updateActivityStatus);
+// Update activity by ID
+router.put('/admin/activities/:id', AC.updateActivity);
 
-// PUT: Update a activity by ID
-router.put('/activity/update/:id', AC.updateActivity);
+/* ---------- DELETE ROUTES ---------- */
+// Delete activity by ID
+router.delete('/admin/activities/:id', AC.deleteActivity);
 
-// DELETE: Delete a activity by ID
-router.delete('/activity/delete/:id', AC.deleteActivity);
-
-router.put("/activity/status/:id", AC.updateActivityStatus);
-// PATCH: Bulk update activity status
-router.put(
-  "/update/bulk-update-track-activities",
-  AC.bulkUpdateTrackActivities
-);
-
-// Add this route to your activity routes
-router.post('/discard/:id', AC.discardActivityChanges);
 module.exports = router;
