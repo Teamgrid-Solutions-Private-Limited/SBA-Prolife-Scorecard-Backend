@@ -1,5 +1,9 @@
 const Vote = require("../models/voteSchema");
 const upload = require("../middlewares/fileUploads");
+const Term = require("../models/termSchema");
+const { buildSupportData } = require("../helper/supportDataHelper");
+const senatorDataSchema = require("../models/senatorDataSchema");
+const representativeDataSchema = require("../models/representativeDataSchema");
 class voteController {
   // Create a new vote with file upload for readMore
 
@@ -63,33 +67,65 @@ class voteController {
   // Get all votes with optional filtering by 'published' and populated termId
   static async getAllVotes(req, res) {
     try {
-      const filter = {};
+      let filter = {};
 
-      // Check if query param is present and valid
-      if (req.query.published === "true") {
-        filter.published = true;
-      } else if (req.query.published === "false") {
-        filter.published = false;
+      // Handle frontend/admin published filter
+      if (req.query.frontend === "true") {
+        filter.status = "published";
+      } else {
+        if (req.query.published === "true") {
+          filter.status = "published";
+        } else if (req.query.published === "false") {
+          filter.status = { $ne: "published" };
+        }
       }
 
-      const votes = await Vote.find(filter).populate("termId");
+      // If term name is provided, resolve termId first
+      if (req.query.termName) {
+        const term = await Term.findOne({
+          name: { $regex: `^${req.query.termName}$`, $options: "i" }, // case-insensitive exact match
+        }).lean();
+
+        if (term) {
+          filter.termId = term._id;
+        } else {
+          return res.status(404).json({ message: "Term not found" });
+        }
+      }
+
+      const votes = await Vote.find(filter)
+        .populate({
+          path: "termId",
+          select: "name",
+        })
+        .lean();
+
       res.status(200).json(votes);
     } catch (error) {
-      res
-        .status(500)
-        .json({ message: "Error retrieving votes", error: error.message });
+      res.status(500).json({
+        message: "Error retrieving votes",
+        error: error.message,
+      });
     }
   }
 
-  // Get a vote by ID with populated termId
+ 
   static async getVoteById(req, res) {
     try {
-      const vote = await Vote.findById(req.params.id).populate("termId");
+      const vote = await Vote.findById(req.params.id).populate("termId").lean();
+
       if (!vote) {
         return res.status(404).json({ message: "Vote not found" });
       }
-      res.status(200).json(vote);
+
+      const supportData = await buildSupportData(vote);
+
+      res.status(200).json({
+        ...vote,
+        supportData,
+      });
     } catch (error) {
+      console.error("Error retrieving vote:", error);
       res.status(500).json({ message: "Error retrieving vote", error });
     }
   }
@@ -294,22 +330,45 @@ static async updateVote(req, res) {
   }
 }
 
-  
-       
-        
-
-  // Delete a vote by ID
+  // Delete a vote by ID and remove its references from senator and representative data
   static async deleteVote(req, res) {
     try {
-      const deletedVote = await Vote.findByIdAndDelete(req.params.id);
+      const voteId = req.params.id;
 
-      if (!deletedVote) {
+      // First check if vote exists
+      const vote = await Vote.findById(voteId);
+      if (!vote) {
         return res.status(404).json({ message: "Vote not found" });
       }
 
-      res.status(200).json({ message: "Vote deleted successfully" });
+      // Get the models for senator and representative data
+      const SenatorData = require("../models/senatorDataSchema");
+      const RepresentativeData = require("../models/representativeDataSchema");
+
+      // Remove vote references from senator data
+      await SenatorData.updateMany(
+        { "votesScore.voteId": voteId },
+        { $pull: { votesScore: { voteId: voteId } } }
+      );
+
+      // Remove vote references from representative data
+      await RepresentativeData.updateMany(
+        { "votesScore.voteId": voteId },
+        { $pull: { votesScore: { voteId: voteId } } }
+      );
+
+      // Delete the vote
+      await Vote.findByIdAndDelete(voteId);
+
+      res.status(200).json({
+        message: "Vote and its references deleted successfully",
+        deletedVoteId: voteId,
+      });
     } catch (error) {
-      res.status(500).json({ message: "Error deleting vote", error });
+      res.status(500).json({
+        message: "Error deleting vote and its references",
+        error: error.message,
+      });
     }
   }
 

@@ -28,3 +28,4 @@ router.put('/admin/activities/:id', AC.updateActivity);
 router.delete('/admin/activities/:id', AC.deleteActivity);
 
 module.exports = router;
+ 

@@ -28,8 +28,26 @@ const SenatorSchema = new mongoose.Schema({
       ),
       default: {},
   },
-   // Add these fields for discard functionality
-  previousState: { type: Object },
+  // Replace previousState with history array
+    history: [
+      {
+        oldData: Object,
+        timestamp: {
+          type: Date,
+          default: Date.now,
+        },
+        actionType: {
+          type: String,
+          enum: ['update', 'delete'],
+          default: 'update',
+        },
+        expiresAt: Date
+      },
+    ],
+  snapshotSource: {
+  type: String, // 'deleted' | 'edited'
+  enum: ['deleted_pending_update', 'edited'],
+},
   modifiedAt: Date,
 },{timestamps: true});
 

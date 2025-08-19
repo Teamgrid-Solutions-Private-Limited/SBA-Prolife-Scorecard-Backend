@@ -4,6 +4,7 @@ const activitySchema = new mongoose.Schema(
   {
     type: { type: String, enum: ["senate", "house"] },
     title: { type: String, required: true },
+     activityquorumId: String,
     shortDesc: String,
     longDesc: String,
     rollCall: String,

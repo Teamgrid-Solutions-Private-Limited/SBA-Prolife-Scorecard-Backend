@@ -36,8 +36,8 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.use('/user', userRoute);
 app.use('/api',sendInviteRoute);
-app.use('/senator',senatorRoute);
-app.use('/senatorData',senatorDataRoute);
+app.use('/api/v1',senatorRoute);
+app.use('/api/v1',senatorDataRoute);
 app.use('/term',termRoute);
 app.use('/api/v1',voteRoute);
 app.use('/api/v1',activityRoute);

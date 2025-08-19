@@ -27,9 +27,27 @@ const RepresentativeSchema = new mongoose.Schema({
     ),
       default: {},
   },
-    previousState: { type: Object },
+    // Replace previousState with history array
+    history: [
+      {
+        oldData: Object,
+        timestamp: {
+          type: Date,
+          default: Date.now,
+        },
+        actionType: {
+          type: String,
+          enum: ['update', 'delete'],
+          default: 'update',
+        },
+      },
+    ],
   modifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
   modifiedAt: Date,
+  snapshotSource: {
+  type: String, // 'deleted' | 'edited'
+  enum: ['deleted_pending_update', 'edited'],
+},
 },{timestamps: true});
 
 module.exports = mongoose.model("representatives", RepresentativeSchema);
