@@ -245,8 +245,8 @@ class voteController {
             !existingVote.history ||
             existingVote.history.length === 0 ||
             existingVote.snapshotSource === "edited";
-
-          if (canTakeSnapshot) {
+  const noHistory = !existingVote.history || existingVote.history.length === 0;
+          if (canTakeSnapshot && noHistory ) {
             const currentState = existingVote.toObject();
 
             // Clean up the current state object

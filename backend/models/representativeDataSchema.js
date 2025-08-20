@@ -21,3 +21,4 @@ const RepresentativeDataSchema = new mongoose.Schema({
 },{timestamps: true});
 
 module.exports = mongoose.model('representative_datas', RepresentativeDataSchema);
+RepresentativeDataSchema.index({ houseId: 1, currentTerm: 1 });

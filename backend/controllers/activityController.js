@@ -245,8 +245,8 @@ class activityController {
             !existingActivity.history ||
             existingActivity.history.length === 0 ||
             existingActivity.snapshotSource === "edited";
-
-          if (canTakeSnapshot) {
+const noHistory = !existingActivity.history || existingActivity.history.length === 0;
+          if (canTakeSnapshot && noHistory) {
             const currentState = existingActivity.toObject();
 
             // Remove unnecessary properties
