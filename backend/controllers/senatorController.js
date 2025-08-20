@@ -1,6 +1,7 @@
 const Senator = require("../models/senatorSchema");
 const SenatorData = require("../models/senatorDataSchema");
 const upload = require("../middlewares/fileUploads");
+const mongoose = require("mongoose");
 
 class senatorController {
   // Create a new senator with photo upload
@@ -61,54 +62,129 @@ class senatorController {
   }
 
   // Get all senators for  frontend display
+  // static async Senators(req, res) {
+  //   try {
+  //     const { state, party, name } = req.query;
+
+  //     // Build filter object dynamically
+  //     const filter = {};
+  //     if (state) filter.state = new RegExp(`^${state}$`, "i"); // exact match, case-insensitive
+  //     if (party) filter.party = new RegExp(`^${party}$`, "i"); // exact match, case-insensitive
+  //     if (name) filter.name = new RegExp(name, "i"); // partial match in name
+
+  //     const senators = await Senator.find(filter).lean(); // filtered fast read-only fetch
+
+  //     const senatorsWithRatings = await Promise.all(
+  //       senators.map(async (senator) => {
+  //         // Try current term rating
+  //         let ratingData = await SenatorData.findOne({
+  //           senateId: senator._id,
+  //           currentTerm: true,
+  //         })
+  //           .select("rating currentTerm")
+  //           .lean();
+
+  //         // If not found, fallback to most recent term
+  //         if (!ratingData) {
+  //           ratingData = await SenatorData.findOne({
+  //             senateId: senator._id,
+  //           })
+  //             .sort({ termId: -1 })
+  //             .select("rating currentTerm")
+  //             .lean();
+  //         }
+
+  //         // Remove "Sen." or "Sen" from start of name
+  //         const cleanName = senator.name.replace(/^Sen\.?\s+/i, "");
+
+  //         return {
+  //           id: senator._id,
+  //           senatorId: senator.senatorId,
+  //           name: cleanName,
+  //           state: senator.state,
+  //           party: senator.party,
+  //           photo: senator.photo,
+  //           status: senator.status,
+  //           rating: ratingData?.rating || "N/A",
+  //           isCurrentTerm: ratingData?.currentTerm || false,
+  //         };
+  //       })
+  //     );
+
+  //     res.status(200).json({
+  //       message: "Retrieved successfully",
+  //       info: senatorsWithRatings,
+  //     });
+  //   } catch (error) {
+  //     res.status(500).json({
+  //       message: "Error retrieving senators",
+  //       error: error.message,
+  //     });
+  //   }
+  // }
+
   static async Senators(req, res) {
     try {
       const { state, party, name } = req.query;
 
       // Build filter object dynamically
       const filter = {};
-      if (state) filter.state = new RegExp(`^${state}$`, "i"); // exact match, case-insensitive
-      if (party) filter.party = new RegExp(`^${party}$`, "i"); // exact match, case-insensitive
-      if (name) filter.name = new RegExp(name, "i"); // partial match in name
+      if (state) filter.state = new RegExp(`^${state}$`, "i");
+      if (party) filter.party = new RegExp(`^${party}$`, "i");
+      if (name) filter.name = new RegExp(name, "i");
 
-      const senators = await Senator.find(filter).lean(); // filtered fast read-only fetch
+      // Fetch all senators first
+      const senators = await Senator.find(filter)
+        .lean()
+        .select("_id senatorId name state party photo status");
 
-      const senatorsWithRatings = await Promise.all(
-        senators.map(async (senator) => {
-          // Try current term rating
-          let ratingData = await SenatorData.findOne({
-            senateId: senator._id,
-            currentTerm: true,
-          })
-            .select("rating currentTerm")
-            .lean();
+      if (!senators.length) {
+        return res.status(200).json({ message: "No senators found", info: [] });
+      }
 
-          // If not found, fallback to most recent term
-          if (!ratingData) {
-            ratingData = await SenatorData.findOne({
-              senateId: senator._id,
-            })
-              .sort({ termId: -1 })
-              .select("rating currentTerm")
-              .lean();
-          }
+      const senatorIds = senators.map((s) => s._id);
 
-          // Remove "Sen." or "Sen" from start of name
-          const cleanName = senator.name.replace(/^Sen\.?\s+/i, "");
+      // Fetch all ratings in one go
+      const ratings = await SenatorData.aggregate([
+        { $match: { senateId: { $in: senatorIds } } },
+        {
+          $sort: { currentTerm: -1, termId: -1 }, // prefer currentTerm, then latest term
+        },
+        {
+          $group: {
+            _id: "$senateId",
+            rating: { $first: "$rating" },
+            currentTerm: { $first: "$currentTerm" },
+          },
+        },
+      ]);
 
-          return {
-            id: senator._id,
-            senatorId: senator.senatorId,
-            name: cleanName,
-            state: senator.state,
-            party: senator.party,
-            photo: senator.photo,
-            status: senator.status,
-            rating: ratingData?.rating || "N/A",
-            isCurrentTerm: ratingData?.currentTerm || false,
-          };
-        })
-      );
+      // Map senatorId → rating
+      const ratingMap = ratings.reduce((acc, r) => {
+        acc[r._id.toString()] = {
+          rating: r.rating,
+          currentTerm: r.currentTerm,
+        };
+        return acc;
+      }, {});
+
+      // Merge ratings back with senators
+      const senatorsWithRatings = senators.map((senator) => {
+        const ratingData = ratingMap[senator._id.toString()];
+        const cleanName = senator.name.replace(/^Sen\.?\s+/i, "");
+
+        return {
+          id: senator._id,
+          senatorId: senator.senatorId,
+          name: cleanName,
+          state: senator.state,
+          party: senator.party,
+          photo: senator.photo,
+          status: senator.status,
+          rating: ratingData?.rating || "N/A",
+          isCurrentTerm: ratingData?.currentTerm || false,
+        };
+      });
 
       res.status(200).json({
         message: "Retrieved successfully",

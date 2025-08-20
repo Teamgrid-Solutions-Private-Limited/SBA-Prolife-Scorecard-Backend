@@ -55,53 +55,140 @@ class representativeController {
   }
 
   // Get all House for frontend display
+  // static async AllHouse(req, res) {
+  //   try {
+  //      const { district, party, name } = req.query;
+
+  //           // Build filter object dynamically
+  //           const filter = {};
+  //           if (district) filter.district = new RegExp(`^${district}$`, "i"); // exact match, case-insensitive
+  //           if (party) filter.party = new RegExp(`^${party}$`, "i"); // exact match, case-insensitive
+  //           if (name) filter.name = new RegExp(name, "i"); // partial match in name
+
+  //           const houses = await House.find(filter).lean();
+
+  //     const housesWithRatings = await Promise.all(
+  //       houses.map(async (house) => {
+  //         // Try current term rating
+  //         let ratingData = await RepresentativeData.findOne({
+  //           houseId: house._id,
+  //           currentTerm: true,
+  //         })
+  //           .select("rating currentTerm summary")
+  //           .lean();
+
+  //         // If not found, fallback to most recent term
+  //         if (!ratingData) {
+  //           ratingData = await RepresentativeData.findOne({
+  //             houseId: house._id,
+  //           })
+  //             .sort({ termId: -1 })
+  //             .select("rating currentTerm summary")
+  //             .lean();
+  //         }
+  //         // Remove "Sen." or "Sen" from start of name
+  //         const cleanName = house.name.replace(/^Rep\.?\s+/i, "");
+  //         // Clean fast mapping
+  //         return {
+  //           id: house._id,
+  //           name: cleanName,
+  //           district: house.district,
+  //           party: house.party,
+  //           photo: house.photo,
+  //           status: house.status,
+  //           rating: ratingData?.rating || "N/A", // Default to "N/A" if no rating found
+  //           isCurrentTerm: ratingData?.currentTerm || false,
+  //           summary: ratingData?.summary || null,
+  //         };
+  //       })
+  //     );
+
+  //     res.status(200).json({
+  //       message: "Retrieved successfully",
+  //       info: housesWithRatings,
+  //     });
+  //   } catch (error) {
+  //     console.error("Error in getAllHouse:", error);
+  //     res.status(500).json({
+  //       message: "Error retrieving representatives",
+  //       error: error.message,
+  //       stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
+  //     });
+  //   }
+  // }
+
   static async AllHouse(req, res) {
     try {
       const { district, party, name } = req.query;
 
-      // Build filter object dynamically
-      const filter = {};
-      if (district) filter.district = new RegExp(`^${district}$`, "i"); // exact match, case-insensitive
-      if (party) filter.party = new RegExp(`^${party}$`, "i"); // exact match, case-insensitive
-      if (name) filter.name = new RegExp(name, "i"); // partial match in name
+      // Build filter object with optimized regex patterns
+      const filter = {
+        ...(district && { district: new RegExp(`^${district}$`, "i") }),
+        ...(party && { party: new RegExp(`^${party}$`, "i") }),
+        ...(name && { name: new RegExp(name, "i") }),
+      };
 
-      const houses = await House.find(filter).lean();
+      // Get all houses with just the fields we need
+      const houses = await House.find(filter)
+        .select("_id name district party photo status")
+        .lean();
 
-      const housesWithRatings = await Promise.all(
-        houses.map(async (house) => {
-          // Try current term rating
-          let ratingData = await RepresentativeData.findOne({
-            houseId: house._id,
-            currentTerm: true,
-          })
-            .select("rating currentTerm summary")
-            .lean();
+      // Get all house IDs for batch rating lookup
+      const houseIds = houses.map((house) => house._id);
 
-          // If not found, fallback to most recent term
-          if (!ratingData) {
-            ratingData = await RepresentativeData.findOne({
-              houseId: house._id,
-            })
-              .sort({ termId: -1 })
-              .select("rating currentTerm summary")
-              .lean();
-          }
-          // Remove "Sen." or "Sen" from start of name
-          const cleanName = house.name.replace(/^Rep\.?\s+/i, "");
-          // Clean fast mapping
-          return {
-            id: house._id,
-            name: cleanName,
-            district: house.district,
-            party: house.party,
-            photo: house.photo,
-            status: house.status,
-            rating: ratingData?.rating || "N/A", // Default to "N/A" if no rating found
-            isCurrentTerm: ratingData?.currentTerm || false,
-            summary: ratingData?.summary || null,
-          };
-        })
+      // Get all rating data in a single query with optimized sorting
+      const allRatingData = await RepresentativeData.aggregate([
+        {
+          $match: {
+            houseId: { $in: houseIds },
+          },
+        },
+        {
+          $sort: {
+            houseId: 1,
+            currentTerm: -1, // current terms first
+            termId: -1, // then most recent terms
+          },
+        },
+        {
+          $group: {
+            _id: "$houseId",
+            ratingData: { $first: "$$ROOT" },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            houseId: "$_id",
+            rating: "$ratingData.rating",
+            currentTerm: "$ratingData.currentTerm",
+            //summary: "$ratingData.summary",
+          },
+        },
+      ]);
+
+      // Create a map for faster lookup
+      const ratingMap = new Map(
+        allRatingData.map((item) => [item.houseId.toString(), item])
       );
+
+      // Process houses in-memory (no async operations in map)
+      const housesWithRatings = houses.map((house) => {
+        const ratingInfo = ratingMap.get(house._id.toString()) || {};
+        const cleanName = house.name.replace(/^Rep\.?\s+/i, "");
+
+        return {
+          id: house._id,
+          name: cleanName,
+          district: house.district,
+          party: house.party,
+          photo: house.photo,
+          status: house.status,
+          rating: ratingInfo.rating || "N/A",
+          isCurrentTerm: ratingInfo.currentTerm || false,
+          //summary: ratingInfo.summary || null,
+        };
+      });
 
       res.status(200).json({
         message: "Retrieved successfully",

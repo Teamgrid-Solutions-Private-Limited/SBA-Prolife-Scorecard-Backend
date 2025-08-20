@@ -22,6 +22,10 @@ router.put('/admin/senator-data/:id', SenatorDataController.updateSenatorData);
 router.delete('/admin/senator-data/:id', SenatorDataController.deleteSenatorData);
  
 //frontend ui display
-router.get('/frontend/senator-data/viewbysenator/:id', protectedKey, SenatorDataController.SenatorDataBySenatorId);
+router.get(
+  "/senator-data/:senatorId",
+  protectedKey,
+  SenatorDataController.SenatorDataBySenatorId
+);
 
 module.exports = router;
