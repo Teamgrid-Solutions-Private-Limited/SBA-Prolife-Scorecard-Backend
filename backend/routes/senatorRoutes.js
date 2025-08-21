@@ -31,10 +31,10 @@ router.delete('/admin/senators/:id', auth, authorizeRoles("admin"), SenatorContr
 
 // =================== Frontend Routes ===================
 // GET request to retrieve all senators for frontend display
-router.get('/frontend/senators/view', protectedKey, SenatorController.Senators);
+router.get('/senators/', protectedKey, SenatorController.Senators);
 
 // GET request to retrieve a senator by ID for frontend display
-router.get('/frontend/senators/viewId/:id', protectedKey, SenatorController.SenatorById);
+router.get('/senators/:id', protectedKey, SenatorController.SenatorById);
 
 
 module.exports = router;

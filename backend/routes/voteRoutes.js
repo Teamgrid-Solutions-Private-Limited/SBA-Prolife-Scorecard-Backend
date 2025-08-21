@@ -4,12 +4,11 @@ const VoteController = require('../controllers/voteController');
 const protectedKey = require('../middlewares/protectedKey');
 const { auth, authorizeRoles } = require('../middlewares/authentication');
 
-/* ---------- GET ROUTES ---------- */
-// All votes
-router.get('/admin/votes/', protectedKey, VoteController.getAllVotes);
+// POST: Create a new vote with file upload for readMore
+router.get('/votes/', protectedKey, VoteController.getAllVotes);
 // Single vote by ID (last so it doesn't catch other GET routes)
-router.get('/admin/votes/:id', protectedKey, VoteController.getVoteById);
-
+router.get('/votes/:id', protectedKey, VoteController.getVoteById);
+ 
 /* ---------- POST ROUTES ---------- */
 // Create new vote
 router.post('/admin/votes/', VoteController.createVote);

@@ -5,10 +5,10 @@ const protectedKey = require('../middlewares/protectedKey');
 
 /* ---------- GET ROUTES ---------- */
 // All activities
-router.get('/admin/activities/', protectedKey, AC.getAllActivity);
+router.get('/activities/', protectedKey, AC.getAllActivity);
 // Single activity by ID (last in GET group)
-router.get('/admin/activities/:id', protectedKey, AC.getActivityById);
-
+router.get('/activities/:id', protectedKey, AC.getActivityById);
+ 
 /* ---------- POST ROUTES ---------- */
 // Create new activity
 router.post('/admin/activities/', AC.createActivity);

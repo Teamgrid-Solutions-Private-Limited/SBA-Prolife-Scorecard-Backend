@@ -18,8 +18,14 @@ const SenatorDataSchema = new mongoose.Schema({
       score: String 
     }
   ]
-},{timestamps: true});
+}, { timestamps: true });
+
+// ✅ define indexes BEFORE exporting
+SenatorDataSchema.index(
+  { senateId: 1 },
+  { unique: true, partialFilterExpression: { currentTerm: true } }
+);
 
 module.exports = mongoose.model('senator_datas', SenatorDataSchema);
 
-SenatorDataSchema.index({ senateId: 1, currentTerm: 1 });
+

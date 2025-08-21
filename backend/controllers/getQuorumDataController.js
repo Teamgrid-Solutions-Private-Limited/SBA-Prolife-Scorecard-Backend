@@ -879,6 +879,107 @@ class QuorumDataController {
   //     }
   // }
 
+  // async saveBills(req, res) {
+  //   try {
+  //     const { bills } = req.body;
+  //     if (!Array.isArray(bills) || bills.length === 0) {
+  //       return res.status(400).json({ error: "Invalid bills" });
+  //     }
+
+  //     const { model, idField } = QuorumDataController.MODELS.bills;
+
+  //     // Save bills (upsert)
+  //     const savedPromises = bills.map((bill) =>
+  //       model
+  //         .updateOne(
+  //           { [idField]: bill[idField] },
+  //           { $set: bill },
+  //           { upsert: true }
+  //         )
+  //         .then(() => model.findOne({ [idField]: bill[idField] }))
+  //     );
+
+  //     const saved = await Promise.all(savedPromises);
+
+  //     // Respond immediately
+  //     res.json({
+  //       message:
+  //         "Bills saved. Cosponsorship & vote updates running in background.",
+  //       data: saved,
+  //     });
+
+  //     // Background processing
+  //     (async () => {
+  //       try {
+  //         await this.updateBillShortDesc(saved);
+
+  //         // Vote updates in chunks
+  //         const CHUNK_SIZE = cacheConfig.BATCH_SIZES.VOTE_UPDATES;
+  //         for (let i = 0; i < saved.length; i += CHUNK_SIZE) {
+  //           const chunk = saved.slice(i, i + CHUNK_SIZE);
+  //           await Promise.all(
+  //             chunk.map((bill) => this.updateVoteScore(bill.quorumId))
+  //           );
+  //         }
+
+  //         // Cosponsorship fetch loop
+  //         for (const bill of saved) {
+  //           try {
+  //             console.log(
+  //               `→ Fetching cosponsors for bill ${bill.quorumId} (${bill.title})...`
+  //             );
+
+  //             const introducedDate = bill.date
+  //               ? new Date(bill.date)
+  //               : new Date();
+  //             const introduced = introducedDate.toISOString();
+
+  //             // Correct Congress number calculation
+  //             const year = introducedDate.getUTCFullYear();
+  //             const congress = String(Math.floor((year - 1789) / 2) + 1);
+
+  //             // ⏭️ Check for existing activities
+  //             const existing = await activitySchema.find({
+  //               quorumId: bill.quorumId,
+  //               congress,
+  //             });
+  //             if (existing.length > 0) {
+  //               console.log(
+  //                 `⏭️ Skipping bill ${bill.quorumId} — already has ${existing.length} activity(ies).`
+  //               );
+  //               continue;
+  //             }
+
+  //             console.log(" Cosponsorship input check:", {
+  //               billId: String(bill.quorumId),
+  //               title: String(bill.title || "Untitled Bill"),
+  //               introduced,
+  //               congress,
+  //             });
+
+  //             await ActivityController.fetchAndCreateFromCosponsorships(
+  //               String(bill.quorumId),
+  //               String(bill.title || "Untitled Bill"),
+  //               introduced,
+  //               congress
+  //             );
+  //           } catch (err) {
+  //             console.warn(
+  //               `❌ Cosponsorship fetch failed for ${bill.quorumId}:`,
+  //               err.message
+  //             );
+  //           }
+  //         }
+  //       } catch (err) {
+  //         console.error("Background update error:", err);
+  //       }
+  //     })();
+  //   } catch (err) {
+  //     console.error("Save bills error:", err);
+  //     res.status(500).json({ error: "Failed to store bills" });
+  //   }
+  // }
+
   async saveBills(req, res) {
     try {
       const { bills } = req.body;
@@ -888,32 +989,43 @@ class QuorumDataController {
 
       const { model, idField } = QuorumDataController.MODELS.bills;
 
-      // Save bills (upsert)
-      const savedPromises = bills.map((bill) =>
-        model
-          .updateOne(
-            { [idField]: bill[idField] },
-            { $set: bill },
-            { upsert: true }
-          )
-          .then(() => model.findOne({ [idField]: bill[idField] }))
-      );
+      const savedPromises = bills.map(async (bill) => {
+        // Calculate congress & termId based on introduced_date
+        const introducedDate = bill.date ? new Date(bill.date) : new Date();
+        const year = introducedDate.getUTCFullYear();
+
+        const congress = Math.floor((year - 1789) / 2) + 1;
+        const congressStartYear = 1789 + (congress - 1) * 2;
+        const congressEndYear = congressStartYear + 1;
+        const termId = `${congressStartYear}-${congressEndYear}`;
+
+        // Attach computed fields
+        bill.congress = String(congress);
+        bill.termId = termId;
+
+        // Upsert
+        await model.updateOne(
+          { [idField]: bill[idField] },
+          { $setOnInsert: bill }, // ✅ Only set congress/termId when inserting
+          { upsert: true }
+        );
+
+        return model.findOne({ [idField]: bill[idField] });
+      });
 
       const saved = await Promise.all(savedPromises);
 
-      // Respond immediately
       res.json({
         message:
           "Bills saved. Cosponsorship & vote updates running in background.",
         data: saved,
       });
 
-      // Background processing
+      // Background tasks...
       (async () => {
         try {
           await this.updateBillShortDesc(saved);
 
-          // Vote updates in chunks
           const CHUNK_SIZE = cacheConfig.BATCH_SIZES.VOTE_UPDATES;
           for (let i = 0; i < saved.length; i += CHUNK_SIZE) {
             const chunk = saved.slice(i, i + CHUNK_SIZE);
@@ -922,46 +1034,21 @@ class QuorumDataController {
             );
           }
 
-          // Cosponsorship fetch loop
           for (const bill of saved) {
             try {
               console.log(
                 `→ Fetching cosponsors for bill ${bill.quorumId} (${bill.title})...`
               );
 
-              const introducedDate = bill.date
-                ? new Date(bill.date)
-                : new Date();
-              const introduced = introducedDate.toISOString();
-
-              // Correct Congress number calculation
-              const year = introducedDate.getUTCFullYear();
-              const congress = String(Math.floor((year - 1789) / 2) + 1);
-
-              // ⏭️ Check for existing activities
-              const existing = await activitySchema.find({
-                quorumId: bill.quorumId,
-                congress,
-              });
-              if (existing.length > 0) {
-                console.log(
-                  `⏭️ Skipping bill ${bill.quorumId} — already has ${existing.length} activity(ies).`
-                );
-                continue;
-              }
-
-              console.log(" Cosponsorship input check:", {
-                billId: String(bill.quorumId),
-                title: String(bill.title || "Untitled Bill"),
-                introduced,
-                congress,
-              });
+              const introduced = bill.date
+                ? new Date(bill.date).toISOString()
+                : new Date().toISOString();
 
               await ActivityController.fetchAndCreateFromCosponsorships(
                 String(bill.quorumId),
                 String(bill.title || "Untitled Bill"),
                 introduced,
-                congress
+                bill.congress
               );
             } catch (err) {
               console.warn(

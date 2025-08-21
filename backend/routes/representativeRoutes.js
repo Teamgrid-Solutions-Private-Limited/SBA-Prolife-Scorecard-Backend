@@ -33,9 +33,9 @@ router.delete('/admin/houses/:id',auth,authorizeRoles("admin"), RC.deleteHouse);
 
 // =================== Frontend Routes ===================
 // GET request to retrieve all house representatives for frontend display
-router.get('/frontend/house/view', protectedKey, RC.AllHouse);
+router.get('/houses/', protectedKey, RC.AllHouse);
 
 // GET request to retrieve a house representative by ID for frontend display
-router.get('/frontend/house/viewId/:id', protectedKey, RC.HouseById);
+router.get('/houses/:id', protectedKey, RC.HouseById);
 
 module.exports = router;
