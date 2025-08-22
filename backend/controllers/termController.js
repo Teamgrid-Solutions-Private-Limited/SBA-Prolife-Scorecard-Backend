@@ -3,21 +3,53 @@ const Term = require('../models/termSchema');
 class termController {
   
   // Create a new term
-  static async createTerm(req, res) {
-    try {
-      const { name } = req.body;
-
-      // Create a new term
-      const newTerm = new Term({ name });
-
-      // Save the term to the database
-      await newTerm.save();
-
-      res.status(201).json(newTerm); // Return the created term
-    } catch (error) {
-      res.status(500).json({ message: 'Error creating term', error });
+static async createTerm(req, res) {
+  try {
+    const { startYear, endYear } = req.body;
+ 
+    if (!startYear || !endYear) {
+      return res.status(400).json({ message: "Start year and End year are required" });
     }
+ 
+    if (startYear >= endYear) {
+      return res.status(400).json({ message: "End year must be greater than start year" });
+    }
+ 
+    // Generate name (2021-2022)
+    const name = `${startYear}-${endYear}`;
+ 
+    // Congresses will be automatically calculated by the pre-save middleware
+    const newTerm = new Term({
+      name,
+      startYear,
+      endYear
+    });
+ 
+    await newTerm.save();
+    res.status(201).json(newTerm);
+ 
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(400).json({ message: "A term with these years already exists" });
+    }
+    res.status(500).json({ message: "Error creating term", error: error.message });
   }
+}
+  // static async createTerm(req, res) {
+  //   try {
+  //     const { name } = req.body;
+
+  //     // Create a new term
+  //     const newTerm = new Term({ name });
+
+  //     // Save the term to the database
+  //     await newTerm.save();
+
+  //     res.status(201).json(newTerm); // Return the created term
+  //   } catch (error) {
+  //     res.status(500).json({ message: 'Error creating term', error });
+  //   }
+  // }
 
   // Get all terms
   static async getAllTerms(req, res) {

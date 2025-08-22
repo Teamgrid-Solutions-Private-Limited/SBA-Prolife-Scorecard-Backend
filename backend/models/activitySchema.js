@@ -38,7 +38,7 @@ const activitySchema = new mongoose.Schema(
       ),
       default: {},
     },
-     // Replace previousState with history array
+    // Replace previousState with history array
     history: [
       {
         oldData: Object,
@@ -57,18 +57,10 @@ const activitySchema = new mongoose.Schema(
       type: String, // 'deleted' | 'edited'
       enum: ['deleted_pending_update', 'edited'],
     },
-    // New fields for discard functionality
-    modifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: "users" }, // Who made the changes
-    modifiedAt: Date, // When changes were made
+    modifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
+    modifiedAt: Date,
   },
   { timestamps: true }
 );
 
 module.exports = mongoose.model("activities", activitySchema);
-
-
-
-
-
-
-
