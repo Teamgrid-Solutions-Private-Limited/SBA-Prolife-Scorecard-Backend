@@ -41,8 +41,8 @@ app.use('/api/v1',senatorDataRoute);
 app.use('/term',termRoute);
 app.use('/api/v1',voteRoute);
 app.use('/api/v1',activityRoute);
-app.use('/house',houseRoute);
-app.use('/houseData',houseDataRoute);
+app.use('/api/v1',houseRoute);
+app.use('/api/v1',houseDataRoute);
 app.use('/fetch-quorum',getquorumRoute);
 app.use('/dummy-data',dummyDataRoute);
 
