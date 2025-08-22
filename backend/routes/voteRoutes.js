@@ -14,17 +14,17 @@ router.get('/votes/:id', protectedKey, VoteController.getVoteById);
 router.post('/admin/votes/', VoteController.createVote);
 // Discard changes
 router.post('/admin/votes/discard/:id', VoteController.discardVoteChanges);
- 
+
 /* ---------- PUT ROUTES ---------- */
 // Bulk update SBA position (static first)
 router.put('/admin/votes/bulk-update', VoteController.bulkUpdateSbaPosition);
 // Update a vote by ID (dynamic last)
 router.put('/admin/votes/:id', VoteController.updateVote);
- 
+
 /* ---------- PATCH ROUTES ---------- */
 // Update vote status
 router.patch('/admin/votes/status/:id', VoteController.updateVoteStatus);
- 
+
 /* ---------- DELETE ROUTES ---------- */
 // Delete vote by ID
 router.delete(
@@ -33,4 +33,5 @@ router.delete(
   authorizeRoles("admin"),
   VoteController.deleteVote
 );
+
 module.exports = router;

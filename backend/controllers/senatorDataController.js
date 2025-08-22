@@ -12,23 +12,26 @@ class senatorDataController {
         rating,
         votesScore,
         activitiesScore,
+        summaries = [], // frontend summaries array
       } = req.body;
 
+      // Create new senator data
       const newSenatorData = new SenatorData({
         senateId,
         termId,
-        currentTerm,
         summary,
+        currentTerm,
         rating,
         votesScore,
         activitiesScore,
+        summaries,
       });
 
-      // Save the senator data to the database
       await newSenatorData.save();
 
       res.status(201).json(newSenatorData);
     } catch (error) {
+      console.error(" Error creating senator data:", error);
       res.status(500).json({ message: "Error creating senator data", error });
     }
   }

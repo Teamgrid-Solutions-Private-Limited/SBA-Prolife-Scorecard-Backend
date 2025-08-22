@@ -175,69 +175,62 @@ class voteController {
   }
 
   // Controller to update a vote
-  static async updateVote(req, res) {
-    try {
-      upload.single("readMore")(req, res, async (err) => {
-        if (err) {
-          return res.status(400).json({ message: err.message });
-        }
+static async updateVote(req, res) {
+  try {
+    upload.single("readMore")(req, res, async (err) => {
+      if (err) {
+        return res.status(400).json({ message: err.message });
+      }
 
-        const voteID = req.params.id;
-        let updateData = { ...req.body };
-        const userId = req.user?._id || null;
-        updateData.modifiedBy = userId;
-        updateData.modifiedAt = new Date();
+      const voteID = req.params.id;
+      let updateData = { ...req.body };
+      const userId = req.user?._id || null;
+      updateData.modifiedBy = userId;
+      updateData.modifiedAt = new Date();
 
-        if (req.file) {
-          updateData.readMore = `/uploads/${req.file.filename}`;
-        }
+      if (req.file) {
+        updateData.readMore = `/uploads/${req.file.filename}`;
+      }
 
-        // Handle discard changes request first
-        if (req.body.discardChanges === "true") {
-          const discardedVote = await voteController.discardVoteChanges(
-            req,
-            res
-          );
-          if (discardedVote) {
-            return; // Response already sent by discardVoteChanges
-          }
-        }
+      if (req.body.discardChanges === "true") {
+        return VoteController.discardVoteChanges(req, res);
+      }
 
-        const existingVote = await Vote.findById(voteID);
-        if (!existingVote) {
-          return res.status(404).json({ message: "Vote not found" });
-        }
+      const existingVote = await Vote.findById(voteID);
+      if (!existingVote) {
+        return res.status(404).json({ message: 'Vote not found' });
+      }
 
-        // Parse fields if needed
-        if (typeof updateData.editedFields === "string") {
-          updateData.editedFields = JSON.parse(updateData.editedFields);
-        }
-        if (typeof updateData.fieldEditors === "string") {
-          updateData.fieldEditors = JSON.parse(updateData.fieldEditors);
-        }
+      // Parse fields if needed
+      if (typeof updateData.editedFields === 'string') {
+        updateData.editedFields = JSON.parse(updateData.editedFields);
+      }
+      if (typeof updateData.fieldEditors === 'string') {
+        updateData.fieldEditors = JSON.parse(updateData.fieldEditors);
+      }
 
-        // Initialize update operations object
-        const updateOperations = {};
+      // Initialize update operations object
+      const updateOperations = {};
 
-        // Handle publishing case
-        if (updateData.status === "published") {
-          updateOperations.$set = {
-            ...updateData,
-            editedFields: [],
-            fieldEditors: {},
-            history: [],
-            status: "published",
-            modifiedBy: userId,
-            modifiedAt: new Date(),
-          };
-        } else {
-          // For non-publishing updates
-          updateOperations.$set = {
-            ...updateData,
-            modifiedBy: userId,
-            modifiedAt: new Date(),
-          };
-        }
+      // Handle publishing case
+      if (updateData.status === "published") {
+        updateOperations.$set = {
+          ...updateData,
+          editedFields: [],
+          fieldEditors: {},
+          history: [],
+          status: "published",
+          modifiedBy: userId,
+          modifiedAt: new Date()
+        };
+      } else {
+        // For non-publishing updates
+        updateOperations.$set = {
+          ...updateData,
+          modifiedBy: userId,
+          modifiedAt: new Date()
+        };
+      }
 
         // Handle history snapshot - only if not publishing
         if (updateData.status !== "published") {
@@ -256,89 +249,86 @@ class voteController {
             delete currentState.__v;
             delete currentState.history;
 
-            // Create history entry
-            const historyEntry = {
-              oldData: currentState,
-              timestamp: new Date(),
-              actionType: "update",
-            };
+          // Create history entry
+          const historyEntry = {
+            oldData: currentState,
+            timestamp: new Date(),
+            actionType: 'update'
+          };
 
-            // Add to update operations
-            updateOperations.$push = { history: historyEntry };
-            updateOperations.$set = updateOperations.$set || {};
-            updateOperations.$set.snapshotSource = "edited";
-          } else if (existingVote.snapshotSource === "deleted_pending_update") {
-            updateOperations.$set = updateOperations.$set || {};
-            updateOperations.$set.snapshotSource = "edited";
-          }
+          // Add to update operations
+          updateOperations.$push = { history: historyEntry };
+          updateOperations.$set = updateOperations.$set || {};
+          updateOperations.$set.snapshotSource = "edited";
+        } else if (existingVote.snapshotSource === "deleted_pending_update") {
+          updateOperations.$set = updateOperations.$set || {};
+          updateOperations.$set.snapshotSource = "edited";
         }
-
-        // Update the vote in the database
-        const updatedVote = await Vote.findByIdAndUpdate(
-          voteID,
-          updateOperations, // Use the constructed operations object
-          { new: true }
-        ).populate("termId");
-
-        if (!updatedVote) {
-          return res.status(404).json({ message: "Vote not found" });
-        }
-
-        res.status(200).json({
-          message: "Vote updated successfully",
-          info: updatedVote,
-        });
-      });
-    } catch (error) {
-      res.status(500).json({
-        message: "Error updating vote",
-        error: error.message,
-      });
-    }
-  }
- 
-
-  static async discardVoteChanges(req, res) {
-    try {
-      const vote = await Vote.findById(req.params.id);
-      if (!vote) {
-        return res.status(404).json({ message: "Vote not found" });
       }
 
-      // Check if there's any history available
-      if (!vote.history || vote.history.length === 0) {
-        return res
-          .status(400)
-          .json({ message: "No history available to restore" });
-      }
-
-      // Get the original state (index 0)
-      const originalState = vote.history[0].oldData;
-
-      // Restore the vote to its original state and empty the history
-      const restoredVote = await Vote.findByIdAndUpdate(
-        req.params.id,
-        {
-          ...originalState,
-          history: [], // Empty the history array
-          snapshotSource: "edited", // Reset snapshot source
-          modifiedAt: new Date(), // Update modification timestamp
-          modifiedBy: req.user?._id, // Track who performed the discard
-        },
+      // Update the vote in the database
+      const updatedVote = await Vote.findByIdAndUpdate(
+        voteID,
+        updateOperations, // Use the constructed operations object
         { new: true }
       ).populate("termId");
 
+      if (!updatedVote) {
+        return res.status(404).json({ message: "Vote not found" });
+      }
+
       res.status(200).json({
-        message: "Restored to original state and history cleared",
-        info: restoredVote,
+        message: "Vote updated successfully",
+        info: updatedVote
       });
-    } catch (error) {
-      res.status(500).json({
-        message: "Failed to discard changes",
-        error: error.message,
-      });
-    }
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Error updating vote",
+      error: error.message
+    });
   }
+}
+
+ static async discardVoteChanges(req, res) {
+  try {
+    const vote = await Vote.findById(req.params.id);
+    if (!vote) {
+      return res.status(404).json({ message: "Vote not found" });
+    }
+
+    // Check if there's any history available
+    if (!vote.history || vote.history.length === 0) {
+      return res.status(400).json({ message: "No history available to restore" });
+    }
+
+    // Get the original state (index 0)
+    const originalState = vote.history[0].oldData;
+
+    // Restore the vote to its original state and empty the history
+    const restoredVote = await Vote.findByIdAndUpdate(
+      req.params.id,
+      {
+        ...originalState,
+        history: [], // Empty the history array
+        snapshotSource: "edited", // Reset snapshot source
+        modifiedAt: new Date(), // Update modification timestamp
+        modifiedBy: req.user?._id // Track who performed the discard
+      },
+      { new: true }
+    ).populate("termId");
+
+    res.status(200).json({
+      message: "Restored to original state and history cleared",
+      info: restoredVote
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Failed to discard changes",
+      error: error.message,
+    });
+  }
+}
 
   // Delete a vote by ID and remove its references from senator and representative data
   static async deleteVote(req, res) {
