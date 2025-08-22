@@ -230,48 +230,187 @@ class houseDataController {
   // }
   
 static async getHouseDataByHouseId(req, res) {
-    try {
-      const houseId = req.params.id;
+  try {
+    const houseId = req.params.id;
 
-      let houseData = await HouseData.find({ houseId })
-        .sort({ createdAt: 1 })
-        .populate("termId")
-        .populate("houseId")
-        .populate({
-          path: "votesScore.voteId",
-          populate: { path: "termId" }, // Also populate vote's termId
-        })
-        .populate("activitiesScore.activityId")
-        .lean(); // Convert to plain JS objects
+    // First, fetch all terms
+    const Term = require('../models/termSchema');
+    const allTerms = await Term.find().sort({ startYear: -1 }).lean();
 
-      // Inject termId from votesScore if missing
-      houseData = houseData.map((hd) => {
-        if (!hd.termId && hd.votesScore?.length) {
-          for (const vote of hd.votesScore) {
-            if (vote.voteId?.termId) {
-              hd.termId = vote.voteId.termId; // Set from vote
-              break;
+    // Filter and fix terms that are missing congresses
+    const validTerms = allTerms.filter(term => {
+      // Skip terms that don't have startYear and endYear
+      if (!term.startYear || !term.endYear) {
+        return false;
+      }
+      
+      // If term has startYear and endYear but no congresses, calculate them
+      if (!term.congresses || term.congresses.length === 0) {
+        const getCongresses = (startYear, endYear) => {
+          if (startYear < 1789 || endYear < 1789) {
+            return [];
+          }
+          
+          const congresses = [];
+          for (let year = startYear; year < endYear; year++) {
+            const congressNumber = Math.floor((year - 1789) / 2) + 1;
+            if (!congresses.includes(congressNumber)) {
+              congresses.push(congressNumber);
             }
           }
-        }
-        return hd;
-      });
-
-      if (!houseData.length) {
-        return res.status(404).json({ message: "House data not found" });
+          
+          // Rule: If (endYear - startYear) === 2 → should only have 1 congress
+          if (endYear - startYear === 2 && congresses.length > 1) {
+            congresses.splice(1); // keep only the first congress
+          }
+          
+          return congresses;
+        };
+        
+        term.congresses = getCongresses(term.startYear, term.endYear);
       }
+      
+      return true;
+    });
 
-      res.status(200).json({
-        message: "Retrieved successfully",
-        info: houseData,
-      });
-    } catch (error) {
-      res.status(500).json({
-        message: "Error retrieving house data",
-        error: error.message,
-      });
+    // Fetch all HouseData for this representative
+    let houseData = await HouseData.find({ houseId })
+      .sort({ createdAt: 1 })
+      .populate("houseId")
+      .populate({
+        path: "votesScore.voteId",
+        populate: { path: "termId" },
+      })
+      .populate("activitiesScore.activityId")
+      .lean();
+
+    if (!houseData.length) {
+      return res.status(404).json({ message: "House data not found" });
     }
+
+    // Get house details from the first record
+    const houseDetails = houseData[0].houseId;
+
+    // Collect all activities and votes from all HouseData records
+    const allVotes = [];
+    const allActivities = [];
+
+    houseData.forEach((hd) => {
+      if (hd.votesScore && hd.votesScore.length > 0) {
+        allVotes.push(...hd.votesScore);
+      }
+      if (hd.activitiesScore && hd.activitiesScore.length > 0) {
+        allActivities.push(...hd.activitiesScore);
+      }
+    });
+
+    // Organize terms with their matching activities and votes
+    const termsWithData = validTerms.map((term) => {
+      const termCongresses = term.congresses || [];
+
+      // Filter votes that match this term's congresses (single congress matching)
+      const votesForThisTerm = allVotes.filter(
+        (vote) => {
+          const voteCongress = vote.voteId?.congress;
+          const voteCongressNumber = Number(voteCongress);
+          const isMatch = vote.voteId && voteCongress && termCongresses.includes(voteCongressNumber);
+          
+          return isMatch;
+        }
+      );
+
+      // Filter activities that match this term's congresses (single congress matching)
+      const activitiesForThisTerm = allActivities.filter(
+        (activity) => {
+          const activityCongress = activity.activityId?.congress;
+          const activityCongressNumber = Number(activityCongress);
+          const isMatch = activity.activityId && activityCongress && termCongresses.includes(activityCongressNumber);
+          
+          return isMatch;
+        }
+      );
+
+      return {
+        termId: term,
+        votesScore: votesForThisTerm,
+        activitiesScore: activitiesForThisTerm,
+      };
+    });
+
+    // Create separate entries for each activity and vote
+    const individualEntries = [];
+    
+    // Add entries for votes
+    allVotes.forEach((vote) => {
+      const voteCongress = Number(vote.voteId?.congress);
+      // Only match with terms that have exactly one congress value
+      const matchingTerm = validTerms.find(term => 
+        term.congresses && 
+        term.congresses.length === 1 && 
+        term.congresses[0] === voteCongress
+      );
+      
+      if (matchingTerm) {
+        individualEntries.push({
+          termId: matchingTerm,
+          votesScore: [vote],
+          activitiesScore: [],
+          entryType: 'vote'
+        });
+      }
+    });
+
+    // Add entries for activities
+    allActivities.forEach((activity) => {
+      const activityCongress = Number(activity.activityId?.congress);
+      // Only match with terms that have exactly one congress value
+      const matchingTerm = validTerms.find(term => 
+        term.congresses && 
+        term.congresses.length === 1 && 
+        term.congresses[0] === activityCongress
+      );
+      
+      if (matchingTerm) {
+        individualEntries.push({
+          termId: matchingTerm,
+          votesScore: [],
+          activitiesScore: [activity],
+          entryType: 'activity'
+        });
+      }
+    });
+
+    // Remove duplicates (same term with same data)
+    const uniqueEntries = individualEntries.filter((entry, index, self) => {
+      const firstIndex = self.findIndex(e => 
+        e.termId._id.toString() === entry.termId._id.toString() &&
+        e.entryType === entry.entryType &&
+        e.votesScore.length === entry.votesScore.length &&
+        e.activitiesScore.length === entry.activitiesScore.length
+      );
+      return firstIndex === index;
+    });
+
+    // Filter out terms that have no activities or votes
+    const termsWithScores = uniqueEntries.filter(
+      (term) => {
+        const hasData = term.votesScore.length > 0 || term.activitiesScore.length > 0;
+        return hasData;
+      }
+    );
+
+    res.status(200).json({
+      message: "Retrieved successfully",
+      house: houseDetails,
+      terms: termsWithScores,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Error retrieving house data",
+      error: error.message,
+    });
   }
+}
   //frontend getRepresentativeDataByHouseId
   // static async HouseDataByHouseId(req, res) {
   //   try {
