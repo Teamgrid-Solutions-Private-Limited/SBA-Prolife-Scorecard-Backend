@@ -116,62 +116,63 @@ class houseDataController {
 
   // Delete house data by ID
   static async deleteHouseData(req, res) {
-  try {
-    // 1. Find the HouseData to be deleted
-    const houseDataToDelete = await HouseData.findById(req.params.id);
-    if (!houseDataToDelete) {
-      return res.status(404).json({ message: "House data not found" });
-    }
+    try {
+      // 1. Find the HouseData to be deleted
+      const houseDataToDelete = await HouseData.findById(req.params.id);
+      if (!houseDataToDelete) {
+        return res.status(404).json({ message: "House data not found" });
+      }
 
-    // 2. Find the parent house
-    const houseId = houseDataToDelete.houseId;
-    const house = await House.findById(houseId);
-    if (!house) {
-      return res.status(404).json({ message: "House not found" });
-    }
+      // 2. Find the parent house
+      const houseId = houseDataToDelete.houseId;
+      const house = await House.findById(houseId);
+      if (!house) {
+        return res.status(404).json({ message: "House not found" });
+      }
 
-    // 3. Fetch all current HouseData for this house (before deletion)
-    const houseDataList = await HouseData.find({ houseId: houseId }).lean();
+      // 3. Fetch all current HouseData for this house (before deletion)
+      const houseDataList = await HouseData.find({ houseId: houseId }).lean();
 
-    // 4. Prepare current state for history using object destructuring
-    const { _id, createdAt, updatedAt, __v, history, ...currentState } = house.toObject();
-    const stateWithData = {
-      ...currentState,
-      representativeData: houseDataList,
-    };
-
-    // 5. Only create history entry if no history exists
-    let updateOps = { $set: { snapshotSource: "deleted_pending_update" } };
-
-    if (!house.history || house.history.length === 0) {
-      const historyEntry = {
-        oldData: stateWithData,
-        timestamp: new Date(),
-        actionType: "delete",
-        deletedDataId: req.params.id,
-        deletedData: houseDataToDelete.toObject(),
+      // 4. Prepare current state for history using object destructuring
+      const { _id, createdAt, updatedAt, __v, history, ...currentState } =
+        house.toObject();
+      const stateWithData = {
+        ...currentState,
+        representativeData: houseDataList,
       };
 
-      updateOps.$push = { history: historyEntry };
+      // 5. Only create history entry if no history exists
+      let updateOps = { $set: { snapshotSource: "deleted_pending_update" } };
+
+      if (!house.history || house.history.length === 0) {
+        const historyEntry = {
+          oldData: stateWithData,
+          timestamp: new Date(),
+          actionType: "delete",
+          deletedDataId: req.params.id,
+          deletedData: houseDataToDelete.toObject(),
+        };
+
+        updateOps.$push = { history: historyEntry };
+      }
+
+      // 6. Update house (with or without history) and delete the data
+      await Promise.all([
+        House.findByIdAndUpdate(houseId, updateOps),
+        HouseData.findByIdAndDelete(req.params.id),
+      ]);
+
+      res.status(200).json({
+        message: "House data deleted successfully",
+        data: houseDataToDelete,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: "Error deleting house data",
+        error: error.message,
+      });
     }
-
-    // 6. Update house (with or without history) and delete the data
-    await Promise.all([
-      House.findByIdAndUpdate(houseId, updateOps),
-      HouseData.findByIdAndDelete(req.params.id),
-    ]);
-
-    res.status(200).json({
-      message: "House data deleted successfully",
-      data: houseDataToDelete,
-    });
-  } catch (error) {
-    res.status(500).json({
-      message: "Error deleting house data",
-      error: error.message,
-    });
   }
-}
   // static async deleteHouseData(req, res) {
   //   try {
   //     // 1. Find the HouseData to be deleted
@@ -228,143 +229,42 @@ class houseDataController {
   //     });
   //   }
   // }
-  
-static async getHouseDataByHouseId(req, res) {
-    try {
-      const houseId = req.params.id;
 
-      let houseData = await HouseData.find({ houseId })
-        .sort({ createdAt: 1 })
-        .populate("termId")
-        .populate("houseId")
-        .populate({
-          path: "votesScore.voteId",
-          populate: { path: "termId" }, // Also populate vote's termId
-        })
-        .populate("activitiesScore.activityId")
-        .lean(); // Convert to plain JS objects
-
-      // Inject termId from votesScore if missing
-      houseData = houseData.map((hd) => {
-        if (!hd.termId && hd.votesScore?.length) {
-          for (const vote of hd.votesScore) {
-            if (vote.voteId?.termId) {
-              hd.termId = vote.voteId.termId; // Set from vote
-              break;
-            }
-          }
-        }
-        return hd;
-      });
-
-      if (!houseData.length) {
-        return res.status(404).json({ message: "House data not found" });
-      }
-
-      res.status(200).json({
-        message: "Retrieved successfully",
-        info: houseData,
-      });
-    } catch (error) {
-      res.status(500).json({
-        message: "Error retrieving house data",
-        error: error.message,
-      });
-    }
-  }
-  //frontend getRepresentativeDataByHouseId
-  // static async HouseDataByHouseId(req, res) {
-  //   try {
-  //     const houseId = req.params.repId;
-
-  //     // Fetch all terms for this house
-  //     const houseData = await HouseData.find({ houseId })
-  //       .populate("termId")
-  //       .populate("houseId")
-  //       .populate("votesScore.voteId")
-  //       .populate("activitiesScore.activityId");
-
-  //     if (!houseData.length) {
-  //       return res.status(404).json({ message: "House data not found" });
-  //     }
-
-  //     // Sort: currentTerm first, then latest by createdAt
-  //     let sortedData = houseData.sort((a, b) => {
-  //       if (a.currentTerm && !b.currentTerm) return -1;
-  //       if (!a.currentTerm && b.currentTerm) return 1;
-  //       return new Date(b.createdAt) - new Date(a.createdAt);
-  //     });
-
-  //     // If multiple currentTerm entries exist, keep only the latest
-  //     const currentTerms = sortedData.filter((d) => d.currentTerm);
-  //     if (currentTerms.length > 1) {
-  //       const latestCurrentTerm = currentTerms.sort(
-  //         (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
-  //       )[0];
-  //       sortedData = [
-  //         latestCurrentTerm,
-  //         ...sortedData.filter((d) => !d.currentTerm),
-  //       ];
-  //     }
-
-  //     // House details from the first record
-  //     const latestHouseDetails = sortedData[0].houseId;
-
-  //     // Remove houseId from term records
-  //     const termData = sortedData.map((term) => {
-  //       const { houseId, ...rest } = term.toObject();
-  //       return rest;
-  //     });
-
-  //     res.status(200).json({
-  //       message: "Retrieved successfully",
-  //       house: latestHouseDetails,
-  //       terms: termData,
-  //     });
-  //   } catch (error) {
-  //     res.status(500).json({
-  //       message: "Error retrieving house data",
-  //       error: error.message,
-  //     });
-  //   }
-  // }
-
-  //   static async HouseDataByHouseId(req, res) {
+  // static async getHouseDataByHouseId(req, res) {
   //     try {
-  //       const houseId = req.params.repId;
+  //       const houseId = req.params.id;
 
-  //       // Fetch all terms for this house
-  //       const houseData = await HouseData.find({ houseId })
+  //       let houseData = await HouseData.find({ houseId })
+  //         .sort({ createdAt: 1 })
   //         .populate("termId")
   //         .populate("houseId")
-  //         .populate("votesScore.voteId")
+  //         .populate({
+  //           path: "votesScore.voteId",
+  //           populate: { path: "termId" }, // Also populate vote's termId
+  //         })
   //         .populate("activitiesScore.activityId")
-  //         .lean();
+  //         .lean(); // Convert to plain JS objects
+
+  //       // Inject termId from votesScore if missing
+  //       houseData = houseData.map((hd) => {
+  //         if (!hd.termId && hd.votesScore?.length) {
+  //           for (const vote of hd.votesScore) {
+  //             if (vote.voteId?.termId) {
+  //               hd.termId = vote.voteId.termId; // Set from vote
+  //               break;
+  //             }
+  //           }
+  //         }
+  //         return hd;
+  //       });
 
   //       if (!houseData.length) {
   //         return res.status(404).json({ message: "House data not found" });
   //       }
 
-  //       // Sort: currentTerm first, then by term start year (or createdAt as fallback)
-  //       let sortedData = houseData.sort((a, b) => {
-  //         if (a.currentTerm && !b.currentTerm) return -1;
-  //         if (!a.currentTerm && b.currentTerm) return 1;
-  //         if (a.termId?.startYear && b.termId?.startYear) {
-  //           return b.termId.startYear - a.termId.startYear;
-  //         }
-  //         return new Date(b.createdAt) - new Date(a.createdAt);
-  //       });
-
-  //       // House details from the first record
-  //       const latestHouseDetails = sortedData[0].houseId;
-
-  //       // Remove houseId field from each term
-  //       const termData = sortedData.map(({ houseId, ...rest }) => rest);
-
   //       res.status(200).json({
   //         message: "Retrieved successfully",
-  //         house: latestHouseDetails,
-  //         terms: termData, // includes ALL terms, current + past
+  //         info: houseData,
   //       });
   //     } catch (error) {
   //       res.status(500).json({
@@ -373,51 +273,150 @@ static async getHouseDataByHouseId(req, res) {
   //       });
   //     }
   //   }
-  // static async HouseDataByHouseId(req, res) {
-  //   try {
-  //     const houseId = req.params.repId;
 
-  //     // Fetch all terms for this representative (houseId)
-  //     const houseData = await HouseData.find({ houseId })
-  //       .populate("termId")
-  //       .populate("houseId")
-  //       .populate("votesScore.voteId")
-  //       .populate("activitiesScore.activityId")
-  //       .lean();
+    static async getHouseDataByHouseId(req, res) {
+    try {
+      const houseId = req.params.id;
 
-  //     if (!houseData.length) {
-  //       return res.status(404).json({ message: "House data not found" });
-  //     }
+      // --- 1. Get all terms ---
+      const Term = require("../models/termSchema");
+      const allTerms = await Term.find().sort({ startYear: -1 }).lean();
 
-  //     // Separate currentTerm from past terms
-  //     const currentTerm = houseData.find((t) => t.currentTerm);
-  //     const pastTerms = houseData
-  //       .filter((t) => !t.currentTerm)
-  //       .sort((a, b) => {
-  //         if (a.termId?.startYear && b.termId?.startYear) {
-  //           return b.termId.startYear - a.termId.startYear;
-  //         }
-  //         return new Date(b.createdAt) - new Date(a.createdAt);
-  //       });
+      // Fix congresses if missing
+      const validTerms = allTerms.filter((term) => {
+        if (!term.startYear || !term.endYear) return false;
 
-  //     // House details come from the first record’s populated houseId
-  //     const houseDetails = houseData[0].houseId;
+        if (!term.congresses || term.congresses.length === 0) {
+          const getCongresses = (startYear, endYear) => {
+            if (startYear < 1789 || endYear < 1789) return [];
+            const congresses = [];
+            for (let year = startYear; year < endYear; year++) {
+              const congressNumber = Math.floor((year - 1789) / 2) + 1;
+              if (!congresses.includes(congressNumber)) congresses.push(congressNumber);
+            }
+            if (endYear - startYear === 2 && congresses.length > 1) {
+              congresses.splice(1); // only keep first congress
+            }
+            return congresses;
+          };
+          term.congresses = getCongresses(term.startYear, term.endYear);
+        }
+        return true;
+      });
 
-  //     res.status(200).json({
-  //       message: "Retrieved successfully",
-  //       house: houseDetails,
-  //       currentTerm: currentTerm
-  //         ? { ...currentTerm, houseId: undefined }
-  //         : null,
-  //       pastTerms: pastTerms.map(({ houseId, ...rest }) => rest),
-  //     });
-  //   } catch (error) {
-  //     res.status(500).json({
-  //       message: "Error retrieving house data",
-  //       error: error.message,
-  //     });
-  //   }
-  // }
+      // --- 2. Fetch house data ---
+      let houseData = await HouseData.find({ houseId })
+        .sort({ createdAt: 1 })
+        .populate("houseId")
+        .populate({
+          path: "votesScore.voteId",
+          populate: { path: "termId" },
+        })
+        .populate("activitiesScore.activityId")
+        .lean();
+
+      if (!houseData.length) {
+        return res.status(404).json({ message: "House data not found" });
+      }
+
+      const houseDetails = houseData[0].houseId;
+
+      // --- 3. Collect all votes & activities ---
+      const allVotes = [];
+      const allActivities = [];
+      houseData.forEach((hd) => {
+        if (hd.votesScore?.length) allVotes.push(...hd.votesScore);
+        if (hd.activitiesScore?.length) allActivities.push(...hd.activitiesScore);
+      });
+
+      // --- 4. Organize into terms ---
+      const termsWithData = validTerms.map((term) => {
+        const termCongresses = term.congresses || [];
+        const votesForThisTerm = allVotes.filter(
+          (vote) =>
+            vote.voteId?.congress &&
+            termCongresses.includes(Number(vote.voteId.congress))
+        );
+        const activitiesForThisTerm = allActivities.filter(
+          (activity) =>
+            activity.activityId?.congress &&
+            termCongresses.includes(Number(activity.activityId.congress))
+        );
+        return {
+          termId: term,
+          votesScore: votesForThisTerm,
+          activitiesScore: activitiesForThisTerm,
+        };
+      });
+
+      // --- 5. Create individual entries ---
+      const individualEntries = [];
+
+      allVotes.forEach((vote) => {
+        const voteCongress = Number(vote.voteId?.congress);
+        const matchingTerm = validTerms.find(
+          (term) =>
+            term.congresses?.length === 1 && term.congresses[0] === voteCongress
+        );
+        if (matchingTerm) {
+          individualEntries.push({
+            termId: matchingTerm,
+            votesScore: [vote],
+            activitiesScore: [],
+            entryType: "vote",
+          });
+        }
+      });
+
+      allActivities.forEach((activity) => {
+        const activityCongress = Number(activity.activityId?.congress);
+        const matchingTerm = validTerms.find(
+          (term) =>
+            term.congresses?.length === 1 && term.congresses[0] === activityCongress
+        );
+        if (matchingTerm) {
+          individualEntries.push({
+            termId: matchingTerm,
+            votesScore: [],
+            activitiesScore: [activity],
+            entryType: "activity",
+          });
+        }
+      });
+
+      // --- 6. Deduplicate ---
+      const uniqueEntries = individualEntries.filter((entry, index, self) => {
+        const firstIndex = self.findIndex(
+          (e) =>
+            e.termId._id.toString() === entry.termId._id.toString() &&
+            e.entryType === entry.entryType &&
+            e.votesScore.length === entry.votesScore.length &&
+            e.activitiesScore.length === entry.activitiesScore.length
+        );
+        return firstIndex === index;
+      });
+
+      // --- 7. Filter out empty ones ---
+      const termsWithScores = uniqueEntries.filter(
+        (term) => term.votesScore.length > 0 || term.activitiesScore.length > 0
+      );
+
+      // --- 8. Response ---
+      res.status(200).json({
+        message: "Retrieved successfully",
+        house: houseDetails,
+        terms: termsWithScores,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: "Error retrieving house data",
+        error: error.message,
+      });
+    }
+  }
+
+
+
   static async HouseDataByHouseId(req, res) {
     try {
       const houseId = req.params.repId;
