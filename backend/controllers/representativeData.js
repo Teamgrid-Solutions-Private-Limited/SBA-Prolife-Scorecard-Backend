@@ -522,35 +522,45 @@ static async getHouseDataByHouseId(req, res) {
       if (!term.startYear || !term.endYear) {
         return false;
       }
-      
-      // If term has startYear and endYear but no congresses, calculate them
-      if (!term.congresses || term.congresses.length === 0) {
-        const getCongresses = (startYear, endYear) => {
-          if (startYear < 1789 || endYear < 1789) {
-            return [];
-          }
-          
-          const congresses = [];
-          for (let year = startYear; year < endYear; year++) {
-            const congressNumber = Math.floor((year - 1789) / 2) + 1;
-            if (!congresses.includes(congressNumber)) {
-              congresses.push(congressNumber);
-            }
-          }
-          
-          // Rule: If (endYear - startYear) === 2 → should only have 1 congress
-          if (endYear - startYear === 2 && congresses.length > 1) {
-            congresses.splice(1); // keep only the first congress
-          }
-          
-          return congresses;
-        };
-        
-        term.congresses = getCongresses(term.startYear, term.endYear);
+
+      //  Only keep ranges like 2023-2024 (odd–even, difference = 1)
+  const isOddEvenRange =
+    term.startYear % 2 === 1 &&
+    term.endYear % 2 === 0 &&
+    (term.endYear - term.startYear === 1);
+
+  if (!isOddEvenRange) {
+    return false;
+  }
+
+  // If term has startYear and endYear but no congresses, calculate them
+  if (!term.congresses || term.congresses.length === 0) {
+    const getCongresses = (startYear, endYear) => {
+      if (startYear < 1789 || endYear < 1789) {
+        return [];
       }
-      
-      return true;
-    });
+
+      const congresses = [];
+      for (let year = startYear; year < endYear; year++) {
+        const congressNumber = Math.floor((year - 1789) / 2) + 1;
+        if (!congresses.includes(congressNumber)) {
+          congresses.push(congressNumber);
+        }
+      }
+
+      // Rule: If (endYear - startYear) === 2 → should only have 1 congress
+      if (endYear - startYear === 2 && congresses.length > 1) {
+        congresses.splice(1); // keep only the first congress
+      }
+
+      return congresses;
+    };
+
+    term.congresses = getCongresses(term.startYear, term.endYear);
+  }
+
+  return true;
+});
 
     // Fetch all HouseData for this representative
     let houseData = await HouseData.find({ houseId })

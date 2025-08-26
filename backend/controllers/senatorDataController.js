@@ -246,17 +246,17 @@ class senatorDataController {
         .lean();
 
       // Inject termId from votesScore if missing
-      senatorData = senatorData.map((sd) => {
-        if (!sd.termId && sd.votesScore?.length) {
-          for (const vote of sd.votesScore) {
-            if (vote.voteId?.termId) {
-              sd.termId = vote.voteId.termId; // set from vote
-              break;
-            }
-          }
-        }
-        return sd;
-      });
+      // senatorData = senatorData.map((sd) => {
+      //   if (!sd.termId && sd.votesScore?.length) {
+      //     for (const vote of sd.votesScore) {
+      //       if (vote.voteId?.termId) {
+      //         sd.termId = vote.voteId.termId; // set from vote
+      //         break;
+      //       }
+      //     }
+      //   }
+      //   return sd;
+      // });
 
       if (!senatorData.length) {
         return res.status(404).json({ message: "Senator data not found" });
