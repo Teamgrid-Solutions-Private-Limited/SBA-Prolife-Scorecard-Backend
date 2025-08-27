@@ -112,62 +112,123 @@ class senatorDataController {
 
   // Delete senator data by ID
   static async deleteSenatorData(req, res) {
-    try {
-      // 1. Find the SenatorData to be deleted
-      const senatorDataToDelete = await SenatorData.findById(req.params.id);
-      if (!senatorDataToDelete) {
-        return res.status(404).json({ message: "Senator data not found" });
-      }
+  try {
+    // 1. Find the SenatorData to be deleted
+    const senatorDataToDelete = await SenatorData.findById(req.params.id);
+    if (!senatorDataToDelete) {
+      return res.status(404).json({ message: "Senator data not found" });
+    }
 
-      // 2. Find the parent senator
-      const senatorId = senatorDataToDelete.senateId;
-      const senator = await Senator.findById(senatorId);
-      if (!senator) {
-        return res.status(404).json({ message: "Senator not found" });
-      }
+    // 2. Find the parent senator
+    const senatorId = senatorDataToDelete.senateId;
+    const senator = await Senator.findById(senatorId);
+    if (!senator) {
+      return res.status(404).json({ message: "Senator not found" });
+    }
 
-      // 3. Fetch all current SenatorData for this senator (before deletion)
-      const senatorDataList = await SenatorData.find({
-        senateId: senatorId,
-      }).lean();
+    // 3. Fetch all current SenatorData for this senator (before deletion)
+    const senatorDataList = await SenatorData.find({
+      senateId: senatorId,
+    }).lean();
 
-      // 4. Prepare current state for history
-      const { _id, createdAt, updatedAt, __v, history, ...currentState } =
-        senator.toObject();
-      const stateWithData = {
-        ...currentState,
-        senatorData: senatorDataList,
-      };
+    // 4. Prepare current state for history
+    const { _id, createdAt, updatedAt, __v, history, ...currentState } =
+      senator.toObject();
+    const stateWithData = {
+      ...currentState,
+      senatorData: senatorDataList,
+    };
 
-      // 5. Create history entry for the deletion
+    // 5. Only create history entry if no history exists
+    let updateOps = { $set: { snapshotSource: "deleted_pending_update" } };
+
+    if (!senator.history || senator.history.length === 0) {
       const historyEntry = {
         oldData: stateWithData,
         timestamp: new Date(),
         actionType: "delete",
-        deletedDataId: req.params.id, // Store the ID of the deleted data
-        deletedData: senatorDataToDelete.toObject(), // Store the actual deleted data
+        deletedDataId: req.params.id,
+        deletedData: senatorDataToDelete.toObject(),
       };
 
-      // 6. Update senator with history and delete the data
-      await Promise.all([
-        Senator.findByIdAndUpdate(senatorId, {
-          $push: { history: historyEntry },
-          snapshotSource: "deleted_pending_update",
-        }),
-        SenatorData.findByIdAndDelete(req.params.id),
-      ]);
-
-      res.status(200).json({
-        message: "Senator data deleted successfully",
-        data: senatorDataToDelete,
-      });
-    } catch (error) {
-      res.status(500).json({
-        message: "Error deleting senator data",
-        error: error.message,
-      });
+      updateOps.$push = { history: historyEntry };
     }
+
+    // 6. Update senator (with or without history) and delete the data
+    await Promise.all([
+      Senator.findByIdAndUpdate(senatorId, updateOps),
+      SenatorData.findByIdAndDelete(req.params.id),
+    ]);
+
+    res.status(200).json({
+      message: "Senator data deleted successfully",
+      data: senatorDataToDelete,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Error deleting senator data",
+      error: error.message,
+    });
   }
+}
+
+  // static async deleteSenatorData(req, res) {
+  //   try {
+  //     // 1. Find the SenatorData to be deleted
+  //     const senatorDataToDelete = await SenatorData.findById(req.params.id);
+  //     if (!senatorDataToDelete) {
+  //       return res.status(404).json({ message: "Senator data not found" });
+  //     }
+
+  //     // 2. Find the parent senator
+  //     const senatorId = senatorDataToDelete.senateId;
+  //     const senator = await Senator.findById(senatorId);
+  //     if (!senator) {
+  //       return res.status(404).json({ message: "Senator not found" });
+  //     }
+
+  //     // 3. Fetch all current SenatorData for this senator (before deletion)
+  //     const senatorDataList = await SenatorData.find({
+  //       senateId: senatorId,
+  //     }).lean();
+
+  //     // 4. Prepare current state for history
+  //     const { _id, createdAt, updatedAt, __v, history, ...currentState } =
+  //       senator.toObject();
+  //     const stateWithData = {
+  //       ...currentState,
+  //       senatorData: senatorDataList,
+  //     };
+
+  //     // 5. Create history entry for the deletion
+  //     const historyEntry = {
+  //       oldData: stateWithData,
+  //       timestamp: new Date(),
+  //       actionType: "delete",
+  //       deletedDataId: req.params.id, // Store the ID of the deleted data
+  //       deletedData: senatorDataToDelete.toObject(), // Store the actual deleted data
+  //     };
+
+  //     // 6. Update senator with history and delete the data
+  //     await Promise.all([
+  //       Senator.findByIdAndUpdate(senatorId, {
+  //         $push: { history: historyEntry },
+  //         snapshotSource: "deleted_pending_update",
+  //       }),
+  //       SenatorData.findByIdAndDelete(req.params.id),
+  //     ]);
+
+  //     res.status(200).json({
+  //       message: "Senator data deleted successfully",
+  //       data: senatorDataToDelete,
+  //     });
+  //   } catch (error) {
+  //     res.status(500).json({
+  //       message: "Error deleting senator data",
+  //       error: error.message,
+  //     });
+  //   }
+  // }
 
   static async getSenatorDataBySenatorId(req, res) {
     try {
@@ -184,7 +245,7 @@ class senatorDataController {
         .populate("activitiesScore.activityId")
         .lean();
 
-      // Inject termId from votesScore if missing
+    
 
       if (!senatorData.length) {
         return res.status(404).json({ message: "Senator data not found" });

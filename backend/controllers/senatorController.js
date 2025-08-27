@@ -290,7 +290,7 @@ class senatorController {
         existingSenator.history.length === 0 ||
         existingSenator.snapshotSource === "edited";
 
-      if (canTakeSnapshot && updateData.$set.publishStatus !== "published") {
+      if (canTakeSnapshot && updateData.$set.publishStatus !== "published" && (!existingSenator.history || existingSenator.history.length === 0)) {
         const senatorDataList = await SenatorData.find({
           senateId: senatorId,
         }).lean();
@@ -341,96 +341,6 @@ class senatorController {
     }
   }
 
-  // static async updateSenator(req, res) {
-  //   try {
-  //     const senatorId = req.params.id;
-  //     let updateData = { ...req.body };
-  //     const existingSenator = await Senator.findById(senatorId);
-
-  //     if (!existingSenator) {
-  //       return res.status(404).json({ message: 'Senator not found' });
-  //     }
-
-  //     // Safe check for req.user
-  //     const userId = req.user?._id || null;
-  //     updateData.modifiedBy = userId;
-  //     updateData.modifiedAt = new Date();
-
-  //     if (req.file) {
-  //       updateData.photo = req.file.filename;
-  //     }
-
-  //     // Parse fields if needed
-  //     if (typeof updateData.editedFields === 'string') {
-  //       updateData.editedFields = JSON.parse(updateData.editedFields);
-  //     }
-  //     if (typeof updateData.fieldEditors === 'string') {
-  //       updateData.fieldEditors = JSON.parse(updateData.fieldEditors);
-  //     }
-
-  //     // Clear fields if publishing
-  //     if (updateData.publishStatus === "published") {
-  //       updateData.editedFields = [];
-  //       updateData.fieldEditors = {};
-  //       updateData.history = [];
-
-  //     }
-
-  //     // Determine if we should take a snapshot
-  //     const canTakeSnapshot =
-  //       !existingSenator.history ||
-  //       existingSenator.history.length === 0 ||
-  //       existingSenator.snapshotSource === "edited";
-
-  //     if (canTakeSnapshot) {
-  //       const senatorDataList = await SenatorData.find({ senateId: senatorId }).lean();
-  //       const currentState = existingSenator.toObject();
-
-  //       // Clean up the current state object
-  //       delete currentState._id;
-  //       delete currentState.createdAt;
-  //       delete currentState.updatedAt;
-  //       delete currentState.__v;
-  //       delete currentState.history;
-  //       currentState.senatorData = senatorDataList;
-
-  //       // Create history entry
-  //       const historyEntry = {
-  //         oldData: currentState,
-  //         timestamp: new Date(),
-  //         actionType: 'update'
-  //       };
-
-  //       // Add to update data
-  //       updateData.$push = { history: historyEntry };
-  //       updateData.snapshotSource = "edited";
-  //     } else if (existingSenator.snapshotSource === "deleted_pending_update") {
-  //       // Just clear the flag without creating new history entry
-  //       updateData.snapshotSource = "edited";
-  //     }
-
-  //     // Perform the update
-  //     const updatedSenator = await Senator.findByIdAndUpdate(
-  //       senatorId,
-  //       updateData,
-  //       { new: true }
-  //     );
-
-  //     if (!updatedSenator) {
-  //       return res.status(404).json({ message: "Senator not found" });
-  //     }
-
-  //     res.status(200).json({
-  //       message: "Senator updated successfully",
-  //       senator: updatedSenator,
-  //     });
-  //   } catch (error) {
-  //     res.status(500).json({
-  //       message: "Error updating senator",
-  //       error: error.message,
-  //     });
-  //   }
-  // }
 
   static async discardSenatorChanges(req, res) {
     try {
@@ -468,8 +378,11 @@ class senatorController {
 
         // Recreate from original state
         const recreatePromises = originalState.senatorData.map((data) => {
-          const { _id, createdAt, updatedAt, __v, ...cleanData } = data;
-          return SenatorData.create(cleanData);
+          const { _id, __v,updatedAt, ...cleanData } = data;
+         return SenatorData.create({
+          ...cleanData,
+          createdAt: data.createdAt,
+        });
         });
 
         await Promise.all(recreatePromises);

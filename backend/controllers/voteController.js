@@ -232,22 +232,22 @@ static async updateVote(req, res) {
         };
       }
 
-      // Handle history snapshot - only if not publishing
-      if (updateData.status !== "published") {
-        const canTakeSnapshot =
-          !existingVote.history ||
-          existingVote.history.length === 0 ||
-          existingVote.snapshotSource === "edited";
+        // Handle history snapshot - only if not publishing
+        if (updateData.status !== "published") {
+          const canTakeSnapshot =
+            !existingVote.history ||
+            existingVote.history.length === 0 ||
+            existingVote.snapshotSource === "edited";
+  const noHistory = !existingVote.history || existingVote.history.length === 0;
+          if (canTakeSnapshot && noHistory ) {
+            const currentState = existingVote.toObject();
 
-        if (canTakeSnapshot) {
-          const currentState = existingVote.toObject();
-          
-          // Clean up the current state object
-          delete currentState._id;
-          delete currentState.createdAt;
-          delete currentState.updatedAt;
-          delete currentState.__v;
-          delete currentState.history;
+            // Clean up the current state object
+            delete currentState._id;
+            delete currentState.createdAt;
+            delete currentState.updatedAt;
+            delete currentState.__v;
+            delete currentState.history;
 
           // Create history entry
           const historyEntry = {

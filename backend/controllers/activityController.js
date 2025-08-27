@@ -237,22 +237,22 @@ static async updateActivity(req, res) {
         updateOperations.$set.history = [];
       }
 
-      // Determine if we should take a snapshot (only if not publishing)
-      if (updateData.status !== "published") {
-        const canTakeSnapshot =
-          !existingActivity.history ||
-          existingActivity.history.length === 0 ||
-          existingActivity.snapshotSource === "edited";
+        // If not publishing, consider snapshot for history
+        if (updateData.status !== "published") {
+          const canTakeSnapshot =
+            !existingActivity.history ||
+            existingActivity.history.length === 0 ||
+            existingActivity.snapshotSource === "edited";
+const noHistory = !existingActivity.history || existingActivity.history.length === 0;
+          if (canTakeSnapshot && noHistory) {
+            const currentState = existingActivity.toObject();
 
-        if (canTakeSnapshot) {
-          const currentState = existingActivity.toObject();
-          
-          // Clean up the current state object
-          delete currentState._id;
-          delete currentState.createdAt;
-          delete currentState.updatedAt;
-          delete currentState.__v;
-          delete currentState.history;
+            // Remove unnecessary properties
+            delete currentState._id;
+            delete currentState.createdAt;
+            delete currentState.updatedAt;
+            delete currentState.__v;
+            delete currentState.history;
 
           // Create history entry
           const historyEntry = {
