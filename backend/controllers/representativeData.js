@@ -660,7 +660,6 @@ class houseDataController {
         const hasHouseData = Boolean(term._id); // because we mapped meta._id from HouseData
         return hasData || hasHouseData;
       });
-      console.log("Filtered terms with scores:", termsWithScores);
 
       res.status(200).json({
         message: "Retrieved successfully",
