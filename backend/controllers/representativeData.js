@@ -1,6 +1,6 @@
 const HouseData = require("../models/representativeDataSchema");
 const House = require("../models/representativeSchema");
-const mongoose = require("mongoose"); 
+const mongoose = require("mongoose");
 class houseDataController {
   // Create a new house data
   //  static async createHouseData(req, res) {
@@ -36,10 +36,10 @@ class houseDataController {
   //   }
   // }
 
- // Create a new house data with termId uniqueness validation
+  // Create a new house data with termId uniqueness validation
   static async createHouseData(req, res) {
     try {
-      
+
 
       const {
         houseId,
@@ -51,7 +51,7 @@ class houseDataController {
         activitiesScore,
       } = req.body;
 
-      
+
 
       //  Always clean invalid records first (no termId, null, or empty)
       //  Use separate deletes to avoid Mongoose ObjectId casting on empty strings
@@ -73,52 +73,52 @@ class houseDataController {
         });
         totalDeleted += nativeDel.deletedCount || 0;
       } catch (e) {
-        
+
       }
 
-      
+
 
       // Validate required fields
       if (!houseId || !termId || termId.toString().trim() === "") {
-        
+
         return res.status(400).json({
           message: "houseId and termId are required",
         });
       }
 
       // Check if a HouseData already exists for this houseId and termId
-      
+
       const existingHouseData = await HouseData.findOne({ houseId, termId });
 
       if (existingHouseData) {
-        
+
         return res.status(409).json({
           message: "House data already exists for this representative and term",
           existingData: existingHouseData,
         });
       }
 
-      
+
 
       // If currentTerm is being set to true, ensure no other currentTerm exists
       if (currentTerm === true) {
-        
+
         const existingCurrentTerm = await HouseData.findOne({
           houseId,
           currentTerm: true,
         });
 
         if (existingCurrentTerm) {
-          
+
           return res.status(409).json({
             message: "A current term already exists for this representative",
             existingCurrentTerm: existingCurrentTerm,
           });
         }
-        
+
       }
 
-      
+
       const newHouseData = new HouseData({
         houseId,
         termId,
@@ -131,13 +131,13 @@ class houseDataController {
 
       await newHouseData.save();
 
-      
+
       res.status(201).json({
         message: "House data added successfully",
         info: newHouseData,
       });
     } catch (error) {
-      
+
 
       if (error.name === "ValidationError") {
         const messages = Object.values(error.errors).map((err) => err.message);
@@ -187,169 +187,169 @@ class houseDataController {
   }
 
   // Update house data by ID
-static async updateHouseData(req, res) {
-  const session = await mongoose.startSession();
-  
-  try {
-    
-    
-    session.startTransaction();
+  static async updateHouseData(req, res) {
+    const session = await mongoose.startSession();
 
-    const { termId, houseId } = req.body;
-    
+    try {
 
-    //  Validate termId - if it's null/empty, delete the document instead of updating
-    if (!termId || termId.toString().trim() === "") {
-      
-      
-      // Find and delete the document
-      const documentToDelete = await HouseData.findById(req.params.id).session(session);
-      
-      
-      if (documentToDelete) {
-        
+
+      session.startTransaction();
+
+      const { termId, houseId } = req.body;
+
+
+      //  Validate termId - if it's null/empty, delete the document instead of updating
+      if (!termId || termId.toString().trim() === "") {
+
+
+        // Find and delete the document
+        const documentToDelete = await HouseData.findById(req.params.id).session(session);
+
+
+        if (documentToDelete) {
+
+        }
+
+        if (!documentToDelete) {
+
+          await session.abortTransaction();
+          session.endSession();
+          return res.status(404).json({ message: "House data not found" });
+        }
+
+        await HouseData.findByIdAndDelete(req.params.id, { session });
+
+        await session.commitTransaction();
+        session.endSession();
+
+
+        return res.status(200).json({
+          message: "House data deleted because termId was null/empty",
+          deletedData: documentToDelete
+        });
       }
-      
-      if (!documentToDelete) {
-        
+
+
+
+      //  Optional: Validate houseId
+      if (!houseId || houseId.toString().trim() === "") {
+
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(400).json({ message: "houseId is required" });
+      }
+
+      //  Find the existing document
+
+      const existing = await HouseData.findById(req.params.id).session(session);
+
+
+      if (existing) {
+
+      }
+
+      if (!existing) {
+
         await session.abortTransaction();
         session.endSession();
         return res.status(404).json({ message: "House data not found" });
       }
 
-      await HouseData.findByIdAndDelete(req.params.id, { session });
-      
+      // Check if termId is being changed to a different value
+      const isTermIdChanging = existing.termId.toString() !== termId.toString();
+
+
+      if (isTermIdChanging) {
+
+        // Check if HouseData already exists for the new houseId + termId combination
+        const duplicateHouseData = await HouseData.findOne({
+          houseId: existing.houseId, // Use existing houseId to avoid changing it
+          termId: termId,
+          _id: { $ne: req.params.id } // Exclude current document
+        }).session(session);
+
+
+        if (duplicateHouseData) {
+
+          await session.abortTransaction();
+          session.endSession();
+          return res.status(409).json({
+            message: "House data already exists for this representative and term",
+            existingData: duplicateHouseData
+          });
+        }
+
+      }
+
+      //  Apply the updates
+      Object.assign(existing, req.body);
+
+      //  If currentTerm is being set to true, ensure no other currentTerm exists
+      if (existing.currentTerm === true) {
+
+        const existingCurrentTerm = await HouseData.findOne({
+          houseId: existing.houseId,
+          currentTerm: true,
+          _id: { $ne: req.params.id }
+        }).session(session);
+
+
+        if (existingCurrentTerm) {
+
+          // Automatically update the existing currentTerm to false
+          await HouseData.findByIdAndUpdate(
+            existingCurrentTerm._id,
+            { currentTerm: false },
+            { session }
+          );
+
+        }
+      }
+
+      //  Save to trigger schema validation
+      const updated = await existing.save({ session });
+
       await session.commitTransaction();
       session.endSession();
-      
-      
-      return res.status(200).json({
-        message: "House data deleted because termId was null/empty",
-        deletedData: documentToDelete
+
+
+      res.status(200).json({
+        message: "House data updated successfully",
+        data: updated
       });
-    }
 
-    
-    
-    //  Optional: Validate houseId
-    if (!houseId || houseId.toString().trim() === "") {
-      
+    } catch (error) {
+
+
       await session.abortTransaction();
       session.endSession();
-      return res.status(400).json({ message: "houseId is required" });
-    }
 
-    //  Find the existing document
-    
-    const existing = await HouseData.findById(req.params.id).session(session);
+      //  Handle schema validation errors
+      if (error.name === "ValidationError") {
 
-    
-    if (existing) {
-      
-    }
+        const messages = Object.values(error.errors).map((err) => err.message);
 
-    if (!existing) {
-      
-      await session.abortTransaction();
-      session.endSession();
-      return res.status(404).json({ message: "House data not found" });
-    }
+        return res.status(400).json({ message: messages.join(", ") });
+      }
 
-    // Check if termId is being changed to a different value
-    const isTermIdChanging = existing.termId.toString() !== termId.toString();
-    
+      // Handle duplicate key error
+      if (error.code === 11000) {
 
-    if (isTermIdChanging) {
-      
-      // Check if HouseData already exists for the new houseId + termId combination
-      const duplicateHouseData = await HouseData.findOne({
-        houseId: existing.houseId, // Use existing houseId to avoid changing it
-        termId: termId,
-        _id: { $ne: req.params.id } // Exclude current document
-      }).session(session);
-
-      
-      if (duplicateHouseData) {
-        
-        await session.abortTransaction();
-        session.endSession();
         return res.status(409).json({
           message: "House data already exists for this representative and term",
-          existingData: duplicateHouseData
+          error: error.message
         });
       }
-      
-    }
 
-    //  Apply the updates
-    Object.assign(existing, req.body);
 
-    //  If currentTerm is being set to true, ensure no other currentTerm exists
-    if (existing.currentTerm === true) {
-      
-      const existingCurrentTerm = await HouseData.findOne({
-        houseId: existing.houseId,
-        currentTerm: true,
-        _id: { $ne: req.params.id }
-      }).session(session);
-
-      
-      if (existingCurrentTerm) {
-        
-        // Automatically update the existing currentTerm to false
-        await HouseData.findByIdAndUpdate(
-          existingCurrentTerm._id,
-          { currentTerm: false },
-          { session }
-        );
-        
-      }
-    }
-
-    //  Save to trigger schema validation
-    const updated = await existing.save({ session });
-
-    await session.commitTransaction();
-    session.endSession();
-
-    
-    res.status(200).json({
-      message: "House data updated successfully",
-      data: updated
-    });
-
-  } catch (error) {
-    
-    
-    await session.abortTransaction();
-    session.endSession();
-
-    //  Handle schema validation errors
-    if (error.name === "ValidationError") {
-      
-      const messages = Object.values(error.errors).map((err) => err.message);
-      
-      return res.status(400).json({ message: messages.join(", ") });
-    }
-
-    // Handle duplicate key error
-    if (error.code === 11000) {
-      
-      return res.status(409).json({
-        message: "House data already exists for this representative and term",
-        error: error.message
+      res.status(500).json({
+        message: error.message || "Error updating house data",
+        stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
       });
     }
-
-    
-    res.status(500).json({
-      message: error.message || "Error updating house data",
-      stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
-    });
   }
-}
 
-//Update house data by ID
+  //Update house data by ID
   // static async updateHouseData(req, res) {
   //   try {
   //     const { termId, houseId } = req.body;
@@ -507,166 +507,173 @@ static async updateHouseData(req, res) {
   //     });
   //   }
   // }
-  
-static async getHouseDataByHouseId(req, res) {
-  try {
-    const houseId = req.params.id;
 
-    // First, fetch all terms
-    const Term = require('../models/termSchema');
-    const allTerms = await Term.find().sort({ startYear: -1 }).lean();
+  static async getHouseDataByHouseId(req, res) {
+    try {
+      const houseId = req.params.id;
 
-    // Filter and fix terms that are missing congresses
-    const validTerms = allTerms.filter(term => {
-      // Skip terms that don't have startYear and endYear
-      if (!term.startYear || !term.endYear) {
-        return false;
-      }
+      // First, fetch all terms
+      const Term = require('../models/termSchema');
+      const allTerms = await Term.find().sort({ startYear: -1 }).lean();
 
-      //  Only keep ranges like 2023-2024 (odd–even, difference = 1)
-  const isOddEvenRange =
-    term.startYear % 2 === 1 &&
-    term.endYear % 2 === 0 &&
-    (term.endYear - term.startYear === 1);
-
-  if (!isOddEvenRange) {
-    return false;
-  }
-
-  // If term has startYear and endYear but no congresses, calculate them
-  if (!term.congresses || term.congresses.length === 0) {
-    const getCongresses = (startYear, endYear) => {
-      if (startYear < 1789 || endYear < 1789) {
-        return [];
-      }
-
-      const congresses = [];
-      for (let year = startYear; year < endYear; year++) {
-        const congressNumber = Math.floor((year - 1789) / 2) + 1;
-        if (!congresses.includes(congressNumber)) {
-          congresses.push(congressNumber);
+      // Filter and fix terms that are missing congresses
+      const validTerms = allTerms.filter(term => {
+        // Skip terms that don't have startYear and endYear
+        if (!term.startYear || !term.endYear) {
+          return false;
         }
+
+        //  Only keep ranges like 2023-2024 (odd–even, difference = 1)
+        const isOddEvenRange =
+          term.startYear % 2 === 1 &&
+          term.endYear % 2 === 0 &&
+          (term.endYear - term.startYear === 1);
+
+        if (!isOddEvenRange) {
+          return false;
+        }
+
+        // If term has startYear and endYear but no congresses, calculate them
+        if (!term.congresses || term.congresses.length === 0) {
+          const getCongresses = (startYear, endYear) => {
+            if (startYear < 1789 || endYear < 1789) {
+              return [];
+            }
+
+            const congresses = [];
+            for (let year = startYear; year < endYear; year++) {
+              const congressNumber = Math.floor((year - 1789) / 2) + 1;
+              if (!congresses.includes(congressNumber)) {
+                congresses.push(congressNumber);
+              }
+            }
+
+            // Rule: If (endYear - startYear) === 2 → should only have 1 congress
+            if (endYear - startYear === 2 && congresses.length > 1) {
+              congresses.splice(1); // keep only the first congress
+            }
+
+            return congresses;
+          };
+
+          term.congresses = getCongresses(term.startYear, term.endYear);
+        }
+
+        return true;
+      });
+
+      // Fetch all HouseData for this representative
+      let houseData = await HouseData.find({ houseId })
+        .sort({ createdAt: 1 })
+        .populate("houseId")
+        .populate({
+          path: "votesScore.voteId",
+          populate: { path: "termId" },
+        })
+        .populate("activitiesScore.activityId")
+        .lean();
+
+      if (!houseData.length) {
+        return res.status(404).json({ message: "House data not found" });
       }
 
-      // Rule: If (endYear - startYear) === 2 → should only have 1 congress
-      if (endYear - startYear === 2 && congresses.length > 1) {
-        congresses.splice(1); // keep only the first congress
-      }
+      // Get house details from the first record
+      const houseDetails = houseData[0].houseId;
 
-      return congresses;
-    };
+      // Map termId -> meta (houseDataId, currentTerm, rating, summary) for per-term info
+      const termIdToMeta = new Map();
+      houseData.forEach((hd) => {
+        if (hd.termId) {
+          termIdToMeta.set(hd.termId.toString(), {
+            _id: hd._id?.toString() || null,
+            currentTerm: Boolean(hd.currentTerm),
+            rating: hd.rating || "",
+            summary: hd.summary || "",
+          });
+        }
+      });
 
-    term.congresses = getCongresses(term.startYear, term.endYear);
-  }
+      // Collect all activities and votes from all HouseData records
+      const allVotes = [];
+      const allActivities = [];
 
-  return true;
-});
+      houseData.forEach((hd) => {
+        if (hd.votesScore && hd.votesScore.length > 0) {
+          allVotes.push(...hd.votesScore);
+        }
+        if (hd.activitiesScore && hd.activitiesScore.length > 0) {
+          allActivities.push(...hd.activitiesScore);
+        }
+      });
 
-    // Fetch all HouseData for this representative
-    let houseData = await HouseData.find({ houseId })
-      .sort({ createdAt: 1 })
-      .populate("houseId")
-      .populate({
-        path: "votesScore.voteId",
-        populate: { path: "termId" },
-      })
-      .populate("activitiesScore.activityId")
-      .lean();
+      // Group votes and activities by term - only match terms with exactly one congress
+      const termsWithData = validTerms.map((term) => {
+        const termCongresses = term.congresses || [];
 
-    if (!houseData.length) {
-      return res.status(404).json({ message: "House data not found" });
-    }
+        // Only process terms that have exactly one congress
+        if (termCongresses.length !== 1) {
+          return {
+            termId: term,
+            votesScore: [],
+            activitiesScore: [],
+          };
+        }
 
-    // Get house details from the first record
-    const houseDetails = houseData[0].houseId;
+        const singleCongress = termCongresses[0];
 
-    // Map termId -> meta (houseDataId, currentTerm, rating, summary) for per-term info
-    const termIdToMeta = new Map();
-    houseData.forEach((hd) => {
-      if (hd.termId) {
-        termIdToMeta.set(hd.termId.toString(), {
-          _id: hd._id?.toString() || null,
-          currentTerm: Boolean(hd.currentTerm),
-          rating: hd.rating || "",
-          summary: hd.summary || "",
+        // Filter votes that match this term's single congress
+        const votesForThisTerm = allVotes.filter((vote) => {
+          const voteCongress = vote.voteId?.congress;
+          const voteCongressNumber = Number(voteCongress);
+          const isMatch = vote.voteId && voteCongress && voteCongressNumber === singleCongress;
+          return isMatch;
         });
-      }
-    });
 
-    // Collect all activities and votes from all HouseData records
-    const allVotes = [];
-    const allActivities = [];
+        // Filter activities that match this term's single congress
+        const activitiesForThisTerm = allActivities.filter((activity) => {
+          const activityCongress = activity.activityId?.congress;
+          const activityCongressNumber = Number(activityCongress);
+          const isMatch = activity.activityId && activityCongress && activityCongressNumber === singleCongress;
+          return isMatch;
+        });
 
-    houseData.forEach((hd) => {
-      if (hd.votesScore && hd.votesScore.length > 0) {
-        allVotes.push(...hd.votesScore);
-      }
-      if (hd.activitiesScore && hd.activitiesScore.length > 0) {
-        allActivities.push(...hd.activitiesScore);
-      }
-    });
-
-    // Group votes and activities by term - only match terms with exactly one congress
-    const termsWithData = validTerms.map((term) => {
-      const termCongresses = term.congresses || [];
-
-      // Only process terms that have exactly one congress
-      if (termCongresses.length !== 1) {
+        const meta = termIdToMeta.get(term._id?.toString()) || {};
         return {
+          _id: meta._id || null,
           termId: term,
-          votesScore: [],
-          activitiesScore: [],
+          currentTerm: meta.currentTerm || false,
+          rating: meta.rating || "",
+          summary: meta.summary || "",
+          votesScore: votesForThisTerm,
+          activitiesScore: activitiesForThisTerm,
         };
-      }
-
-      const singleCongress = termCongresses[0];
-
-      // Filter votes that match this term's single congress
-      const votesForThisTerm = allVotes.filter((vote) => {
-        const voteCongress = vote.voteId?.congress;
-        const voteCongressNumber = Number(voteCongress);
-        const isMatch = vote.voteId && voteCongress && voteCongressNumber === singleCongress;
-        return isMatch;
       });
 
-      // Filter activities that match this term's single congress
-      const activitiesForThisTerm = allActivities.filter((activity) => {
-        const activityCongress = activity.activityId?.congress;
-        const activityCongressNumber = Number(activityCongress);
-        const isMatch = activity.activityId && activityCongress && activityCongressNumber === singleCongress;
-        return isMatch;
+      // Filter out terms that have no activities or votes
+      // const termsWithScores = termsWithData.filter((term) => {
+      //   const hasData = term.votesScore.length > 0 || term.activitiesScore.length > 0;
+      //   return hasData;
+      // });
+      // Filter terms - keep if they have votes/activities OR if they exist in HouseData (termId present)
+      const termsWithScores = termsWithData.filter((term) => {
+        const hasData = term.votesScore.length > 0 || term.activitiesScore.length > 0;
+        const hasHouseData = Boolean(term._id); // because we mapped meta._id from HouseData
+        return hasData || hasHouseData;
       });
+      console.log("Filtered terms with scores:", termsWithScores);
 
-      const meta = termIdToMeta.get(term._id?.toString()) || {};
-      return {
-        _id: meta._id || null,
-        termId: term,
-        currentTerm: meta.currentTerm || false,
-        rating: meta.rating || "",
-        summary: meta.summary || "",
-        votesScore: votesForThisTerm,
-        activitiesScore: activitiesForThisTerm,
-      };
-    });
-
-    // Filter out terms that have no activities or votes
-    const termsWithScores = termsWithData.filter((term) => {
-      const hasData = term.votesScore.length > 0 || term.activitiesScore.length > 0;
-      return hasData;
-    });
-
-    res.status(200).json({
-      message: "Retrieved successfully",
-      house: houseDetails,
-      terms: termsWithScores,
-    });
-  } catch (error) {
-    res.status(500).json({
-      message: "Error retrieving house data",
-      error: error.message,
-    });
+      res.status(200).json({
+        message: "Retrieved successfully",
+        house: houseDetails,
+        terms: termsWithScores,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: "Error retrieving house data",
+        error: error.message,
+      });
+    }
   }
-}
   //frontend getRepresentativeDataByHouseId
   // static async HouseDataByHouseId(req, res) {
   //   try {
