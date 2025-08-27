@@ -6,12 +6,12 @@ const SenatorDataSchema = new mongoose.Schema(
     termId: { type: mongoose.Schema.Types.ObjectId, ref: "terms" },
     currentTerm: Boolean,
     summary: String,
-    summaries: [
-      {
-        congress: { type: Number } ,
-        content: { type: String },
-      },
-    ],
+    // summaries: [
+    //   {
+    //     congress: { type: Number } ,
+    //     content: { type: String },
+    //   },
+    // ],
 
     rating: String,
     votesScore: [
