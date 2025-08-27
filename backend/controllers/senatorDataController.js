@@ -185,17 +185,6 @@ class senatorDataController {
         .lean();
 
       // Inject termId from votesScore if missing
-      senatorData = senatorData.map((sd) => {
-        if (!sd.termId && sd.votesScore?.length) {
-          for (const vote of sd.votesScore) {
-            if (vote.voteId?.termId) {
-              sd.termId = vote.voteId.termId; // set from vote
-              break;
-            }
-          }
-        }
-        return sd;
-      });
 
       if (!senatorData.length) {
         return res.status(404).json({ message: "Senator data not found" });
@@ -211,51 +200,6 @@ class senatorDataController {
       });
     }
   }
-
-  ////frontend ui display
-  // static async SenatorDataBySenatorId(req, res) {
-  //   try {
-  //     const senateId = req.params.senatorId;
-
-  //     // Fetch all terms for this senator
-  //     const senatorData = await SenatorData.find({ senateId })
-  //       .populate("termId")
-  //       .populate("senateId")
-  //       .populate("votesScore.voteId")
-  //       .populate("activitiesScore.activityId");
-
-  //     if (!senatorData.length) {
-  //       return res.status(404).json({ message: "Senator data not found" });
-  //     }
-
-  //     // Sort: currentTerm first, then latest by createdAt
-  //     const sortedData = senatorData.sort((a, b) => {
-  //       if (a.currentTerm && !b.currentTerm) return -1;
-  //       if (!a.currentTerm && b.currentTerm) return 1;
-  //       return new Date(b.createdAt) - new Date(a.createdAt);
-  //     });
-
-  //     // Senator details from the latest record (first after sorting)
-  //     const latestSenatorDetails = sortedData[0].senateId;
-
-  //     // Remove senateId from term records
-  //     const termData = sortedData.map((term) => {
-  //       const { senateId, ...rest } = term.toObject();
-  //       return rest;
-  //     });
-
-  //     res.status(200).json({
-  //       message: "Retrieved successfully",
-  //       senator: latestSenatorDetails,
-  //       terms: termData,
-  //     });
-  //   } catch (error) {
-  //     res.status(500).json({
-  //       message: "Error retrieving senator data",
-  //       error: error.message,
-  //     });
-  //   }
-  // }
   static async SenatorDataBySenatorId(req, res) {
     try {
       const senateId = req.params.senatorId; // Note: param is senatorId but schema uses senateId
