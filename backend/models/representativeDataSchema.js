@@ -19,9 +19,9 @@ const RepresentativeDataSchema = new mongoose.Schema({
         }
     ]
 },{timestamps: true});
-// ✅ Ensure only ONE currentTerm per houseId (representative)
+//  Ensure only ONE currentTerm per houseId (representative)
 RepresentativeDataSchema.index(
-  { houseId: 1, currentTerm: 1 },
+  { houseId: 1, termId: 1, currentTerm: 1 },
   { unique: true, partialFilterExpression: { currentTerm: true } }
 );
 module.exports = mongoose.model('representative_datas', RepresentativeDataSchema);
