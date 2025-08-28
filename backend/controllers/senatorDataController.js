@@ -3,111 +3,7 @@ const SenatorData = require("../models/senatorDataSchema");
 const Senator = require("../models/senatorSchema");
 class senatorDataController {
   // Create a new senator data
-  // static async createSenatorData(req, res) {
-  //   try {
-  //     const {
-  //       senateId,
-  //       termId,
-  //       currentTerm,
-  //       summary,
-  //       rating,
-  //       votesScore,
-  //       activitiesScore,
-  //       // summaries = [], // frontend summaries array
-  //     } = req.body;
-
-  //     // First validate the termId and get its details
-  //     const termDetails = await mongoose.model("terms").findById(termId);
-  //     if (!termDetails) {
-  //       return res.status(400).json({
-  //         message: "Invalid term ID provided",
-  //       });
-  //     }
-
-  //     // Find ANY existing data that would constitute a duplicate
-  //     const existingData = await SenatorData.aggregate([
-  //       {
-  //         $match: {
-  //           senateId: new mongoose.Types.ObjectId(senateId),
-  //         },
-  //       },
-  //       {
-  //         $lookup: {
-  //           from: "terms",
-  //           localField: "termId",
-  //           foreignField: "_id",
-  //           as: "termDetails",
-  //         },
-  //       },
-  //       {
-  //         $unwind: "$termDetails",
-  //       },
-  //       {
-  //         $match: {
-  //           $or: [
-  //             { termId: new mongoose.Types.ObjectId(termId) }, // Same termId
-  //             { "termDetails.name": termDetails.name }, // Same term name
-  //             {
-  //               $and: [
-  //                 { "termDetails.startYear": termDetails.startYear },
-  //                 { "termDetails.endYear": termDetails.endYear },
-  //               ],
-  //             }, // Same year range
-  //           ],
-  //         },
-  //       },
-  //     ]);
-
-  //     if (existingData.length > 0) {
-  //       return res.status(400).json({
-  //         message: "Duplicate senator data found",
-  //         details:
-  //           "A record already exists with either the same term ID, term name, or year range",
-  //         existingData: existingData[0],
-  //       });
-  //     }
-
-  //     // If currentTerm is true, ensure no other currentTerm exists for this senator
-  //     if (currentTerm) {
-  //       const existingCurrentTerm = await SenatorData.findOne({
-  //         senateId,
-  //         currentTerm: true,
-  //       });
-
-  //       if (existingCurrentTerm) {
-  //         return res.status(400).json({
-  //           message:
-  //             "Another term is already marked as current for this senator",
-  //           existingCurrentTerm,
-  //         });
-  //       }
-  //     }
-
-  //     // Create new senator data
-  //     const newSenatorData = new SenatorData({
-  //       senateId,
-  //       termId,
-  //       summary,
-  //       currentTerm,
-  //       rating,
-  //       votesScore,
-  //       activitiesScore,
-  //       // summaries,
-  //     });
-
-  //     await newSenatorData.save();
-
-  //     res.status(201).json(newSenatorData);
-  //   } catch (error) {
-  //     console.error(" Error creating senator data:", error);
-  //     res.status(500).json({ message: "Error creating senator data", error });
-  //   }
-  // }
-
   static async createSenatorData(req, res) {
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
     try {
       const {
         senateId,
@@ -119,69 +15,110 @@ class senatorDataController {
         activitiesScore,
       } = req.body;
 
-      // Validate termId exists
-      const termDetails = await mongoose
-        .model("terms")
-        .findById(termId)
-        .session(session);
-      if (!termDetails) {
-        await session.abortTransaction();
-        session.endSession();
-        return res.status(400).json({ message: "Invalid term ID provided" });
-      }
-
-      // If currentTerm, ensure no other currentTerm exists
-      if (currentTerm) {
-        const existingCurrentTerm = await mongoose
-          .model("senator_datas")
-          .findOne({ senateId, currentTerm: true })
-          .session(session);
-
-        if (existingCurrentTerm) {
-          await session.abortTransaction();
-          session.endSession();
-          return res.status(400).json({
-            message:
-              "Another term is already marked as current for this senator",
-            existingCurrentTerm,
-          });
-        }
-      }
-
-      // Atomic insert: will fail if senateId + termId already exists
-      const newSenatorData = await mongoose.model("senator_datas").create(
-        [
-          {
-            senateId,
-            termId,
-            currentTerm,
-            summary,
-            rating,
-            votesScore,
-            activitiesScore,
-          },
-        ],
-        { session }
-      );
-
-      await session.commitTransaction();
-      session.endSession();
-
-      res.status(201).json(newSenatorData[0]);
-    } catch (error) {
-      await session.abortTransaction();
-      session.endSession();
-
-      // Handle duplicate key error gracefully
-      if (error.code === 11000) {
+      // Validate ObjectId format first (cheaper operation)
+      if (
+        !mongoose.Types.ObjectId.isValid(senateId) ||
+        !mongoose.Types.ObjectId.isValid(termId)
+      ) {
         return res.status(400).json({
-          message: "Duplicate senator data exists for this term",
-          error,
+          message: "Invalid senateId or termId format",
         });
       }
 
+      // Convert to ObjectId once
+      const senateObjectId = new mongoose.Types.ObjectId(senateId);
+      const termObjectId = new mongoose.Types.ObjectId(termId);
+
+      // Parallelize database operations
+      const [termDetails, existingCurrentTerm, existingData] =
+        await Promise.all([
+          mongoose.model("terms").findById(termObjectId),
+          currentTerm
+            ? SenatorData.findOne({
+                senateId: senateObjectId,
+                currentTerm: true,
+              })
+            : null,
+          SenatorData.findOne({
+            senateId: senateObjectId,
+            termId: termObjectId,
+          }),
+        ]);
+
+      // Validate term exists
+      if (!termDetails) {
+        return res.status(400).json({
+          message: "Invalid term ID provided",
+        });
+      }
+
+      // Check for duplicates
+      if (existingData) {
+        return res.status(409).json({
+          message: "Duplicate senator data found",
+          details:
+            "A record already exists with the same senator and term combination",
+          existingData,
+        });
+      }
+
+      // Check for existing current term
+      if (currentTerm && existingCurrentTerm) {
+        return res.status(409).json({
+          message: "Another term is already marked as current for this senator",
+          existingCurrentTerm,
+        });
+      }
+
+      // Create new senator data
+      const newSenatorData = new SenatorData({
+        senateId: senateObjectId,
+        termId: termObjectId,
+        summary,
+        currentTerm: currentTerm || false, // Ensure boolean value
+        rating,
+        votesScore,
+        activitiesScore,
+      });
+
+      // Use lean() for better performance if you don't need full Mongoose document
+      const savedData = await newSenatorData.save();
+
+      // Populate references if needed for response
+      const populatedData = await SenatorData.findById(savedData._id)
+        .populate("senateId", "name title") // Only include necessary fields
+        .populate("termId", "name startYear endYear")
+        .lean();
+
+      res.status(201).json({
+        message: "Senator data created successfully",
+        data: populatedData || savedData,
+      });
+    } catch (error) {
       console.error("Error creating senator data:", error);
-      res.status(500).json({ message: "Error creating senator data", error });
+
+      // Handle specific error types
+      if (error.name === "ValidationError") {
+        return res.status(400).json({
+          message: "Validation failed",
+          details: Object.values(error.errors).map((err) => err.message),
+        });
+      }
+
+      if (error.code === 11000) {
+        // MongoDB duplicate key error
+        return res.status(409).json({
+          message: "Duplicate entry detected",
+          details:
+            "A record with this senator and term combination already exists",
+        });
+      }
+
+      // Generic server error (hide details in production)
+      res.status(500).json({
+        message: "Error creating senator data",
+        error: process.env.NODE_ENV === "production" ? {} : error.message,
+      });
     }
   }
 
