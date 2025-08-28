@@ -4,11 +4,10 @@
   "description": "",
   "_protectedKeyNote": "Set PROTECTED_KEY in your environment to secure GET APIs. Clients must send 'x-protected-key' header with this value.",
   "main": "server.js",
-"scripts": {
-  "test": "jest --detectOpenHandles --forceExit",
-  "start": "nodemon server.js"
-},
-
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "nodemon server.js"
+  },
   "author": "teamgrid solution private limited",
   "license": "ISC",
   "dependencies": {
@@ -25,8 +24,5 @@
     "multer": "^1.4.5-lts.1",
     "nodemailer": "^7.0.5",
     "nodemon": "^3.1.9"
-  },
-  "devDependencies": {
-    "jest": "^30.1.1"
   }
 }
