@@ -35,21 +35,6 @@ static async createTerm(req, res) {
     res.status(500).json({ message: "Error creating term", error: error.message });
   }
 }
-  // static async createTerm(req, res) {
-  //   try {
-  //     const { name } = req.body;
-
-  //     // Create a new term
-  //     const newTerm = new Term({ name });
-
-  //     // Save the term to the database
-  //     await newTerm.save();
-
-  //     res.status(201).json(newTerm); // Return the created term
-  //   } catch (error) {
-  //     res.status(500).json({ message: 'Error creating term', error });
-  //   }
-  // }
 
   // Get all terms
   static async getAllTerms(req, res) {
