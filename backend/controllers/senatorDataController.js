@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const SenatorData = require("../models/senatorDataSchema");
 const Senator = require("../models/senatorSchema");
 class senatorDataController {
@@ -14,6 +15,73 @@ class senatorDataController {
         activitiesScore,
         // summaries = [], // frontend summaries array
       } = req.body;
+
+      // First validate the termId and get its details
+      const termDetails = await mongoose.model("terms").findById(termId);
+      if (!termDetails) {
+        return res.status(400).json({
+          message: "Invalid term ID provided",
+        });
+      }
+
+      // Find ANY existing data that would constitute a duplicate
+      const existingData = await SenatorData.aggregate([
+        {
+          $match: {
+            senateId: new mongoose.Types.ObjectId(senateId),
+          },
+        },
+        {
+          $lookup: {
+            from: "terms",
+            localField: "termId",
+            foreignField: "_id",
+            as: "termDetails",
+          },
+        },
+        {
+          $unwind: "$termDetails",
+        },
+        {
+          $match: {
+            $or: [
+              { termId: new mongoose.Types.ObjectId(termId) }, // Same termId
+              { "termDetails.name": termDetails.name }, // Same term name
+              {
+                $and: [
+                  { "termDetails.startYear": termDetails.startYear },
+                  { "termDetails.endYear": termDetails.endYear },
+                ],
+              }, // Same year range
+            ],
+          },
+        },
+      ]);
+
+      if (existingData.length > 0) {
+        return res.status(400).json({
+          message: "Duplicate senator data found",
+          details:
+            "A record already exists with either the same term ID, term name, or year range",
+          existingData: existingData[0],
+        });
+      }
+
+      // If currentTerm is true, ensure no other currentTerm exists for this senator
+      if (currentTerm) {
+        const existingCurrentTerm = await SenatorData.findOne({
+          senateId,
+          currentTerm: true,
+        });
+
+        if (existingCurrentTerm) {
+          return res.status(400).json({
+            message:
+              "Another term is already marked as current for this senator",
+            existingCurrentTerm,
+          });
+        }
+      }
 
       // Create new senator data
       const newSenatorData = new SenatorData({
@@ -112,65 +180,65 @@ class senatorDataController {
 
   // Delete senator data by ID
   static async deleteSenatorData(req, res) {
-  try {
-    // 1. Find the SenatorData to be deleted
-    const senatorDataToDelete = await SenatorData.findById(req.params.id);
-    if (!senatorDataToDelete) {
-      return res.status(404).json({ message: "Senator data not found" });
-    }
+    try {
+      // 1. Find the SenatorData to be deleted
+      const senatorDataToDelete = await SenatorData.findById(req.params.id);
+      if (!senatorDataToDelete) {
+        return res.status(404).json({ message: "Senator data not found" });
+      }
 
-    // 2. Find the parent senator
-    const senatorId = senatorDataToDelete.senateId;
-    const senator = await Senator.findById(senatorId);
-    if (!senator) {
-      return res.status(404).json({ message: "Senator not found" });
-    }
+      // 2. Find the parent senator
+      const senatorId = senatorDataToDelete.senateId;
+      const senator = await Senator.findById(senatorId);
+      if (!senator) {
+        return res.status(404).json({ message: "Senator not found" });
+      }
 
-    // 3. Fetch all current SenatorData for this senator (before deletion)
-    const senatorDataList = await SenatorData.find({
-      senateId: senatorId,
-    }).lean();
+      // 3. Fetch all current SenatorData for this senator (before deletion)
+      const senatorDataList = await SenatorData.find({
+        senateId: senatorId,
+      }).lean();
 
-    // 4. Prepare current state for history
-    const { _id, createdAt, updatedAt, __v, history, ...currentState } =
-      senator.toObject();
-    const stateWithData = {
-      ...currentState,
-      senatorData: senatorDataList,
-    };
-
-    // 5. Only create history entry if no history exists
-    let updateOps = { $set: { snapshotSource: "deleted_pending_update" } };
-
-    if (!senator.history || senator.history.length === 0) {
-      const historyEntry = {
-        oldData: stateWithData,
-        timestamp: new Date(),
-        actionType: "delete",
-        deletedDataId: req.params.id,
-        deletedData: senatorDataToDelete.toObject(),
+      // 4. Prepare current state for history
+      const { _id, createdAt, updatedAt, __v, history, ...currentState } =
+        senator.toObject();
+      const stateWithData = {
+        ...currentState,
+        senatorData: senatorDataList,
       };
 
-      updateOps.$push = { history: historyEntry };
+      // 5. Only create history entry if no history exists
+      let updateOps = { $set: { snapshotSource: "deleted_pending_update" } };
+
+      if (!senator.history || senator.history.length === 0) {
+        const historyEntry = {
+          oldData: stateWithData,
+          timestamp: new Date(),
+          actionType: "delete",
+          deletedDataId: req.params.id,
+          deletedData: senatorDataToDelete.toObject(),
+        };
+
+        updateOps.$push = { history: historyEntry };
+      }
+
+      // 6. Update senator (with or without history) and delete the data
+      await Promise.all([
+        Senator.findByIdAndUpdate(senatorId, updateOps),
+        SenatorData.findByIdAndDelete(req.params.id),
+      ]);
+
+      res.status(200).json({
+        message: "Senator data deleted successfully",
+        data: senatorDataToDelete,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: "Error deleting senator data",
+        error: error.message,
+      });
     }
-
-    // 6. Update senator (with or without history) and delete the data
-    await Promise.all([
-      Senator.findByIdAndUpdate(senatorId, updateOps),
-      SenatorData.findByIdAndDelete(req.params.id),
-    ]);
-
-    res.status(200).json({
-      message: "Senator data deleted successfully",
-      data: senatorDataToDelete,
-    });
-  } catch (error) {
-    res.status(500).json({
-      message: "Error deleting senator data",
-      error: error.message,
-    });
   }
-}
 
   // static async deleteSenatorData(req, res) {
   //   try {
@@ -244,8 +312,6 @@ class senatorDataController {
         })
         .populate("activitiesScore.activityId")
         .lean();
-
-    
 
       if (!senatorData.length) {
         return res.status(404).json({ message: "Senator data not found" });

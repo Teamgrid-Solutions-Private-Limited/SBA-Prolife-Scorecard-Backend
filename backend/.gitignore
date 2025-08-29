@@ -50,3 +50,10 @@ tmp/
 *.tar.gz
 *.rar
 *.7z
+
+# Jest coverage
+coverage/
+
+# Optional: ignore test files in production
+tests/
+*.test.js
