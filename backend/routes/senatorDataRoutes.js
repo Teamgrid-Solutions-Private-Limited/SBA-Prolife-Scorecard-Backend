@@ -4,21 +4,28 @@ const SenatorDataController = require('../controllers/senatorDataController');
 const protectedKey = require('../middlewares/protectedKey');
 
 // POST: Create a new senator data
-router.post('/senator-data/create/', SenatorDataController.createSenatorData);
-
+router.post('/admin/senator-data/', SenatorDataController.createSenatorData);
+ 
 // GET: Retrieve all senator data with populated votesScore and activitiesScore
-router.get('/senator-data/viewAll/', protectedKey, SenatorDataController.getAllSenatorData);
-
+router.get('/admin/senator-data/', protectedKey, SenatorDataController.getAllSenatorData);
+ 
 // GET: Retrieve senator data by ID with populated votesScore and activitiesScore
-router.get('/senator-data/viewID/:id', protectedKey, SenatorDataController.getSenatorDataById);
-
-// PUT: Update senator data by ID
-router.put('/senator-data/update/:id', SenatorDataController.updateSenatorData);
-
-// DELETE: Delete senator data by ID
-router.delete('/senator-data/delete/:id', SenatorDataController.deleteSenatorData);
-
+router.get('/admin/senator-data/viewID/:id', protectedKey, SenatorDataController.getSenatorDataById);
+ 
 //GET : Retrieve senator data by senatorID
-router.get('/senator-data/viewbysenator/:id', protectedKey, SenatorDataController.getSenatorDataBySenatorId);
+router.get('/admin/senator-data/viewbysenator/:id', protectedKey, SenatorDataController.getSenatorDataBySenatorId);
+ 
+// PUT: Update senator data by ID
+router.put('/admin/senator-data/:id', SenatorDataController.updateSenatorData);
+ 
+// DELETE: Delete senator data by ID
+router.delete('/admin/senator-data/:id', SenatorDataController.deleteSenatorData);
+ 
+//frontend ui display
+router.get(
+  "/senator-data/:senatorId",
+  protectedKey,
+  SenatorDataController.SenatorDataBySenatorId
+);
 
 module.exports = router;

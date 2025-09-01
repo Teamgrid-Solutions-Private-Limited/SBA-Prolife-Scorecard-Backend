@@ -2,16 +2,24 @@ const Activity = require("../models/activitySchema");
 const upload = require("../middlewares/fileUploads");
 const Senator = require("../models/senatorSchema");
 const Representative = require("../models/representativeSchema");
-const SenatorData = require("../models/senatorDataSchema");
 const RepresentativeData = require("../models/representativeDataSchema");
+const SenatorData = require("../models/senatorDataSchema");
+const Vote = require("../models/voteSchema");
+const { buildSupportData } = require("../helper/supportDataHelper");
+
+
 const mongoose = require("mongoose");
 
 const axios = require("axios");
-  const BASE = process.env.QUORUM_BASE_URL || "https://www.quorum.us";
-  const API_KEY = process.env.QUORUM_API_KEY;
+const BASE = process.env.QUORUM_BASE_URL || "https://www.quorum.us";
+const API_KEY = process.env.QUORUM_API_KEY;
 const USERNAME = process.env.QUORUM_USERNAME;
 
-async function saveCosponsorshipToLegislator({ personId, activityId, score = "yes" }) {
+async function saveCosponsorshipToLegislator({
+  personId,
+  activityId,
+  score = "yes",
+}) {
   personId = String(personId); // Force string match
 
   let localPerson = await Senator.findOne({ senatorId: personId });
@@ -22,7 +30,7 @@ async function saveCosponsorshipToLegislator({ personId, activityId, score = "ye
   if (!localPerson) {
     localPerson = await Representative.findOne({ repId: personId });
     if (!localPerson) {
-     // console.warn(`❌ No local legislator found for Quorum personId ${personId}`);
+      // console.warn(`❌ No local legislator found for Quorum personId ${personId}`);
       return false;
     }
     dataModel = RepresentativeData;
@@ -38,29 +46,32 @@ async function saveCosponsorshipToLegislator({ personId, activityId, score = "ye
   );
 
   if (alreadyLinked) {
-    console.log(`⚠️ Already linked activity ${activityId} to ${roleLabel}: ${localPerson.name || localPerson._id}`);
+    console.log(
+      `⚠️ Already linked activity ${activityId} to ${roleLabel}: ${
+        localPerson.name || localPerson._id
+      }`
+    );
     return false;
   }
 
   await dataModel.findOneAndUpdate(
     filter,
     {
-      $push: { activitiesScore: { activityId, score } }
+      $push: { activitiesScore: { activityId, score } },
     },
     { upsert: true, new: true }
   );
 
-  //console.log(`✅ Linked activity ${activityId} to ${roleLabel}: ${localPerson.fullName || localPerson._id}`);
+  //console.log(` Linked activity ${activityId} to ${roleLabel}: ${localPerson.fullName || localPerson._id}`);
   return true;
 }
 
-
 class activityController {
   // Create a new activity with file upload for readMore
-  static async createActivity(req, res) {
+   static async createActivity(req, res) {
     upload.single("readMore")(req, res, async (err) => {
       if (err) return res.status(400).json({ message: err.message });
-
+ 
       try {
         const {
           type,
@@ -73,12 +84,10 @@ class activityController {
           termId,
           trackActivities,
         } = req.body;
-
+ 
         const readMore = req.file
           ? `/uploads/documents/${req.file.filename}`
           : null;
-
-        const editedFields = req.body.editedFields || [];
 
         const newActivity = new Activity({
           type,
@@ -92,11 +101,10 @@ class activityController {
           termId,
           trackActivities,
           status: "draft",
-          editedFields,
         });
-
+ 
         await newActivity.save();
-
+ 
         res.status(201).json({
           message: "Activity created successfully",
           info: newActivity,
@@ -112,56 +120,99 @@ class activityController {
   // Get all activities
   static async getAllActivity(req, res) {
     try {
-      const activity = await Activity.find().populate("termId");
-      res.status(200).json(activity);
+      let filter = {};
+
+      // Frontend filter
+      if (req.query.frontend === "true") {
+        filter.status = "published";
+      } else {
+        // Admin optional filters
+        if (req.query.published === "true") {
+          filter.status = "published";
+        } else if (req.query.published === "false") {
+          filter.status = { $ne: "published" };
+        }
+      }
+
+      // Congress filter
+      if (req.query.congress) {
+        filter.congress = req.query.congress;
+      }
+
+      const activities = await Activity.find(filter)
+        .populate({
+          path: "termId",
+          select: "name",
+        })
+        .lean();
+
+      res.status(200).json(activities);
     } catch (error) {
-      res.status(500).json({ message: "Error retrieving activity", error });
+      res.status(500).json({
+        message: "Error retrieving activity",
+        error: error.message,
+      });
     }
   }
 
-  // Get a specific activity by ID
+ 
+
   static async getActivityById(req, res) {
     try {
-      const activity = await Activity.findById(req.params.id).populate(
-        "termId"
-      );
-      if (!activity)
-        return res.status(404).json({ message: "Activity not found" });
+      const activity = await Activity.findById(req.params.id)
+        .populate("termId")
+        .lean();
 
-      res.status(200).json(activity);
+      if (!activity) {
+        return res.status(404).json({ message: "Activity not found" });
+      }
+
+      let supportData = { yea: [], nay: [], other: [] };
+
+      if (activity.activityquorumId) {
+        const vote = await Vote.findOne({
+          quorumId: activity.activityquorumId,
+        }).lean();
+        supportData = await buildSupportData(vote);
+      }
+
+      res.status(200).json({
+        ...activity,
+        supportData,
+      });
     } catch (error) {
+      console.error("Error retrieving activity:", error);
       res.status(500).json({ message: "Error retrieving activity", error });
     }
   }
-
   // Update activity with file and optional discard logic
-  static async updateActivity(req, res) {
+static async updateActivity(req, res) {
   upload.single("readMore")(req, res, async (err) => {
     if (err) return res.status(400).json({ message: err.message });
- 
+
     try {
       const activityID = req.params.id;
       let updateData = { ...req.body };
- 
+
       // Safe check for req.user
       const userId = req.user?._id || null;
       updateData.modifiedBy = userId;
       updateData.modifiedAt = new Date();
- 
+
       if (req.file) {
         updateData.readMore = `/uploads/${req.file.filename}`;
       }
- 
+
       // Handle discard logic
       if (req.body.discardChanges === "true") {
         return ActivityController.discardActivityChanges(req, res);
       }
- 
+
       const existingActivity = await Activity.findById(activityID);
       if (!existingActivity) {
         return res.status(404).json({ message: 'Activity not found' });
       }
- 
+
       // Parse fields if needed
       if (typeof updateData.editedFields === 'string') {
         updateData.editedFields = JSON.parse(updateData.editedFields);
@@ -169,7 +220,7 @@ class activityController {
       if (typeof updateData.fieldEditors === 'string') {
         updateData.fieldEditors = JSON.parse(updateData.fieldEditors);
       }
- 
+
       // Initialize update operations
       const updateOperations = {
         $set: {
@@ -178,38 +229,38 @@ class activityController {
           modifiedAt: new Date()
         }
       };
- 
+
       // Clear fields if publishing
       if (updateData.status === "published") {
         updateOperations.$set.editedFields = [];
         updateOperations.$set.fieldEditors = {};
         updateOperations.$set.history = [];
       }
- 
-      // Determine if we should take a snapshot (only if not publishing)
-      if (updateData.status !== "published") {
-        const canTakeSnapshot =
-          !existingActivity.history ||
-          existingActivity.history.length === 0 ||
-          existingActivity.snapshotSource === "edited";
- 
-        if (canTakeSnapshot) {
-          const currentState = existingActivity.toObject();
-         
-          // Clean up the current state object
-          delete currentState._id;
-          delete currentState.createdAt;
-          delete currentState.updatedAt;
-          delete currentState.__v;
-          delete currentState.history;
- 
+
+        // If not publishing, consider snapshot for history
+        if (updateData.status !== "published") {
+          const canTakeSnapshot =
+            !existingActivity.history ||
+            existingActivity.history.length === 0 ||
+            existingActivity.snapshotSource === "edited";
+const noHistory = !existingActivity.history || existingActivity.history.length === 0;
+          if (canTakeSnapshot && noHistory) {
+            const currentState = existingActivity.toObject();
+
+            // Remove unnecessary properties
+            delete currentState._id;
+            delete currentState.createdAt;
+            delete currentState.updatedAt;
+            delete currentState.__v;
+            delete currentState.history;
+
           // Create history entry
           const historyEntry = {
             oldData: currentState,
             timestamp: new Date(),
             actionType: 'update'
           };
- 
+
           // Add to update operations
           updateOperations.$push = { history: historyEntry };
           updateOperations.$set.snapshotSource = "edited";
@@ -217,17 +268,17 @@ class activityController {
           updateOperations.$set.snapshotSource = "edited";
         }
       }
- 
+
       const updatedActivity = await Activity.findByIdAndUpdate(
         activityID,
         updateOperations, // Use the structured operations
         { new: true }
       ).populate("termId");
- 
+
       if (!updatedActivity) {
         return res.status(404).json({ message: "Activity not found" });
       }
- 
+
       res.status(200).json({
         message: "Activity updated successfully",
         info: updatedActivity,
@@ -240,112 +291,24 @@ class activityController {
     }
   });
 }
-  // static async updateActivity(req, res) {
-  //   upload.single("readMore")(req, res, async (err) => {
-  //     if (err) return res.status(400).json({ message: err.message });
-
-  //     try {
-  //       const activityID = req.params.id;
-  //       let updateData = { ...req.body };
-
-  //       //  Safe check for req.user
-  //       const userId = req.user?._id || null;
-  //       updateData.modifiedBy = userId;
-  //       updateData.modifiedAt = new Date();
-
-  //       if (req.file) {
-  //         updateData.readMore = `/uploads/${req.file.filename}`;
-  //       }
-
-  //       // Handle discard logic
-  //       if (req.body.discardChanges === "true") {
-  //         const activity = await Activity.findById(activityID);
-  //         if (!activity?.previousState) {
-  //           return res
-  //             .status(400)
-  //             .json({ message: "No previous state available to discard to" });
-  //         }
-
-  //         const { _id, createdAt, updatedAt, ...previousData } =
-  //           activity.previousState;
-
-  //         const revertedActivity = await Activity.findByIdAndUpdate(
-  //           activityID,
-  //           {
-  //             ...previousData,
-  //             modifiedBy: userId,
-  //             modifiedAt: new Date(),
-  //             previousState: null,
-  //           },
-  //           { new: true }
-  //         ).populate("termId");
-
-  //         return res.status(200).json({
-  //           message: "Changes discarded successfully",
-  //           info: revertedActivity,
-  //         });
-  //       }
-
-  //       // Save current state to `previousState`
-  //       const currentActivity = await Activity.findById(activityID);
-  //       if (currentActivity) {
-  //         const currentState = currentActivity.toObject();
-  //         delete currentState._id;
-  //         delete currentState.createdAt;
-  //         delete currentState.updatedAt;
-  //         delete currentState.__v;
-  //         updateData.previousState = currentState;
-  //       }
-
-  //       // Optional: editedFields
-  //       if (req.body.editedFields) {
-  //         updateData.editedFields = req.body.editedFields;
-  //       }
-
-  //       // Clear fields if publishing
-  //       if (updateData.status === "published") {
-  //         updateData.editedFields = [];
-  //         updateData.fieldEditors = {};
-  //       }
-
-  //       const updatedActivity = await Activity.findByIdAndUpdate(
-  //         activityID,
-  //         updateData,
-  //         { new: true }
-  //       ).populate("termId");
-
-  //       if (!updatedActivity)
-  //         return res.status(404).json({ message: "Activity not found" });
-
-  //       res.status(200).json({
-  //         message: "Activity updated successfully",
-  //         info: updatedActivity,
-  //       });
-  //     } catch (error) {
-  //       res
-  //         .status(500)
-  //         .json({ message: "Error updating Activity", error: error.message });
-  //     }
-  //   });
-  // }
 
   // Discard changes (dedicated endpoint)
   // In activityController.js
-  static async discardActivityChanges(req, res) {
+static async discardActivityChanges(req, res) {
   try {
     const activity = await Activity.findById(req.params.id);
     if (!activity) {
       return res.status(404).json({ message: "Activity not found" });
     }
- 
+
     // Check if there's any history available
     if (!activity.history || activity.history.length === 0) {
       return res.status(400).json({ message: "No history available to restore" });
     }
- 
+
     // Get the original state (index 0)
     const originalState = activity.history[0].oldData;
- 
+
     // Restore the activity to its original state and empty the history
     const restoredActivity = await Activity.findByIdAndUpdate(
       req.params.id,
@@ -358,7 +321,7 @@ class activityController {
       },
       { new: true }
     ).populate("termId");
- 
+
     res.status(200).json({
       message: "Restored to original state and history cleared",
       info: restoredActivity
@@ -380,7 +343,7 @@ class activityController {
     try {
       const { id } = req.params;
 
-     // console.log("🗑 Delete request for Activity ID:", id);
+      // console.log("🗑 Delete request for Activity ID:", id);
 
       // Make sure ID is valid
       if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -410,7 +373,7 @@ class activityController {
         ],
       }).session(session);
 
-     // console.log(`👀 Senator matches: ${senatorMatches.length}`);
+      // console.log(`👀 Senator matches: ${senatorMatches.length}`);
       senatorMatches.forEach((doc) =>
         console.log("   - SenatorData ID:", doc._id.toString())
       );
@@ -423,7 +386,7 @@ class activityController {
         ],
       }).session(session);
 
-     // console.log(`👀 Representative matches: ${repMatches.length}`);
+      // console.log(`👀 Representative matches: ${repMatches.length}`);
       repMatches.forEach((doc) =>
         console.log("   - RepresentativeData ID:", doc._id.toString())
       );

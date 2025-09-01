@@ -1,6 +1,7 @@
 const Senator = require("../models/senatorSchema");
 const SenatorData = require("../models/senatorDataSchema");
 const upload = require("../middlewares/fileUploads");
+const mongoose = require("mongoose");
 
 class senatorController {
   // Create a new senator with photo upload
@@ -61,44 +62,129 @@ class senatorController {
   }
 
   // Get all senators for  frontend display
+  // static async Senators(req, res) {
+  //   try {
+  //     const { state, party, name } = req.query;
+
+  //     // Build filter object dynamically
+  //     const filter = {};
+  //     if (state) filter.state = new RegExp(`^${state}$`, "i"); // exact match, case-insensitive
+  //     if (party) filter.party = new RegExp(`^${party}$`, "i"); // exact match, case-insensitive
+  //     if (name) filter.name = new RegExp(name, "i"); // partial match in name
+
+  //     const senators = await Senator.find(filter).lean(); // filtered fast read-only fetch
+
+  //     const senatorsWithRatings = await Promise.all(
+  //       senators.map(async (senator) => {
+  //         // Try current term rating
+  //         let ratingData = await SenatorData.findOne({
+  //           senateId: senator._id,
+  //           currentTerm: true,
+  //         })
+  //           .select("rating currentTerm")
+  //           .lean();
+
+  //         // If not found, fallback to most recent term
+  //         if (!ratingData) {
+  //           ratingData = await SenatorData.findOne({
+  //             senateId: senator._id,
+  //           })
+  //             .sort({ termId: -1 })
+  //             .select("rating currentTerm")
+  //             .lean();
+  //         }
+
+  //         // Remove "Sen." or "Sen" from start of name
+  //         const cleanName = senator.name.replace(/^Sen\.?\s+/i, "");
+
+  //         return {
+  //           id: senator._id,
+  //           senatorId: senator.senatorId,
+  //           name: cleanName,
+  //           state: senator.state,
+  //           party: senator.party,
+  //           photo: senator.photo,
+  //           status: senator.status,
+  //           rating: ratingData?.rating || "N/A",
+  //           isCurrentTerm: ratingData?.currentTerm || false,
+  //         };
+  //       })
+  //     );
+
+  //     res.status(200).json({
+  //       message: "Retrieved successfully",
+  //       info: senatorsWithRatings,
+  //     });
+  //   } catch (error) {
+  //     res.status(500).json({
+  //       message: "Error retrieving senators",
+  //       error: error.message,
+  //     });
+  //   }
+  // }
+
   static async Senators(req, res) {
     try {
-      const senators = await Senator.find().lean(); // fast read-only fetch
+      const { state, party, name } = req.query;
 
-      const senatorsWithRatings = await Promise.all(
-        senators.map(async (senator) => {
-          // Try current term rating
-          let ratingData = await SenatorData.findOne({
-            senateId: senator._id,
-            currentTerm: true,
-          })
-            .select("rating currentTerm")
-            .lean();
+      // Build filter object dynamically
+      const filter = {};
+      if (state) filter.state = new RegExp(`^${state}$`, "i");
+      if (party) filter.party = new RegExp(`^${party}$`, "i");
+      if (name) filter.name = new RegExp(name, "i");
 
-          // If not found, fallback to most recent term
-          if (!ratingData) {
-            ratingData = await SenatorData.findOne({
-              senateId: senator._id,
-            })
-              .sort({ termId: -1 })
-              .select("rating currentTerm")
-              .lean();
-          }
+      // Fetch all senators first
+      const senators = await Senator.find(filter)
+        .lean()
+        .select("_id senatorId name state party photo status");
 
-          // Clean fast mapping
-          return {
-            id: senator._id,
-            senatorId: senator.senatorId,
-            name: senator.name,
-            state: senator.state,
-            party: senator.party,
-            photo: senator.photo,
-            status: senator.status,
-            rating: ratingData?.rating || "N/A", // Default to "N/A" if no rating found
-            isCurrentTerm: ratingData?.currentTerm || false,
-          };
-        })
-      );
+      if (!senators.length) {
+        return res.status(200).json({ message: "No senators found", info: [] });
+      }
+
+      const senatorIds = senators.map((s) => s._id);
+
+      // Fetch all ratings in one go
+      const ratings = await SenatorData.aggregate([
+        { $match: { senateId: { $in: senatorIds } } },
+        {
+          $sort: { currentTerm: -1, termId: -1 }, // prefer currentTerm, then latest term
+        },
+        {
+          $group: {
+            _id: "$senateId",
+            rating: { $first: "$rating" },
+            currentTerm: { $first: "$currentTerm" },
+          },
+        },
+      ]);
+
+      // Map senatorId → rating
+      const ratingMap = ratings.reduce((acc, r) => {
+        acc[r._id.toString()] = {
+          rating: r.rating,
+          currentTerm: r.currentTerm,
+        };
+        return acc;
+      }, {});
+
+      // Merge ratings back with senators
+      const senatorsWithRatings = senators.map((senator) => {
+        const ratingData = ratingMap[senator._id.toString()];
+        const cleanName = senator.name.replace(/^Sen\.?\s+/i, "");
+
+        return {
+          id: senator._id,
+          senatorId: senator.senatorId,
+          name: cleanName,
+          state: senator.state,
+          party: senator.party,
+          photo: senator.photo,
+          status: senator.status,
+          rating: ratingData?.rating || "N/A",
+          isCurrentTerm: ratingData?.currentTerm || false,
+        };
+      });
 
       res.status(200).json({
         message: "Retrieved successfully",
@@ -156,246 +242,163 @@ class senatorController {
     }
   }
 
-//   // Update a senator by ID
-static async updateSenator(req, res) {
-  try {
-    const senatorId = req.params.id;
-    const existingSenator = await Senator.findById(senatorId);
+  //   // Update a senator by ID
+  static async updateSenator(req, res) {
+    try {
+      const senatorId = req.params.id;
+      const existingSenator = await Senator.findById(senatorId);
 
-    if (!existingSenator) {
-      return res.status(404).json({ message: 'Senator not found' });
-    }
-
-    // Safe check for req.user
-    const userId = req.user?._id || null;
-
-    // Base update structure
-    const updateData = {
-      $set: {
-        ...req.body,
-        modifiedBy: userId,
-        modifiedAt: new Date(),
+      if (!existingSenator) {
+        return res.status(404).json({ message: "Senator not found" });
       }
-    };
 
-    // Handle file upload
-    if (req.file) {
-      updateData.$set.photo = req.file.filename;
-    }
+      // Safe check for req.user
+      const userId = req.user?._id || null;
 
-    // Parse fields if needed
-    if (typeof updateData.$set.editedFields === 'string') {
-      updateData.$set.editedFields = JSON.parse(updateData.$set.editedFields);
-    }
-    if (typeof updateData.$set.fieldEditors === 'string') {
-      updateData.$set.fieldEditors = JSON.parse(updateData.$set.fieldEditors);
-    }
-
-    // Clear fields if publishing
-    if (updateData.$set.publishStatus === "published") {
-      updateData.$set.editedFields = [];
-      updateData.$set.fieldEditors = {};
-      updateData.$set.history = []; // clear history completely on publish
-    }
-
-    // Determine if we should take a snapshot
-    const canTakeSnapshot = 
-      !existingSenator.history || 
-      existingSenator.history.length === 0 || 
-      existingSenator.snapshotSource === "edited";
-
-    if (canTakeSnapshot && updateData.$set.publishStatus !== "published") {
-      const senatorDataList = await SenatorData.find({ senateId: senatorId }).lean();
-      const currentState = existingSenator.toObject();
-
-      // Clean up state
-      delete currentState._id;
-      delete currentState.createdAt;
-      delete currentState.updatedAt;
-      delete currentState.__v;
-      delete currentState.history;
-      currentState.senatorData = senatorDataList;
-
-      const historyEntry = {
-        oldData: currentState,
-        timestamp: new Date(),
-        actionType: 'update',
+      // Base update structure
+      const updateData = {
+        $set: {
+          ...req.body,
+          modifiedBy: userId,
+          modifiedAt: new Date(),
+        },
       };
 
-      updateData.$push = {
-        history: historyEntry
-      };
+      // Handle file upload
+      if (req.file) {
+        updateData.$set.photo = req.file.filename;
+      }
 
-      updateData.$set.snapshotSource = "edited";
-    } else if (existingSenator.snapshotSource === "deleted_pending_update") {
-      updateData.$set.snapshotSource = "edited";
-    }
+      // Parse fields if needed
+      if (typeof updateData.$set.editedFields === "string") {
+        updateData.$set.editedFields = JSON.parse(updateData.$set.editedFields);
+      }
+      if (typeof updateData.$set.fieldEditors === "string") {
+        updateData.$set.fieldEditors = JSON.parse(updateData.$set.fieldEditors);
+      }
 
-    const updatedSenator = await Senator.findByIdAndUpdate(
-      senatorId,
-      updateData,
-      { new: true }
-    );
+      // Clear fields if publishing
+      if (updateData.$set.publishStatus === "published") {
+        updateData.$set.editedFields = [];
+        updateData.$set.fieldEditors = {};
+        updateData.$set.history = []; // clear history completely on publish
+      }
 
-    if (!updatedSenator) {
-      return res.status(404).json({ message: "Senator not found" });
-    }
+      // Determine if we should take a snapshot
+      const canTakeSnapshot =
+        !existingSenator.history ||
+        existingSenator.history.length === 0 ||
+        existingSenator.snapshotSource === "edited";
 
-    res.status(200).json({
-      message: "Senator updated successfully",
-      senator: updatedSenator,
-    });
-  } catch (error) {
-    res.status(500).json({
-      message: "Error updating senator",
-      error: error.message,
-    });
-  }
-}
+      if (canTakeSnapshot && updateData.$set.publishStatus !== "published" && (!existingSenator.history || existingSenator.history.length === 0)) {
+        const senatorDataList = await SenatorData.find({
+          senateId: senatorId,
+        }).lean();
+        const currentState = existingSenator.toObject();
 
-// static async updateSenator(req, res) {
-//   try {
-//     const senatorId = req.params.id;
-//     let updateData = { ...req.body };
-//     const existingSenator = await Senator.findById(senatorId);
-    
-//     if (!existingSenator) {
-//       return res.status(404).json({ message: 'Senator not found' });
-//     }
+        // Clean up state
+        delete currentState._id;
+        delete currentState.createdAt;
+        delete currentState.updatedAt;
+        delete currentState.__v;
+        delete currentState.history;
+        currentState.senatorData = senatorDataList;
 
-//     // Safe check for req.user
-//     const userId = req.user?._id || null;
-//     updateData.modifiedBy = userId;
-//     updateData.modifiedAt = new Date();
+        const historyEntry = {
+          oldData: currentState,
+          timestamp: new Date(),
+          actionType: "update",
+        };
 
-//     if (req.file) {
-//       updateData.photo = req.file.filename;
-//     }
+        updateData.$push = {
+          history: historyEntry,
+        };
 
-//     // Parse fields if needed
-//     if (typeof updateData.editedFields === 'string') {
-//       updateData.editedFields = JSON.parse(updateData.editedFields);
-//     }
-//     if (typeof updateData.fieldEditors === 'string') {
-//       updateData.fieldEditors = JSON.parse(updateData.fieldEditors);
-//     }
+        updateData.$set.snapshotSource = "edited";
+      } else if (existingSenator.snapshotSource === "deleted_pending_update") {
+        updateData.$set.snapshotSource = "edited";
+      }
 
-//     // Clear fields if publishing
-//     if (updateData.publishStatus === "published") {
-//       updateData.editedFields = [];
-//       updateData.fieldEditors = {};
-//       updateData.history = [];
+      const updatedSenator = await Senator.findByIdAndUpdate(
+        senatorId,
+        updateData,
+        { new: true }
+      );
 
-//     }
+      if (!updatedSenator) {
+        return res.status(404).json({ message: "Senator not found" });
+      }
 
-//     // Determine if we should take a snapshot
-//     const canTakeSnapshot = 
-//       !existingSenator.history || 
-//       existingSenator.history.length === 0 || 
-//       existingSenator.snapshotSource === "edited";
-
-//     if (canTakeSnapshot) {
-//       const senatorDataList = await SenatorData.find({ senateId: senatorId }).lean();
-//       const currentState = existingSenator.toObject();
-      
-//       // Clean up the current state object
-//       delete currentState._id;
-//       delete currentState.createdAt;
-//       delete currentState.updatedAt;
-//       delete currentState.__v;
-//       delete currentState.history;
-//       currentState.senatorData = senatorDataList;
-
-//       // Create history entry
-//       const historyEntry = {
-//         oldData: currentState,
-//         timestamp: new Date(),
-//         actionType: 'update'
-//       };
-
-//       // Add to update data
-//       updateData.$push = { history: historyEntry };
-//       updateData.snapshotSource = "edited";
-//     } else if (existingSenator.snapshotSource === "deleted_pending_update") {
-//       // Just clear the flag without creating new history entry
-//       updateData.snapshotSource = "edited";
-//     }
-
-//     // Perform the update
-//     const updatedSenator = await Senator.findByIdAndUpdate(
-//       senatorId,
-//       updateData,
-//       { new: true }
-//     );
-
-//     if (!updatedSenator) {
-//       return res.status(404).json({ message: "Senator not found" });
-//     }
-
-//     res.status(200).json({
-//       message: "Senator updated successfully",
-//       senator: updatedSenator,
-//     });
-//   } catch (error) {
-//     res.status(500).json({
-//       message: "Error updating senator",
-//       error: error.message,
-//     });
-//   }
-// }
-  
-  static async discardSenatorChanges(req, res) {
-  try {
-    const senator = await Senator.findById(req.params.id);
-    if (!senator) {
-      return res.status(404).json({ message: "Senator not found" });
-    }
-
-    // Check if there's any history available
-    if (!senator.history || senator.history.length === 0) {
-      return res.status(400).json({ message: "No history available to restore" });
-    }
-
-    // Get the original state (index 0)
-    const originalState = senator.history[0].oldData;
-
-    // Restore the senator to its original state and empty the history
-    const restoredSenator = await Senator.findByIdAndUpdate(
-      req.params.id,
-      {
-        ...originalState,
-        history: [], // Empty the history array
-        snapshotSource: "edited", // Reset snapshot source if needed
-        modifiedAt: new Date() // Update modification timestamp
-      },
-      { new: true }
-    );
-
-    // Restore senatorData if it exists in the original state
-    if (originalState.senatorData) {
-      // Delete all current senator data
-      await SenatorData.deleteMany({ senateId: req.params.id });
-      
-      // Recreate from original state
-      const recreatePromises = originalState.senatorData.map(data => {
-        const { _id, createdAt, updatedAt, __v, ...cleanData } = data;
-        return SenatorData.create(cleanData);
+      res.status(200).json({
+        message: "Senator updated successfully",
+        senator: updatedSenator,
       });
-      
-      await Promise.all(recreatePromises);
+    } catch (error) {
+      res.status(500).json({
+        message: "Error updating senator",
+        error: error.message,
+      });
     }
-
-    res.status(200).json({
-      message: "Restored to original state and history cleared",
-      senator: restoredSenator
-    });
-  } catch (error) {
-    res.status(500).json({
-      message: "Failed to restore to original state",
-      error: error.message
-    });
   }
-}
+
+
+  static async discardSenatorChanges(req, res) {
+    try {
+      const senator = await Senator.findById(req.params.id);
+      if (!senator) {
+        return res.status(404).json({ message: "Senator not found" });
+      }
+
+      // Check if there's any history available
+      if (!senator.history || senator.history.length === 0) {
+        return res
+          .status(400)
+          .json({ message: "No history available to restore" });
+      }
+
+      // Get the original state (index 0)
+      const originalState = senator.history[0].oldData;
+
+      // Restore the senator to its original state and empty the history
+      const restoredSenator = await Senator.findByIdAndUpdate(
+        req.params.id,
+        {
+          ...originalState,
+          history: [], // Empty the history array
+          snapshotSource: "edited", // Reset snapshot source if needed
+          modifiedAt: new Date(), // Update modification timestamp
+        },
+        { new: true }
+      );
+
+      // Restore senatorData if it exists in the original state
+      if (originalState.senatorData) {
+        // Delete all current senator data
+        await SenatorData.deleteMany({ senateId: req.params.id });
+
+        // Recreate from original state
+        const recreatePromises = originalState.senatorData.map((data) => {
+          const { _id, __v,updatedAt, ...cleanData } = data;
+         return SenatorData.create({
+          ...cleanData,
+          createdAt: data.createdAt,
+        });
+        });
+
+        await Promise.all(recreatePromises);
+      }
+
+      res.status(200).json({
+        message: "Restored to original state and history cleared",
+        senator: restoredSenator,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: "Failed to restore to original state",
+        error: error.message,
+      });
+    }
+  }
   // static async discardSenatorChanges(req, res) {
   //   try {
   //     const senator = await Senator.findById(req.params.id);
@@ -474,12 +477,10 @@ static async updateSenator(req, res) {
         return res.status(404).json({ message: "Senator not found" });
       }
 
-      res
-        .status(200)
-        .json({
-          message: `Senator ${published ? "published" : "set to draft"}`,
-          data: updated,
-        });
+      res.status(200).json({
+        message: `Senator ${published ? "published" : "set to draft"}`,
+        data: updated,
+      });
     } catch (error) {
       res.status(500).json({ message: "Error updating publish status", error });
     }
@@ -592,7 +593,6 @@ static async updateSenator(req, res) {
   //     });
   //   }
   // }
-
 }
 
 module.exports = senatorController;
