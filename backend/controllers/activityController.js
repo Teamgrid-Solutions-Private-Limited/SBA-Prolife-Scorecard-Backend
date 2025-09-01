@@ -45,11 +45,6 @@ async function saveCosponsorshipToLegislator({
   );
 
   if (alreadyLinked) {
-    console.log(
-      `⚠️ Already linked activity ${activityId} to ${roleLabel}: ${
-        localPerson.name || localPerson._id
-      }`
-    );
     return false;
   }
 
@@ -178,7 +173,6 @@ class activityController {
         supportData,
       });
     } catch (error) {
-      console.error("Error retrieving activity:", error);
       res.status(500).json({ message: "Error retrieving activity", error });
     }
   }
@@ -376,10 +370,6 @@ class activityController {
       }).session(session);
 
       // console.log(` Senator matches: ${senatorMatches.length}`);
-      senatorMatches.forEach((doc) =>
-        console.log("   - SenatorData ID:", doc._id.toString())
-      );
-
       // 3️⃣ Debug: Check RepresentativeData matches before delete
       const repMatches = await RepresentativeData.find({
         $or: [
@@ -389,9 +379,6 @@ class activityController {
       }).session(session);
 
       // console.log(` Representative matches: ${repMatches.length}`);
-      repMatches.forEach((doc) =>
-        console.log("   - RepresentativeData ID:", doc._id.toString())
-      );
 
       // 4️⃣ Delete activity
       await Activity.findByIdAndDelete(id).session(session);
@@ -413,7 +400,6 @@ class activityController {
             },
           }
         ).session(session);
-        console.log("✅ Removed activity from SenatorData references");
       }
 
       if (activity.type === "house") {
@@ -432,7 +418,6 @@ class activityController {
             },
           }
         ).session(session);
-        console.log("✅ Removed activity from RepresentativeData references");
       }
 
       // ✅ Commit transaction
@@ -443,7 +428,7 @@ class activityController {
     } catch (err) {
       await session.abortTransaction();
       session.endSession();
-      console.error("❌ Error deleting activity:", err);
+
       res.status(500).json({ message: "Server error" });
     }
   }
@@ -487,36 +472,29 @@ class activityController {
   static async bulkUpdateTrackActivities(req, res) {
     try {
       const { ids, trackActivities } = req.body;
+      const { performBulkUpdate } = require("../helper/bulkUpdateHelper");
 
-      if (!Array.isArray(ids) || ids.length === 0) {
-        return res.status(400).json({ message: "No activity IDs provided" });
-      }
+      const validation = (data) => {
+        const validStatuses = ["pending", "completed", "failed"];
+        if (!validStatuses.includes(data.trackActivities)) {
+          return "Invalid trackActivities value";
+        }
+      };
 
-      const validStatuses = ["pending", "completed", "failed"];
-      if (!validStatuses.includes(trackActivities)) {
-        return res
-          .status(400)
-          .json({ message: "Invalid trackActivities value" });
-      }
-
-      const result = await Activity.updateMany(
-        { _id: { $in: ids } },
-        { $set: { trackActivities } }
-      );
-
-      if (result.modifiedCount === 0) {
-        return res.status(404).json({ message: "No activities were updated" });
-      }
-
-      const updatedActivities = await Activity.find({ _id: { $in: ids } });
+      const result = await performBulkUpdate({
+        model: Activity,
+        ids,
+        updateData: { trackActivities },
+        validation,
+      });
 
       res.status(200).json({
-        message: `${result.modifiedCount} activities updated successfully`,
-        updatedActivities,
+        message: result.message,
+        updatedActivities: result.updatedDocs,
       });
     } catch (error) {
-      res.status(500).json({
-        message: "Error bulk updating activities",
+      res.status(error.message.includes("Invalid") ? 400 : 500).json({
+        message: error.message || "Error bulk updating activities",
         error: error.message,
       });
     }
@@ -536,7 +514,7 @@ class activityController {
     });
 
     if (!billId || !title || !introduced || !congress) {
-      console.warn("❌ Missing required bill data");
+      console.warn(" Missing required bill data");
       return 0;
     }
 
@@ -563,7 +541,7 @@ class activityController {
       }
 
       if (!activityType) {
-        console.warn(`❌ Unable to determine activity type for bill ${billId}`);
+        console.warn(` Unable to determine activity type for bill ${billId}`);
         return 0;
       }
 
@@ -616,12 +594,11 @@ class activityController {
 
           if (!personId) {
             console.warn(
-              `❌ Skipping sponsor ${sponsorId} due to missing personId`
+              ` Skipping sponsor ${sponsorId} due to missing personId`
             );
             continue;
           }
 
-          // ✅ Lookup both Senator and Rep in parallel
           const [senator, rep] = await Promise.all([
             Senator.findOne({ senatorId: personId }),
             Representative.findOne({ repId: personId }),
@@ -629,7 +606,7 @@ class activityController {
 
           if (!senator && !rep) {
             console.warn(
-              `⚠️ No matching local legislator found for personId ${personId}`
+              ` No matching local legislator found for personId ${personId}`
             );
             continue;
           }
@@ -649,7 +626,7 @@ class activityController {
         }
       }
 
-      console.log(`🎉 Finished processing cosponsors. Linked: ${savedCount}`);
+      //console.log(`🎉 Finished processing cosponsors. Linked: ${savedCount}`);
       return savedCount;
     } catch (err) {
       console.error(
