@@ -7,7 +7,6 @@ const SenatorData = require("../models/senatorDataSchema");
 const Vote = require("../models/voteSchema");
 const { buildSupportData } = require("../helper/supportDataHelper");
 
-
 const mongoose = require("mongoose");
 
 const axios = require("axios");
@@ -68,10 +67,10 @@ async function saveCosponsorshipToLegislator({
 
 class activityController {
   // Create a new activity with file upload for readMore
-   static async createActivity(req, res) {
+  static async createActivity(req, res) {
     upload.single("readMore")(req, res, async (err) => {
       if (err) return res.status(400).json({ message: err.message });
- 
+
       try {
         const {
           type,
@@ -84,7 +83,7 @@ class activityController {
           termId,
           trackActivities,
         } = req.body;
- 
+
         const readMore = req.file
           ? `/uploads/documents/${req.file.filename}`
           : null;
@@ -102,9 +101,9 @@ class activityController {
           trackActivities,
           status: "draft",
         });
- 
+
         await newActivity.save();
- 
+
         res.status(201).json({
           message: "Activity created successfully",
           info: newActivity,
@@ -155,8 +154,6 @@ class activityController {
     }
   }
 
- 
-
   static async getActivityById(req, res) {
     try {
       const activity = await Activity.findById(req.params.id)
@@ -186,56 +183,56 @@ class activityController {
     }
   }
   // Update activity with file and optional discard logic
-static async updateActivity(req, res) {
-  upload.single("readMore")(req, res, async (err) => {
-    if (err) return res.status(400).json({ message: err.message });
+  static async updateActivity(req, res) {
+    upload.single("readMore")(req, res, async (err) => {
+      if (err) return res.status(400).json({ message: err.message });
 
-    try {
-      const activityID = req.params.id;
-      let updateData = { ...req.body };
+      try {
+        const activityID = req.params.id;
+        let updateData = { ...req.body };
 
-      // Safe check for req.user
-      const userId = req.user?._id || null;
-      updateData.modifiedBy = userId;
-      updateData.modifiedAt = new Date();
+        // Safe check for req.user
+        const userId = req.user?._id || null;
+        updateData.modifiedBy = userId;
+        updateData.modifiedAt = new Date();
 
-      if (req.file) {
-        updateData.readMore = `/uploads/${req.file.filename}`;
-      }
-
-      // Handle discard logic
-      if (req.body.discardChanges === "true") {
-        return ActivityController.discardActivityChanges(req, res);
-      }
-
-      const existingActivity = await Activity.findById(activityID);
-      if (!existingActivity) {
-        return res.status(404).json({ message: 'Activity not found' });
-      }
-
-      // Parse fields if needed
-      if (typeof updateData.editedFields === 'string') {
-        updateData.editedFields = JSON.parse(updateData.editedFields);
-      }
-      if (typeof updateData.fieldEditors === 'string') {
-        updateData.fieldEditors = JSON.parse(updateData.fieldEditors);
-      }
-
-      // Initialize update operations
-      const updateOperations = {
-        $set: {
-          ...updateData,
-          modifiedBy: userId,
-          modifiedAt: new Date()
+        if (req.file) {
+          updateData.readMore = `/uploads/${req.file.filename}`;
         }
-      };
 
-      // Clear fields if publishing
-      if (updateData.status === "published") {
-        updateOperations.$set.editedFields = [];
-        updateOperations.$set.fieldEditors = {};
-        updateOperations.$set.history = [];
-      }
+        // Handle discard logic
+        if (req.body.discardChanges === "true") {
+          return activityController.discardActivityChanges(req, res);
+        }
+
+        const existingActivity = await Activity.findById(activityID);
+        if (!existingActivity) {
+          return res.status(404).json({ message: "Activity not found" });
+        }
+
+        // Parse fields if needed
+        if (typeof updateData.editedFields === "string") {
+          updateData.editedFields = JSON.parse(updateData.editedFields);
+        }
+        if (typeof updateData.fieldEditors === "string") {
+          updateData.fieldEditors = JSON.parse(updateData.fieldEditors);
+        }
+
+        // Initialize update operations
+        const updateOperations = {
+          $set: {
+            ...updateData,
+            modifiedBy: userId,
+            modifiedAt: new Date(),
+          },
+        };
+
+        // Clear fields if publishing
+        if (updateData.status === "published") {
+          updateOperations.$set.editedFields = [];
+          updateOperations.$set.fieldEditors = {};
+          updateOperations.$set.history = [];
+        }
 
         // If not publishing, consider snapshot for history
         if (updateData.status !== "published") {
@@ -243,7 +240,8 @@ static async updateActivity(req, res) {
             !existingActivity.history ||
             existingActivity.history.length === 0 ||
             existingActivity.snapshotSource === "edited";
-const noHistory = !existingActivity.history || existingActivity.history.length === 0;
+          const noHistory =
+            !existingActivity.history || existingActivity.history.length === 0;
           if (canTakeSnapshot && noHistory) {
             const currentState = existingActivity.toObject();
 
@@ -254,85 +252,89 @@ const noHistory = !existingActivity.history || existingActivity.history.length =
             delete currentState.__v;
             delete currentState.history;
 
-          // Create history entry
-          const historyEntry = {
-            oldData: currentState,
-            timestamp: new Date(),
-            actionType: 'update'
-          };
+            // Create history entry
+            const historyEntry = {
+              oldData: currentState,
+              timestamp: new Date(),
+              actionType: "update",
+            };
 
-          // Add to update operations
-          updateOperations.$push = { history: historyEntry };
-          updateOperations.$set.snapshotSource = "edited";
-        } else if (existingActivity.snapshotSource === "deleted_pending_update") {
-          updateOperations.$set.snapshotSource = "edited";
+            // Add to update operations
+            updateOperations.$push = { history: historyEntry };
+            updateOperations.$set.snapshotSource = "edited";
+          } else if (
+            existingActivity.snapshotSource === "deleted_pending_update"
+          ) {
+            updateOperations.$set.snapshotSource = "edited";
+          }
         }
+
+        const updatedActivity = await Activity.findByIdAndUpdate(
+          activityID,
+          updateOperations, // Use the structured operations
+          { new: true }
+        ).populate("termId");
+
+        if (!updatedActivity) {
+          return res.status(404).json({ message: "Activity not found" });
+        }
+
+        res.status(200).json({
+          message: "Activity updated successfully",
+          info: updatedActivity,
+        });
+      } catch (error) {
+        res.status(500).json({
+          message: "Error updating Activity",
+          error: error.message,
+        });
       }
-
-      const updatedActivity = await Activity.findByIdAndUpdate(
-        activityID,
-        updateOperations, // Use the structured operations
-        { new: true }
-      ).populate("termId");
-
-      if (!updatedActivity) {
-        return res.status(404).json({ message: "Activity not found" });
-      }
-
-      res.status(200).json({
-        message: "Activity updated successfully",
-        info: updatedActivity,
-      });
-    } catch (error) {
-      res.status(500).json({
-        message: "Error updating Activity",
-        error: error.message,
-      });
-    }
-  });
-}
+    });
+  }
 
   // Discard changes (dedicated endpoint)
   // In activityController.js
-static async discardActivityChanges(req, res) {
-  try {
-    const activity = await Activity.findById(req.params.id);
-    if (!activity) {
-      return res.status(404).json({ message: "Activity not found" });
+  static async discardActivityChanges(req, res) {
+    try {
+      const activity = await Activity.findById(req.params.id);
+      if (!activity) {
+        return res.status(404).json({ message: "Activity not found" });
+      }
+
+      // Check if there's any history available
+      if (!activity.history || activity.history.length === 0) {
+        return res
+          .status(400)
+          .json({ message: "No history available to restore" });
+      }
+
+      // Get the original state (index 0)
+      const originalState = activity.history[0].oldData;
+
+      // Restore the activity to its original state and empty the history
+      const restoredActivity = await Activity.findByIdAndUpdate(
+        req.params.id,
+        {
+          ...originalState,
+          history: [], // Empty the history array
+          snapshotSource: "edited", // Reset snapshot source
+          modifiedAt: new Date(), // Update modification timestamp
+          modifiedBy: req.user?._id, // Track who performed the discard
+        },
+        { new: true }
+      ).populate("termId");
+
+      res.status(200).json({
+        message: "Restored to original state and history cleared",
+        info: restoredActivity,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: "Failed to discard changes",
+        error: error.message,
+      });
     }
-
-    // Check if there's any history available
-    if (!activity.history || activity.history.length === 0) {
-      return res.status(400).json({ message: "No history available to restore" });
-    }
-
-    // Get the original state (index 0)
-    const originalState = activity.history[0].oldData;
-
-    // Restore the activity to its original state and empty the history
-    const restoredActivity = await Activity.findByIdAndUpdate(
-      req.params.id,
-      {
-        ...originalState,
-        history: [], // Empty the history array
-        snapshotSource: "edited", // Reset snapshot source
-        modifiedAt: new Date(), // Update modification timestamp
-        modifiedBy: req.user?._id // Track who performed the discard
-      },
-      { new: true }
-    ).populate("termId");
-
-    res.status(200).json({
-      message: "Restored to original state and history cleared",
-      info: restoredActivity
-    });
-  } catch (error) {
-    res.status(500).json({
-      message: "Failed to discard changes",
-      error: error.message,
-    });
   }
-}
 
   // Delete an activity
   // Delete activity and clean references
@@ -373,7 +375,7 @@ static async discardActivityChanges(req, res) {
         ],
       }).session(session);
 
-      // console.log(`👀 Senator matches: ${senatorMatches.length}`);
+      // console.log(` Senator matches: ${senatorMatches.length}`);
       senatorMatches.forEach((doc) =>
         console.log("   - SenatorData ID:", doc._id.toString())
       );
@@ -386,7 +388,7 @@ static async discardActivityChanges(req, res) {
         ],
       }).session(session);
 
-      // console.log(`👀 Representative matches: ${repMatches.length}`);
+      // console.log(` Representative matches: ${repMatches.length}`);
       repMatches.forEach((doc) =>
         console.log("   - RepresentativeData ID:", doc._id.toString())
       );
