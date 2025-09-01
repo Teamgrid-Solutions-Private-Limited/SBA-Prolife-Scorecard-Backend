@@ -287,36 +287,16 @@ class activityController {
   }
 
   // Discard changes (dedicated endpoint)
-  // In activityController.js
   static async discardActivityChanges(req, res) {
     try {
-      const activity = await Activity.findById(req.params.id);
-      if (!activity) {
-        return res.status(404).json({ message: "Activity not found" });
-      }
+      const { discardChanges } = require("../helper/discardHelper");
 
-      // Check if there's any history available
-      if (!activity.history || activity.history.length === 0) {
-        return res
-          .status(400)
-          .json({ message: "No history available to restore" });
-      }
-
-      // Get the original state (index 0)
-      const originalState = activity.history[0].oldData;
-
-      // Restore the activity to its original state and empty the history
-      const restoredActivity = await Activity.findByIdAndUpdate(
-        req.params.id,
-        {
-          ...originalState,
-          history: [], // Empty the history array
-          snapshotSource: "edited", // Reset snapshot source
-          modifiedAt: new Date(), // Update modification timestamp
-          modifiedBy: req.user?._id, // Track who performed the discard
-        },
-        { new: true }
-      ).populate("termId");
+      const restoredActivity = await discardChanges({
+        model: Activity,
+        documentId: req.params.id,
+        userId: req.user?._id,
+        options: { new: true, populate: "termId" },
+      });
 
       res.status(200).json({
         message: "Restored to original state and history cleared",

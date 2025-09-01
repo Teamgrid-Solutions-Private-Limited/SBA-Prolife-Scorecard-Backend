@@ -280,33 +280,14 @@ class voteController {
 
   static async discardVoteChanges(req, res) {
     try {
-      const vote = await Vote.findById(req.params.id);
-      if (!vote) {
-        return res.status(404).json({ message: "Vote not found" });
-      }
+      const { discardChanges } = require("../helper/discardHelper");
 
-      // Check if there's any history available
-      if (!vote.history || vote.history.length === 0) {
-        return res
-          .status(400)
-          .json({ message: "No history available to restore" });
-      }
-
-      // Get the original state (index 0)
-      const originalState = vote.history[0].oldData;
-
-      // Restore the vote to its original state and empty the history
-      const restoredVote = await Vote.findByIdAndUpdate(
-        req.params.id,
-        {
-          ...originalState,
-          history: [], // Empty the history array
-          snapshotSource: "edited", // Reset snapshot source
-          modifiedAt: new Date(), // Update modification timestamp
-          modifiedBy: req.user?._id, // Track who performed the discard
-        },
-        { new: true }
-      ).populate("termId");
+      const restoredVote = await discardChanges({
+        model: Vote,
+        documentId: req.params.id,
+        userId: req.user?._id,
+        options: { new: true, populate: "termId" },
+      });
 
       res.status(200).json({
         message: "Restored to original state and history cleared",
