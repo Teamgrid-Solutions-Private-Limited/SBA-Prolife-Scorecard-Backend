@@ -5,8 +5,14 @@ const Representative = require("../models/representativeSchema");
 const RepresentativeData = require("../models/representativeDataSchema");
 const SenatorData = require("../models/senatorDataSchema");
 const Vote = require("../models/voteSchema");
+const { ACTIVITY_PUBLIC_FIELDS } = require("../constants/projection");
+const {
+  applyCommonFilters,
+  applyCongressFilter,
+  applyChamberFilter,
+  applyActivityTermFilter,
+} = require("../middlewares/filter");
 const { buildSupportData } = require("../helper/supportDataHelper");
-
 
 const mongoose = require("mongoose");
 
@@ -50,11 +56,6 @@ async function saveCosponsorshipToLegislator({
   );
 
   if (alreadyLinked) {
-    console.log(
-      `⚠️ Already linked activity ${activityId} to ${roleLabel}: ${
-        localPerson.name || localPerson._id
-      }`
-    );
     return false;
   }
 
@@ -156,10 +157,10 @@ async function saveCosponsorshipToLegislator({
 
 class activityController {
   // Create a new activity with file upload for readMore
-   static async createActivity(req, res) {
+  static async createActivity(req, res) {
     upload.single("readMore")(req, res, async (err) => {
       if (err) return res.status(400).json({ message: err.message });
- 
+
       try {
         const {
           type,
@@ -172,7 +173,7 @@ class activityController {
           termId,
           trackActivities,
         } = req.body;
- 
+
         const readMore = req.file
           ? `/uploads/documents/${req.file.filename}`
           : null;
@@ -190,9 +191,9 @@ class activityController {
           trackActivities,
           status: "draft",
         });
- 
+
         await newActivity.save();
- 
+
         res.status(201).json({
           message: "Activity created successfully",
           info: newActivity,
@@ -205,35 +206,11 @@ class activityController {
     });
   }
 
-  // Get all activities
-  static async getAllActivity(req, res) {
+  static async getAllActivities(req, res) {
     try {
-      let filter = {};
-
-      // Frontend filter
-      if (req.query.frontend === "true") {
-        filter.status = "published";
-      } else {
-        // Admin optional filters
-        if (req.query.published === "true") {
-          filter.status = "published";
-        } else if (req.query.published === "false") {
-          filter.status = { $ne: "published" };
-        }
-      }
-
-      // Congress filter
-      if (req.query.congress) {
-        filter.congress = req.query.congress;
-      }
-
-      const activities = await Activity.find(filter)
-        .populate({
-          path: "termId",
-          select: "name",
-        })
+      const activities = await Activity.find({})
+        .select(ACTIVITY_PUBLIC_FIELDS)
         .lean();
-
       res.status(200).json(activities);
     } catch (error) {
       res.status(500).json({
@@ -243,7 +220,254 @@ class activityController {
     }
   }
 
- 
+  // Get all activities
+  // static async AllActivity(req, res) {
+  //   try {
+  //     let filter = {};
+
+  //     // Apply common filters
+  //     filter = applyCommonFilters(req, filter);
+
+  //     // Apply congress filter
+  //     filter = applyCongressFilter(req, filter);
+
+  //     // Apply simplified term filter for activities
+  //     if (req.query.term) {
+  //       const termQuery = req.query.term.trim();
+  //       const congressMatch = termQuery.match(/^(\d+)(st|nd|rd|th)/i);
+  //       if (congressMatch) {
+  //         filter.congress = congressMatch[1];
+  //       }
+
+  //       if (!filter.congress) {
+  //         const anyNumberMatch = termQuery.match(/\d+/);
+  //         if (anyNumberMatch) {
+  //           filter.congress = anyNumberMatch[0];
+  //         }
+  //       }
+  //     }
+
+  //     // Apply chamber filter (for activities)
+  //     filter = applyChamberFilter(req, filter, false);
+
+  //     const activities = await Activity.find(filter)
+  //     .select(ACTIVITY_PUBLIC_FIELDS)
+  //       .sort({ date: -1, createdAt: -1 })
+  //       .lean();
+
+  //     res.status(200).json(activities);
+  //   } catch (error) {
+  //     console.error("Error retrieving activities:", error);
+  //     res.status(500).json({
+  //       message: "Error retrieving activity",
+  //       error: error.message,
+  //     });
+  //   }
+  // }
+
+  // static async AllActivity(req, res) {
+  //   try {
+  //     let filter = {};
+
+  //     // Apply congress filter
+  //     filter = applyCongressFilter(req, filter);
+
+  //     // Apply simplified term filter for activities
+  //     if (req.query.term) {
+  //       const termQuery = req.query.term.trim();
+  //       const congressMatch = termQuery.match(/^(\d+)(st|nd|rd|th)/i);
+  //       if (congressMatch) {
+  //         filter.congress = congressMatch[1];
+  //       }
+
+  //       if (!filter.congress) {
+  //         const anyNumberMatch = termQuery.match(/\d+/);
+  //         if (anyNumberMatch) {
+  //           filter.congress = anyNumberMatch[0];
+  //         }
+  //       }
+  //     }
+
+  //     // Apply chamber filter (for activities)
+  //     filter = applyChamberFilter(req, filter, false);
+
+  //     const { _id, ...ACTIVITY_FIELDS_NO_ID } = ACTIVITY_PUBLIC_FIELDS;
+
+  //     const activities = await Activity.aggregate([
+  //       {
+  //         $match: {
+  //           $or: [
+  //             { status: "published" },
+  //             { status: "under review", "history.oldData.status": "published" },
+  //           ],
+  //           ...filter,
+  //         },
+  //       },
+
+  //       { $unwind: { path: "$history", preserveNullAndEmptyArrays: true } },
+
+  //       {
+  //         $addFields: {
+  //           effectiveDoc: {
+  //             $cond: [
+  //               {
+  //                 $and: [
+  //                   { $eq: ["$status", "under review"] },
+  //                   { $eq: ["$history.oldData.status", "published"] },
+  //                 ],
+  //               },
+  //               {
+  //                 $mergeObjects: [
+  //                   {
+  //                     _id: "$_id",
+  //                     quorumId: "$quorumId",
+  //                     createdAt: "$createdAt",
+  //                   },
+  //                   "$history.oldData",
+  //                 ],
+  //               },
+  //               {
+  //                 $cond: [
+  //                   { $eq: ["$status", "published"] },
+  //                   "$$ROOT",
+  //                   "$$REMOVE",
+  //                 ],
+  //               },
+  //             ],
+  //           },
+  //         },
+  //       },
+
+  //       { $match: { effectiveDoc: { $ne: null } } },
+  //       { $replaceRoot: { newRoot: "$effectiveDoc" } },
+
+  //       { $sort: { date: -1, createdAt: -1 } },
+
+  //       {
+  //         $group: {
+  //           _id: "$quorumId",
+  //           latest: { $first: "$$ROOT" },
+  //         },
+  //       },
+  //       { $replaceRoot: { newRoot: "$latest" } },
+
+  //       { $sort: { date: -1, createdAt: -1 } },
+
+  //       {
+  //         $project: {
+  //           _id: 1, // ✅ always first
+  //           ...ACTIVITY_FIELDS_NO_ID,
+  //         },
+  //       },
+  //     ]);
+
+  //     res.status(200).json(activities);
+  //   } catch (error) {
+  //     console.error("Error retrieving activities:", error);
+  //     res.status(500).json({
+  //       message: "Error retrieving activity",
+  //       error: error.message,
+  //     });
+  //   }
+  // }
+
+  static async AllActivity(req, res) {
+    try {
+      let filter = {};
+
+      // Common filters (status published / all)
+      filter = applyCommonFilters(req, filter);
+
+      // Congress filter
+      filter = applyCongressFilter(req, filter);
+
+      // Term filter
+      filter = applyActivityTermFilter(req, filter);
+
+      // Chamber filter
+      filter = applyChamberFilter(req, filter, false);
+
+      const { _id, ...ACTIVITY_FIELDS_NO_ID } = ACTIVITY_PUBLIC_FIELDS;
+
+      const isFrontend =
+        req.query.frontend === "true" || req.query.published === "true";
+
+      let pipeline = [];
+
+      if (isFrontend) {
+        // Only published or published-in-history
+        pipeline.push({
+          $match: {
+            $or: [
+              { status: "published" },
+              { status: "under review", "history.oldData.status": "published" },
+            ],
+            ...filter,
+          },
+        });
+
+        pipeline.push(
+          { $unwind: { path: "$history", preserveNullAndEmptyArrays: true } },
+          {
+            $addFields: {
+              effectiveDoc: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$status", "under review"] },
+                      { $eq: ["$history.oldData.status", "published"] },
+                    ],
+                  },
+                  {
+                    $mergeObjects: [
+                      {
+                        _id: "$_id",
+                        activityquorumId: "$activityquorumId",
+                        createdAt: "$createdAt",
+                      },
+                      "$history.oldData",
+                    ],
+                  },
+                  {
+                    $cond: [
+                      { $eq: ["$status", "published"] },
+                      "$$ROOT",
+                      "$$REMOVE",
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+          { $match: { effectiveDoc: { $ne: null } } },
+          { $replaceRoot: { newRoot: "$effectiveDoc" } }
+        );
+      } else {
+        // Default / admin → all activities
+        pipeline.push({ $match: { ...filter } });
+      }
+
+      // Sorting & projecting
+      pipeline.push(
+        { $sort: { date: -1, createdAt: -1 } },
+        {
+          $project: {
+            _id: 1,
+            ...ACTIVITY_FIELDS_NO_ID,
+          },
+        }
+      );
+
+      const activities = await Activity.aggregate(pipeline);
+      res.status(200).json(activities);
+    } catch (error) {
+      console.error("Error retrieving activities:", error);
+      res.status(500).json({
+        message: "Error retrieving activity",
+        error: error.message,
+      });
+    }
+  }
 
   static async getActivityById(req, res) {
     try {
@@ -269,61 +493,60 @@ class activityController {
         supportData,
       });
     } catch (error) {
-      console.error("Error retrieving activity:", error);
       res.status(500).json({ message: "Error retrieving activity", error });
     }
   }
   // Update activity with file and optional discard logic
-static async updateActivity(req, res) {
-  upload.single("readMore")(req, res, async (err) => {
-    if (err) return res.status(400).json({ message: err.message });
+  static async updateActivity(req, res) {
+    upload.single("readMore")(req, res, async (err) => {
+      if (err) return res.status(400).json({ message: err.message });
 
-    try {
-      const activityID = req.params.id;
-      let updateData = { ...req.body };
+      try {
+        const activityID = req.params.id;
+        let updateData = { ...req.body };
 
-      // Safe check for req.user
-      const userId = req.user?._id || null;
-      updateData.modifiedBy = userId;
-      updateData.modifiedAt = new Date();
+        // Safe check for req.user
+        const userId = req.user?._id || null;
+        updateData.modifiedBy = userId;
+        updateData.modifiedAt = new Date();
 
-      if (req.file) {
-        updateData.readMore = `/uploads/${req.file.filename}`;
-      }
-
-      // Handle discard logic
-      if (req.body.discardChanges === "true") {
-        return ActivityController.discardActivityChanges(req, res);
-      }
-
-      const existingActivity = await Activity.findById(activityID);
-      if (!existingActivity) {
-        return res.status(404).json({ message: 'Activity not found' });
-      }
-
-      // Parse fields if needed
-      if (typeof updateData.editedFields === 'string') {
-        updateData.editedFields = JSON.parse(updateData.editedFields);
-      }
-      if (typeof updateData.fieldEditors === 'string') {
-        updateData.fieldEditors = JSON.parse(updateData.fieldEditors);
-      }
-
-      // Initialize update operations
-      const updateOperations = {
-        $set: {
-          ...updateData,
-          modifiedBy: userId,
-          modifiedAt: new Date()
+        if (req.file) {
+          updateData.readMore = `/uploads/${req.file.filename}`;
         }
-      };
 
-      // Clear fields if publishing
-      if (updateData.status === "published") {
-        updateOperations.$set.editedFields = [];
-        updateOperations.$set.fieldEditors = {};
-        updateOperations.$set.history = [];
-      }
+        // Handle discard logic
+        if (req.body.discardChanges === "true") {
+          return activityController.discardActivityChanges(req, res);
+        }
+
+        const existingActivity = await Activity.findById(activityID);
+        if (!existingActivity) {
+          return res.status(404).json({ message: "Activity not found" });
+        }
+
+        // Parse fields if needed
+        if (typeof updateData.editedFields === "string") {
+          updateData.editedFields = JSON.parse(updateData.editedFields);
+        }
+        if (typeof updateData.fieldEditors === "string") {
+          updateData.fieldEditors = JSON.parse(updateData.fieldEditors);
+        }
+
+        // Initialize update operations
+        const updateOperations = {
+          $set: {
+            ...updateData,
+            modifiedBy: userId,
+            modifiedAt: new Date(),
+          },
+        };
+
+        // Clear fields if publishing
+        if (updateData.status === "published") {
+          updateOperations.$set.editedFields = [];
+          updateOperations.$set.fieldEditors = {};
+          updateOperations.$set.history = [];
+        }
 
         // If not publishing, consider snapshot for history
         if (updateData.status !== "published") {
@@ -331,7 +554,8 @@ static async updateActivity(req, res) {
             !existingActivity.history ||
             existingActivity.history.length === 0 ||
             existingActivity.snapshotSource === "edited";
-const noHistory = !existingActivity.history || existingActivity.history.length === 0;
+          const noHistory =
+            !existingActivity.history || existingActivity.history.length === 0;
           if (canTakeSnapshot && noHistory) {
             const currentState = existingActivity.toObject();
 
@@ -342,85 +566,69 @@ const noHistory = !existingActivity.history || existingActivity.history.length =
             delete currentState.__v;
             delete currentState.history;
 
-          // Create history entry
-          const historyEntry = {
-            oldData: currentState,
-            timestamp: new Date(),
-            actionType: 'update'
-          };
+            // Create history entry
+            const historyEntry = {
+              oldData: currentState,
+              timestamp: new Date(),
+              actionType: "update",
+            };
 
-          // Add to update operations
-          updateOperations.$push = { history: historyEntry };
-          updateOperations.$set.snapshotSource = "edited";
-        } else if (existingActivity.snapshotSource === "deleted_pending_update") {
-          updateOperations.$set.snapshotSource = "edited";
+            // Add to update operations
+            updateOperations.$push = { history: historyEntry };
+            updateOperations.$set.snapshotSource = "edited";
+          } else if (
+            existingActivity.snapshotSource === "deleted_pending_update"
+          ) {
+            updateOperations.$set.snapshotSource = "edited";
+          }
         }
-      }
 
-      const updatedActivity = await Activity.findByIdAndUpdate(
-        activityID,
-        updateOperations, // Use the structured operations
-        { new: true }
-      ).populate("termId");
+        const updatedActivity = await Activity.findByIdAndUpdate(
+          activityID,
+          updateOperations, // Use the structured operations
+          { new: true }
+        ).populate("termId");
 
-      if (!updatedActivity) {
-        return res.status(404).json({ message: "Activity not found" });
+        if (!updatedActivity) {
+          return res.status(404).json({ message: "Activity not found" });
+        }
+
+        res.status(200).json({
+          message: "Activity updated successfully",
+          info: updatedActivity,
+        });
+      } catch (error) {
+        res.status(500).json({
+          message: "Error updating Activity",
+          error: error.message,
+        });
       }
+    });
+  }
+
+  // Discard changes (dedicated endpoint)
+  static async discardActivityChanges(req, res) {
+    try {
+      const { discardChanges } = require("../helper/discardHelper");
+
+      const restoredActivity = await discardChanges({
+        model: Activity,
+        documentId: req.params.id,
+        userId: req.user?._id,
+        options: { new: true, populate: "termId" },
+      });
 
       res.status(200).json({
-        message: "Activity updated successfully",
-        info: updatedActivity,
+        message: "Restored to original state and history cleared",
+        info: restoredActivity,
       });
     } catch (error) {
       res.status(500).json({
-        message: "Error updating Activity",
+        message: "Failed to discard changes",
         error: error.message,
       });
     }
-  });
-}
-
-  // Discard changes (dedicated endpoint)
-  // In activityController.js
-static async discardActivityChanges(req, res) {
-  try {
-    const activity = await Activity.findById(req.params.id);
-    if (!activity) {
-      return res.status(404).json({ message: "Activity not found" });
-    }
-
-    // Check if there's any history available
-    if (!activity.history || activity.history.length === 0) {
-      return res.status(400).json({ message: "No history available to restore" });
-    }
-
-    // Get the original state (index 0)
-    const originalState = activity.history[0].oldData;
-
-    // Restore the activity to its original state and empty the history
-    const restoredActivity = await Activity.findByIdAndUpdate(
-      req.params.id,
-      {
-        ...originalState,
-        history: [], // Empty the history array
-        snapshotSource: "edited", // Reset snapshot source
-        modifiedAt: new Date(), // Update modification timestamp
-        modifiedBy: req.user?._id // Track who performed the discard
-      },
-      { new: true }
-    ).populate("termId");
-
-    res.status(200).json({
-      message: "Restored to original state and history cleared",
-      info: restoredActivity
-    });
-  } catch (error) {
-    res.status(500).json({
-      message: "Failed to discard changes",
-      error: error.message,
-    });
   }
-}
 
   // Delete an activity
   // Delete activity and clean references
@@ -461,11 +669,7 @@ static async discardActivityChanges(req, res) {
         ],
       }).session(session);
 
-      // console.log(`👀 Senator matches: ${senatorMatches.length}`);
-      senatorMatches.forEach((doc) =>
-        console.log("   - SenatorData ID:", doc._id.toString())
-      );
-
+      // console.log(` Senator matches: ${senatorMatches.length}`);
       // 3️⃣ Debug: Check RepresentativeData matches before delete
       const repMatches = await RepresentativeData.find({
         $or: [
@@ -474,10 +678,7 @@ static async discardActivityChanges(req, res) {
         ],
       }).session(session);
 
-      // console.log(`👀 Representative matches: ${repMatches.length}`);
-      repMatches.forEach((doc) =>
-        console.log("   - RepresentativeData ID:", doc._id.toString())
-      );
+      // console.log(` Representative matches: ${repMatches.length}`);
 
       // 4️⃣ Delete activity
       await Activity.findByIdAndDelete(id).session(session);
@@ -499,7 +700,6 @@ static async discardActivityChanges(req, res) {
             },
           }
         ).session(session);
-        console.log("✅ Removed activity from SenatorData references");
       }
 
       if (activity.type === "house") {
@@ -518,7 +718,6 @@ static async discardActivityChanges(req, res) {
             },
           }
         ).session(session);
-        console.log("✅ Removed activity from RepresentativeData references");
       }
 
       // ✅ Commit transaction
@@ -529,7 +728,7 @@ static async discardActivityChanges(req, res) {
     } catch (err) {
       await session.abortTransaction();
       session.endSession();
-      console.error("❌ Error deleting activity:", err);
+
       res.status(500).json({ message: "Server error" });
     }
   }
@@ -573,36 +772,29 @@ static async discardActivityChanges(req, res) {
   static async bulkUpdateTrackActivities(req, res) {
     try {
       const { ids, trackActivities } = req.body;
+      const { performBulkUpdate } = require("../helper/bulkUpdateHelper");
 
-      if (!Array.isArray(ids) || ids.length === 0) {
-        return res.status(400).json({ message: "No activity IDs provided" });
-      }
+      const validation = (data) => {
+        const validStatuses = ["pending", "completed", "failed"];
+        if (!validStatuses.includes(data.trackActivities)) {
+          return "Invalid trackActivities value";
+        }
+      };
 
-      const validStatuses = ["pending", "completed", "failed"];
-      if (!validStatuses.includes(trackActivities)) {
-        return res
-          .status(400)
-          .json({ message: "Invalid trackActivities value" });
-      }
-
-      const result = await Activity.updateMany(
-        { _id: { $in: ids } },
-        { $set: { trackActivities } }
-      );
-
-      if (result.modifiedCount === 0) {
-        return res.status(404).json({ message: "No activities were updated" });
-      }
-
-      const updatedActivities = await Activity.find({ _id: { $in: ids } });
+      const result = await performBulkUpdate({
+        model: Activity,
+        ids,
+        updateData: { trackActivities },
+        validation,
+      });
 
       res.status(200).json({
-        message: `${result.modifiedCount} activities updated successfully`,
-        updatedActivities,
+        message: result.message,
+        updatedActivities: result.updatedDocs,
       });
     } catch (error) {
-      res.status(500).json({
-        message: "Error bulk updating activities",
+      res.status(error.message.includes("Invalid") ? 400 : 500).json({
+        message: error.message || "Error bulk updating activities",
         error: error.message,
       });
     }
@@ -625,7 +817,7 @@ static async discardActivityChanges(req, res) {
     });
 
     if (!billId || !title || !introduced || !congress) {
-      console.warn("❌ Missing required bill data");
+      console.warn(" Missing required bill data");
       return 0;
     }
 
@@ -652,7 +844,7 @@ static async discardActivityChanges(req, res) {
       }
 
       if (!activityType) {
-        console.warn(`❌ Unable to determine activity type for bill ${billId}`);
+        console.warn(` Unable to determine activity type for bill ${billId}`);
         return 0;
       }
 
@@ -705,12 +897,11 @@ static async discardActivityChanges(req, res) {
 
           if (!personId) {
             console.warn(
-              `❌ Skipping sponsor ${sponsorId} due to missing personId`
+              ` Skipping sponsor ${sponsorId} due to missing personId`
             );
             continue;
           }
 
-          // ✅ Lookup both Senator and Rep in parallel
           const [senator, rep] = await Promise.all([
             Senator.findOne({ senatorId: personId }),
             Representative.findOne({ repId: personId }),
@@ -718,7 +909,7 @@ static async discardActivityChanges(req, res) {
 
           if (!senator && !rep) {
             console.warn(
-              `⚠️ No matching local legislator found for personId ${personId}`
+              ` No matching local legislator found for personId ${personId}`
             );
             continue;
           }
@@ -740,7 +931,7 @@ static async discardActivityChanges(req, res) {
         }
       }
 
-      console.log(`🎉 Finished processing cosponsors. Linked: ${savedCount}`);
+      //console.log(`🎉 Finished processing cosponsors. Linked: ${savedCount}`);
       return savedCount;
     } catch (err) {
       console.error(

@@ -1,22 +1,39 @@
 // utils/termUtils.js
 
-/**
- * Calculate congress numbers for a given start and end year.
- * @param {number} startYear
- * @param {number} endYear
- * @returns {number[]}
- */
+function validateTermYears(startYear, endYear) {
+  if (startYear == null || endYear == null) {
+    return { isValid: false, message: "Start year and End year are required" };
+  }
+
+  if (startYear >= endYear) {
+    return {
+      isValid: false,
+      message: "End year must be greater than start year",
+    };
+  }
+
+  return { isValid: true, message: "" };
+}
+
+
+function generateTermName(startYear, endYear) {
+  return `${startYear}-${endYear}`;
+}
+
+
 function getCongresses(startYear, endYear) {
   if (startYear < 1789 || endYear < 1789) return [];
 
-  const congresses = [];
-  for (let year = startYear; year < endYear; year++) {
-    const congressNumber = Math.floor((year - 1789) / 2) + 1;
-    if (!congresses.includes(congressNumber)) {
-      congresses.push(congressNumber);
-    }
+  const congressSet = new Set();
+  const startCongress = Math.floor((startYear - 1789) / 2) + 1;
+  const endCongress = Math.floor((endYear - 1 - 1789) / 2) + 1;
+  
+  for (let congress = startCongress; congress <= endCongress; congress++) {
+    congressSet.add(congress);
   }
 
+  const congresses = Array.from(congressSet);
+  
   // If range is exactly 2 years → keep only the first congress
   if (endYear - startYear === 2 && congresses.length > 1) {
     congresses.splice(1);
@@ -25,13 +42,9 @@ function getCongresses(startYear, endYear) {
   return congresses;
 }
 
-/**
- * Validate term object and ensure congresses are populated.
- * @param {object} term
- * @returns {boolean}
- */
+
 function isValidTerm(term) {
-  if (!term.startYear || !term.endYear) return false;
+  if (!term || term.startYear == null || term.endYear == null) return false;
 
   const isOddEvenRange =
     term.startYear % 2 === 1 &&
@@ -50,4 +63,6 @@ function isValidTerm(term) {
 module.exports = {
   getCongresses,
   isValidTerm,
+  validateTermYears,
+  generateTermName,
 };
