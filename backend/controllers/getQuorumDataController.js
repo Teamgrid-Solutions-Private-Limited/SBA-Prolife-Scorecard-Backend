@@ -933,14 +933,14 @@ class QuorumDataController {
   //             const year = introducedDate.getUTCFullYear();
   //             const congress = String(Math.floor((year - 1789) / 2) + 1);
 
-  //             // ⏭️ Check for existing activities
+  //             //  Check for existing activities
   //             const existing = await activitySchema.find({
   //               quorumId: bill.quorumId,
   //               congress,
   //             });
   //             if (existing.length > 0) {
   //               console.log(
-  //                 `⏭️ Skipping bill ${bill.quorumId} — already has ${existing.length} activity(ies).`
+  //                 ` Skipping bill ${bill.quorumId} — already has ${existing.length} activity(ies).`
   //               );
   //               continue;
   //             }
@@ -960,7 +960,7 @@ class QuorumDataController {
   //             );
   //           } catch (err) {
   //             console.warn(
-  //               `❌ Cosponsorship fetch failed for ${bill.quorumId}:`,
+  //               ` Cosponsorship fetch failed for ${bill.quorumId}:`,
   //               err.message
   //             );
   //           }
@@ -1001,7 +1001,7 @@ class QuorumDataController {
         // Upsert
         await model.updateOne(
           { [idField]: bill[idField] },
-          { $setOnInsert: bill }, // ✅ Only set congress/termId when inserting
+          { $setOnInsert: bill }, //  Only set congress/termId when inserting
           { upsert: true }
         );
 
@@ -1032,7 +1032,7 @@ class QuorumDataController {
           for (const bill of saved) {
             try {
               console.log(
-                `→ Fetching cosponsors for bill ${bill.quorumId} (${bill.title})...`
+                ` Fetching cosponsors for bill ${bill.quorumId} (${bill.title})...`
               );
 
               const introduced = bill.date
@@ -1048,7 +1048,7 @@ class QuorumDataController {
               );
             } catch (err) {
               console.warn(
-                `❌ Cosponsorship fetch failed for ${bill.quorumId}:`,
+                ` Cosponsorship fetch failed for ${bill.quorumId}:`,
                 err.message
               );
             }
@@ -1229,10 +1229,9 @@ class QuorumDataController {
                   });
 
                   if (currentRep && currentRepData) {
-                    // ✅ Only log here
-                    console.log("\n📸 SNAPSHOT LOGGING BEFORE HISTORY");
-                    console.log("Representative Info:", JSON.stringify(currentRep, null, 2));
-                    console.log("RepresentativeData Info:", JSON.stringify(currentRepData, null, 2));
+                    //  Only log here
+                    // console.log("Representative Info:", JSON.stringify(currentRep, null, 2));
+                    // console.log("RepresentativeData Info:", JSON.stringify(currentRepData, null, 2));
 
                     const snapshot = {
                       oldData: {
@@ -1269,7 +1268,7 @@ class QuorumDataController {
                     );
                   }
                 } catch (snapshotError) {
-                  console.error(`❌ Failed to take snapshot for ${update.personData.name}:`, snapshotError.message);
+                  console.error(` Failed to take snapshot for ${update.personData.name}:`, snapshotError.message);
                 }
               }
 
@@ -1315,13 +1314,13 @@ class QuorumDataController {
                 );
               }
             } catch (error) {
-              console.error(`❌ Failed to update ${type} ${update.personData.name}:`, error.message);
+              console.error(` Failed to update ${type} ${update.personData.name}:`, error.message);
             }
           })
         );
       }
     } catch (err) {
-      console.error(`💥 Vote score update failed for bill ${quorumId}:`, err.message);
+      console.error(` Vote score update failed for bill ${quorumId}:`, err.message);
       console.error("Error stack:", err.stack);
     }
   }

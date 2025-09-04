@@ -29,8 +29,8 @@ async function saveCosponsorshipToLegislator({
   title
 }) {
   personId = String(personId); // Force string match
-  console.log("editorInfo in save:", editorInfo);
-  console.log("title in save:", title);
+  // console.log("editorInfo in save:", editorInfo);
+  // console.log("title in save:", title);
 
   let localPerson = await Senator.findOne({ senatorId: personId });
   let dataModel = SenatorData;
@@ -40,7 +40,7 @@ async function saveCosponsorshipToLegislator({
   if (!localPerson) {
     localPerson = await Representative.findOne({ repId: personId });
     if (!localPerson) {
-      // console.warn(`❌ No local legislator found for Quorum personId ${personId}`);
+      // console.warn(` No local legislator found for Quorum personId ${personId}`);
       return false;
     }
     dataModel = RepresentativeData;
@@ -76,9 +76,7 @@ async function saveCosponsorshipToLegislator({
     });
 
     if (currentRep && currentRepData.length > 0) {
-        console.log("\n📸 SNAPSHOT LOGGING BEFORE HISTORY");
-                    console.log("Representative Info:", JSON.stringify(currentRep, null, 2));
-                    console.log("RepresentativeData Info:", JSON.stringify(currentRepData, null, 2));
+        
       // Build snapshot object
       const snapshot = {
         oldData: {
@@ -116,7 +114,7 @@ async function saveCosponsorshipToLegislator({
     }
   }
 
-  // ✅ Proceed with your normal editedFields/fieldEditors update
+  //  Proceed with your normal editedFields/fieldEditors update
   const editedFieldEntry = {
     field: "activitiesScore",
     name: `${title}`,
@@ -151,7 +149,6 @@ async function saveCosponsorshipToLegislator({
 }
 
 
-  console.log(` Linked activity ${activityId} to ${roleLabel}: ${localPerson.fullName || localPerson._id}`);
   return true;
 }
 
@@ -648,7 +645,7 @@ class activityController {
         return res.status(400).json({ message: "Invalid activity ID" });
       }
 
-      // 1️⃣ Find the activity
+      // 1️ Find the activity
       const activity = await Activity.findById(id).session(session);
       if (!activity) {
         await session.abortTransaction();
@@ -659,9 +656,9 @@ class activityController {
       const activityObjectId = activity._id;
       const activityStringId = activity._id.toString();
 
-      //console.log("📌 Found activity:", activity);
+      //console.log(" Found activity:", activity);
 
-      // 2️⃣ Debug: Check SenatorData matches before delete
+      //  Debug: Check SenatorData matches before delete
       const senatorMatches = await SenatorData.find({
         $or: [
           { "activitiesScore.activityId": activityObjectId },
@@ -670,7 +667,7 @@ class activityController {
       }).session(session);
 
       // console.log(` Senator matches: ${senatorMatches.length}`);
-      // 3️⃣ Debug: Check RepresentativeData matches before delete
+      //  Debug: Check RepresentativeData matches before delete
       const repMatches = await RepresentativeData.find({
         $or: [
           { "activitiesScore.activityId": activityObjectId },
@@ -680,10 +677,10 @@ class activityController {
 
       // console.log(` Representative matches: ${repMatches.length}`);
 
-      // 4️⃣ Delete activity
+      // Delete activity
       await Activity.findByIdAndDelete(id).session(session);
 
-      // 5️⃣ Remove from SenatorData / RepresentativeData
+      //  Remove from SenatorData / RepresentativeData
       if (activity.type === "senate") {
         await SenatorData.updateMany(
           {
@@ -720,7 +717,7 @@ class activityController {
         ).session(session);
       }
 
-      // ✅ Commit transaction
+      //  Commit transaction
       await session.commitTransaction();
       session.endSession();
 
@@ -853,7 +850,7 @@ class activityController {
         return 0;
       }
 
-      // ✅ Only create activity once outside the loop
+      //  Only create activity once outside the loop
       let activity = await Activity.findOne({
         activityquorumId: billId,
         date: introduced,
@@ -878,7 +875,7 @@ class activityController {
           activityquorumId: billId,
         });
         await activity.save();
-        console.log(`✅ Created new cosponsorship activity for bill ${billId}`);
+        console.log(` Created new cosponsorship activity for bill ${billId}`);
       }
 
       let savedCount = 0;
@@ -925,7 +922,7 @@ class activityController {
           if (linked) savedCount++;
         } catch (err) {
           console.warn(
-            `❗ Error processing sponsor ${sponsorId}:`,
+            ` Error processing sponsor ${sponsorId}:`,
             err.message
           );
         }
@@ -935,7 +932,7 @@ class activityController {
       return savedCount;
     } catch (err) {
       console.error(
-        `❌ Failed to fetch cosponsorships for bill ${billId}:`,
+        ` Failed to fetch cosponsorships for bill ${billId}:`,
         err.message
       );
       return 0;
