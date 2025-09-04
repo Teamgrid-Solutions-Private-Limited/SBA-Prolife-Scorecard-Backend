@@ -19,8 +19,12 @@ async function saveCosponsorshipToLegislator({
   personId,
   activityId,
   score = "yes",
+  editorInfo,
+  title
 }) {
   personId = String(personId); // Force string match
+  console.log("editorInfo in save:", editorInfo);
+  console.log("title in save:", title);
 
   let localPerson = await Senator.findOne({ senatorId: personId });
   let dataModel = SenatorData;
@@ -61,8 +65,43 @@ async function saveCosponsorshipToLegislator({
     },
     { upsert: true, new: true }
   );
+   // Only update Representative document
+  if (roleLabel === "Representative") {
+    const editedFieldEntry = {
+      field: "activitiesScore",
+      name: `${title}`,
+      fromQuorum: true,
+      updatedAt: new Date().toISOString()
+    };
+    
+const normalizedTitle = title
+  .replace(/[^a-zA-Z0-9]+/g, "_")
+  .replace(/^_+|_+$/g, "");
+const fieldKey = `activitiesScore_${normalizedTitle}`;
+console.log("Field Key:", fieldKey);
+    await Representative.updateOne(
+      { _id: localPerson._id },
+      {
+        $push: {
+          editedFields: {
+            $each: [editedFieldEntry],
+            $slice: -20
+          }
+        },
+        $set: {
+          updatedAt: new Date(),
+          publishStatus: "under review",
+            [`fieldEditors.${fieldKey}`]: {
+            // editorId: editorInfo?.editorId || "system-auto",
+            editorName: editorInfo?.editorName || "System Auto-Update",
+            editedAt: new Date().toISOString()
+          }
+        }
+      }
+    );
+  }
 
-  //console.log(` Linked activity ${activityId} to ${roleLabel}: ${localPerson.fullName || localPerson._id}`);
+  console.log(` Linked activity ${activityId} to ${roleLabel}: ${localPerson.fullName || localPerson._id}`);
   return true;
 }
 
@@ -519,13 +558,16 @@ static async discardActivityChanges(req, res) {
       });
     }
   }
+  // Fetch and create activities from cosponsorships
   static async fetchAndCreateFromCosponsorships(
     billId,
     title,
     introduced,
-    congress
+    congress,
+    editorInfo
   ) {
     console.log(`Starting cosponsorship fetch for billId: ${billId}`);
+    console.log("Editor Info in create:", editorInfo);
     console.log("🚧 Cosponsorship input check:", {
       billId,
       title,
@@ -636,6 +678,8 @@ static async discardActivityChanges(req, res) {
             personId,
             activityId: activity._id,
             score: "yes",
+            title: bill.title,
+            editorInfo
           });
 
           if (linked) savedCount++;

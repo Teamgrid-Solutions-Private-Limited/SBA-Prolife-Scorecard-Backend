@@ -303,7 +303,7 @@ class QuorumDataController {
     if (
       cache?.data &&
       now - cache.timestamp <
-        (this._CACHE_TTL[type] || cacheConfig.CACHE_TTL.DEFAULT)
+      (this._CACHE_TTL[type] || cacheConfig.CACHE_TTL.DEFAULT)
     ) {
       console.log(
         `Using valid cache for ${cacheKey}, items: ${cache.data.length}`
@@ -355,8 +355,8 @@ class QuorumDataController {
         ...(type === "senator"
           ? { current: true }
           : type === "representative"
-          ? { current: true, most_recent_role_type: 2 }
-          : {}),
+            ? { current: true, most_recent_role_type: 2 }
+            : {}),
       };
 
       // Queue the initial API request
@@ -418,8 +418,7 @@ class QuorumDataController {
                 })
                 .then((res) => {
                   console.log(
-                    `Received page ${page + i} for ${type}, items: ${
-                      res.data?.objects?.length || 0
+                    `Received page ${page + i} for ${type}, items: ${res.data?.objects?.length || 0
                     }`
                   );
                   return res.data?.objects || [];
@@ -598,8 +597,7 @@ class QuorumDataController {
     ]);
 
     console.log(
-      `Loaded state map (${
-        Object.keys(stateMap).length
+      `Loaded state map (${Object.keys(stateMap).length
       } states) and district map (${Object.keys(districtMap).length} districts)`
     );
 
@@ -607,29 +605,27 @@ class QuorumDataController {
       senator: (item) =>
         item.title === "US Senator"
           ? {
-              senatorId: item.id,
-              name: `Sen. ${item.firstname || ""} ${item.middlename || ""} ${
-                item.lastname || ""
+            senatorId: item.id,
+            name: `Sen. ${item.firstname || ""} ${item.middlename || ""} ${item.lastname || ""
               }`.trim(),
-              party: partyMap[item.most_recent_party] || "Unknown",
-              photo: item.high_quality_image_url || item.image_url || null,
-              state: stateMap[item.most_recent_state] || "Unknown",
-            }
+            party: partyMap[item.most_recent_party] || "Unknown",
+            photo: item.high_quality_image_url || item.image_url || null,
+            state: stateMap[item.most_recent_state] || "Unknown",
+          }
           : null,
 
       representative: (item) =>
         item.title === "US Representative"
           ? {
-              repId: item.id,
-              name: `Rep. ${item.firstname || ""} ${item.middlename || ""} ${
-                item.lastname || ""
+            repId: item.id,
+            name: `Rep. ${item.firstname || ""} ${item.middlename || ""} ${item.lastname || ""
               }`.trim(),
-              party: partyMap[item.most_recent_party] || "Unknown",
-              photo: item.high_quality_image_url || item.image_url || null,
-              district: formatDistrict(
-                districtMap[item.most_recent_district] || "Unknown"
-              ),
-            }
+            party: partyMap[item.most_recent_party] || "Unknown",
+            photo: item.high_quality_image_url || item.image_url || null,
+            district: formatDistrict(
+              districtMap[item.most_recent_district] || "Unknown"
+            ),
+          }
           : null,
 
       bills: (item) => ({
@@ -652,8 +648,7 @@ class QuorumDataController {
       // Log progress for large datasets
       if (data.length > 500 && i % 500 === 0) {
         console.log(
-          `Filtered ${i + batch.length}/${
-            data.length
+          `Filtered ${i + batch.length}/${data.length
           } ${type} items so far, valid: ${filtered.length}`
         );
       }
@@ -693,7 +688,7 @@ class QuorumDataController {
       const isCacheValid =
         cache?.data &&
         now - cache.timestamp <
-          (this._CACHE_TTL[type] || cacheConfig.CACHE_TTL.DEFAULT);
+        (this._CACHE_TTL[type] || cacheConfig.CACHE_TTL.DEFAULT);
 
       if (isCacheValid && cache.data.length > 0) {
         // We have valid cached data - fast path
@@ -982,7 +977,7 @@ class QuorumDataController {
 
   async saveBills(req, res) {
     try {
-      const { bills } = req.body;
+      const { bills, editorInfo } = req.body;
       if (!Array.isArray(bills) || bills.length === 0) {
         return res.status(400).json({ error: "Invalid bills" });
       }
@@ -1030,7 +1025,7 @@ class QuorumDataController {
           for (let i = 0; i < saved.length; i += CHUNK_SIZE) {
             const chunk = saved.slice(i, i + CHUNK_SIZE);
             await Promise.all(
-              chunk.map((bill) => this.updateVoteScore(bill.quorumId))
+              chunk.map((bill) => this.updateVoteScore(bill.quorumId, editorInfo))
             );
           }
 
@@ -1048,7 +1043,8 @@ class QuorumDataController {
                 String(bill.quorumId),
                 String(bill.title || "Untitled Bill"),
                 introduced,
-                bill.congress
+                bill.congress,
+                editorInfo
               );
             } catch (err) {
               console.warn(
@@ -1112,8 +1108,18 @@ class QuorumDataController {
     }
   }
 
-  async updateVoteScore(quorumId) {
+  async updateVoteScore(quorumId, editorInfo) {
     try {
+      console.log(`🔄 Starting vote score update for bill: ${quorumId}`);
+      console.log(`👤 Editor Info: ${JSON.stringify(editorInfo)}`);
+
+      // Determine editor information
+      const editorData = editorInfo || {
+        editorId: "system-auto",
+        editorName: "System Auto-Update",
+        editedAt: new Date().toISOString()
+      };
+
       // Queue the API request
       const fetchTask = () =>
         apiClient.get(process.env.VOTE_API_URL, {
@@ -1127,10 +1133,30 @@ class QuorumDataController {
 
       const response = await this._requestQueue.add(fetchTask);
       const data = response.data?.objects?.[0];
-      if (!data) return;
+
+      if (!data) {
+        console.log(`❌ No vote data found for bill: ${quorumId}`);
+        return;
+      }
+
+      console.log(`✅ Vote data retrieved for bill: ${quorumId}`);
 
       const vote = await Bill.findOne({ quorumId });
-      if (!vote) return;
+      if (!vote) {
+        console.log(`❌ Bill not found in database: ${quorumId}`);
+        return;
+      }
+
+      // Get bill information for tracking
+      const billInfo = {
+        quorumId: vote.quorumId,
+        title: vote.title,
+        congress: vote.congress,
+        termId: vote.termId,
+        type: vote.type
+      };
+
+      console.log(`📋 Bill Info: ${JSON.stringify(billInfo)}`);
 
       const { bill_type } = data.related_bill || {};
       const voteTypes = {
@@ -1139,19 +1165,26 @@ class QuorumDataController {
           dataModel: SenatorData,
           idField: "senateId",
           refField: "senatorId",
+          type: "Senator"
         },
         house_bill: {
           personModel: Representative,
           dataModel: RepresentativeData,
           idField: "houseId",
           refField: "repId",
+          type: "Representative"
         },
       };
 
       const voteConfig = voteTypes[bill_type];
-      if (!voteConfig) return;
+      if (!voteConfig) {
+        console.log(`❌ Unsupported bill type: ${bill_type} for bill: ${quorumId}`);
+        return;
+      }
 
-      const { personModel, dataModel, idField } = voteConfig;
+      console.log(`📊 Processing ${voteConfig.type} votes for bill: ${quorumId}`);
+
+      const { personModel, dataModel, idField, refField, type } = voteConfig;
       const votes = ["yea", "nay", "present", "other"];
 
       // First get all the necessary person data in a single query instead of individual queries
@@ -1160,47 +1193,201 @@ class QuorumDataController {
         .map((uri) => uri?.replace(/\/$/, "").split("/").pop())
         .filter(Boolean);
 
-      if (!personIds.length) return;
+      if (!personIds.length) {
+        console.log(`ℹ️ No votes found for bill: ${quorumId}`);
+        return;
+      }
+
+      console.log(`👥 Found ${personIds.length} voters for bill: ${quorumId}`);
 
       const persons = await personModel.find({
-        [voteConfig.refField]: { $in: personIds },
+        [refField]: { $in: personIds },
       });
+
+      console.log(`🔍 Found ${persons.length} matching ${type}s in database`);
+
       const personMap = Object.fromEntries(
-        persons.map((p) => [p[voteConfig.refField], p])
+        persons.map((p) => [p[refField], p])
       );
+
+      // Log detailed information about each representative
+      console.log(`\n📋 ${type} VOTER DETAILS FOR BILL ${quorumId}:`);
+      console.log('='.repeat(60));
 
       // Batch updates by vote type
       const updates = [];
+      const voteCounts = { yea: 0, nay: 0, present: 0, other: 0 };
 
       for (const score of votes) {
         const uris = data[`${score}_votes`] || [];
+        voteCounts[score] = uris.length;
+
         for (const uri of uris) {
           const personId = uri?.replace(/\/$/, "").split("/").pop();
           const person = personMap[personId];
-          if (!person) continue;
+
+          if (!person) {
+            console.log(`❓ Unknown ${type.toLowerCase()} with ID: ${personId}`);
+            continue;
+          }
+
+          // Log representative details
+          console.log(`\n🎯 ${type} VOTE: ${score.toUpperCase()}`);
+          console.log(`   ID: ${person[refField]}`);
+          console.log(`   Name: ${person.name}`);
+          console.log(`   Party: ${person.party}`);
+          if (type === "Representative") {
+            console.log(`   District: ${person.district}`);
+          } else {
+            console.log(`   State: ${person.state}`);
+          }
+          console.log(`   Database ID: ${person._id}`);
+          console.log(`   Vote: ${score}`);
 
           updates.push({
             filter: {
               [idField]: person._id,
               "votesScore.voteId": { $ne: vote._id },
             },
-            update: { $push: { votesScore: { voteId: vote._id, score } } },
+            update: {
+              $push: {
+                votesScore: {
+                  voteId: vote._id,
+                  score,
+                  // Add bill information to track which term and bill this vote came from
+                  billInfo: {
+                    quorumId: billInfo.quorumId,
+                    title: billInfo.title,
+                    congress: billInfo.congress,
+                    termId: billInfo.termId,
+                    type: billInfo.type,
+                    voteDate: new Date().toISOString()
+                  }
+                }
+              }
+            },
+            personData: person,
+            voteScore: score,
+            billInfo: billInfo
           });
         }
       }
 
+      // Log vote summary
+      console.log('\n📊 VOTE SUMMARY:');
+      console.log('='.repeat(30));
+      console.log(`Total votes: ${Object.values(voteCounts).reduce((a, b) => a + b, 0)}`);
+      console.log(`Yea: ${voteCounts.yea}`);
+      console.log(`Nay: ${voteCounts.nay}`);
+      console.log(`Present: ${voteCounts.present}`);
+      console.log(`Other: ${voteCounts.other}`);
+      console.log(`Matching ${type}s found: ${persons.length}`);
+      console.log(`Updates to perform: ${updates.length}`);
+      console.log(`Bill Congress: ${billInfo.congress}, Term: ${billInfo.termId}`);
+
       // Perform updates in batches
       const BATCH_SIZE = 50;
+      let successfulUpdates = 0;
+      let failedUpdates = 0;
+
       for (let i = 0; i < updates.length; i += BATCH_SIZE) {
         const batch = updates.slice(i, i + BATCH_SIZE);
-        await Promise.all(
-          batch.map((update) =>
-            dataModel.updateOne(update.filter, update.update, { upsert: true })
-          )
+
+        const batchResults = await Promise.allSettled(
+          batch.map(async (update) => {
+            try {
+              // Update the RepresentativeData document (votesScore with bill info)
+              const result = await dataModel.updateOne(
+                update.filter,
+                update.update,
+                { upsert: true }
+              );
+              // Create the editedFields object with bill title as name
+              // Update the main person document only if it's a Representative
+              const repUpdatePayload = {};
+
+              if (type === "Representative") {
+                // Create the editedFields object with bill title as name
+                const editedFieldEntry = {
+                  field: "votesScore",
+                  name: `${update.billInfo.title}`,
+                  fromQuorum: true,
+                  updatedAt: new Date().toISOString()
+                };
+
+                // Normalize bill title into a safe key
+                const normalizedTitle = update.billInfo.title
+                  .replace(/[^a-zA-Z0-9]+/g, "_")
+                  .replace(/^_+|_+$/g, ""); // trim leading/trailing underscores
+
+                const fieldKey = `votesScore_${normalizedTitle}`;
+
+                repUpdatePayload.$push = {
+                  editedFields: {
+                    $each: [editedFieldEntry],
+                    $slice: -20, // Keep only the last 20 edits
+                  },
+                };
+
+                repUpdatePayload.$set = {
+                  updatedAt: new Date(),
+                  publishStatus: "under review",
+                  [`fieldEditors.${fieldKey}`]: {
+                    editorId: editorData.editorId,
+                    editorName: editorData.editorName,
+                    editedAt: editorData.editedAt,
+                  },
+                };
+              }
+
+              // Only perform update if payload is not empty
+              if (Object.keys(repUpdatePayload).length > 0) {
+                const repUpdateResult = await personModel.updateOne(
+                  { _id: update.personData._id },
+                  repUpdatePayload
+                );
+
+                console.log(`   ↳ Representative update: ${repUpdateResult.modifiedCount} modified`);
+              }
+
+
+              // Log successful update with detailed tracking info
+              console.log(`✅ Updated ${type} ${update.personData.name} (${update.personData[refField]})`);
+              console.log(`   ↳ Data: ${result.modifiedCount} modified, ${result.upsertedCount} upserted`);
+              console.log(`   ↳ Representative: ${repUpdateResult.modifiedCount} modified`);
+              console.log(`   ↳ Vote: ${update.voteScore}`);
+              console.log(`   ↳ Bill: ${update.billInfo.title} (${update.billInfo.quorumId})`);
+              console.log(`   ↳ Congress: ${update.billInfo.congress}, Term: ${update.billInfo.termId}`);
+              console.log(`   ↳ Added 'votesScore' to editedFields for tracking`);
+              console.log(`   ↳ Editor: ${editorData.editorName} (${editorData.editorId})`);
+
+              return { dataResult: result, repResult: repUpdateResult };
+            } catch (error) {
+              console.error(`❌ Failed to update ${type} ${update.personData.name}:`, error.message);
+              throw error;
+            }
+          })
         );
+
+        batchResults.forEach(result => {
+          if (result.status === 'fulfilled') {
+            successfulUpdates++;
+          } else {
+            failedUpdates++;
+          }
+        });
       }
+
+      console.log(`\n🎉 UPDATE COMPLETE FOR BILL ${quorumId}:`);
+      console.log(`   Successful updates: ${successfulUpdates}`);
+      console.log(`   Failed updates: ${failedUpdates}`);
+      console.log(`   Total processed: ${successfulUpdates + failedUpdates}`);
+      console.log(`   Bill: ${billInfo.title}`);
+      console.log(`   Congress: ${billInfo.congress}, Term: ${billInfo.termId}`);
+
     } catch (err) {
-      console.error("Vote score update failed:", err.message);
+      console.error(`💥 Vote score update failed for bill ${quorumId}:`, err.message);
+      console.error('Error stack:', err.stack);
     }
   }
 

@@ -49,7 +49,7 @@ class houseDataController {
         votesScore,
         activitiesScore,
       } = req.body;
-
+      console.log("termId:", termId);
       //  Always clean invalid records first (no termId, null, or empty)
       //  Use separate deletes to avoid Mongoose ObjectId casting on empty strings
       let totalDeleted = 0;
@@ -1167,7 +1167,7 @@ static async getHouseDataByHouseId(req, res) {
           .populate("activitiesScore.activityId")
           .lean(),
 
-        // ✅ Get past terms, sorted by startYear (or createdAt fallback)
+        //  Get past terms, sorted by startYear (or createdAt fallback)
         HouseData.find({ houseId, currentTerm: { $ne: true } })
           .populate("termId")
           .populate("votesScore.voteId")
@@ -1180,7 +1180,7 @@ static async getHouseDataByHouseId(req, res) {
         return res.status(404).json({ message: "House data not found" });
       }
 
-      // ✅ House details from either currentTerm or first pastTerm
+      //  House details from either currentTerm or first pastTerm
       const houseDetails = currentTerm?.houseId || pastTerms[0]?.houseId;
 
       res.status(200).json({

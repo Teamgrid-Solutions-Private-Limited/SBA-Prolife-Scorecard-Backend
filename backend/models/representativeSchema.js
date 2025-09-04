@@ -11,10 +11,15 @@ const RepresentativeSchema = new mongoose.Schema({
     enum: ["draft", "published" , "under review"],
     default: "draft",
   },
-  editedFields: {
-    type: [String],
-    default: [],
-  },
+  editedFields: [{
+    field: [String],
+    name: String,
+        fromQuorum: { // Add this field to track if it came from Quorum
+      type: Boolean,
+      default: false
+    }
+
+  }],
   fieldEditors: {
     type: Map,
     of: new mongoose.Schema(
