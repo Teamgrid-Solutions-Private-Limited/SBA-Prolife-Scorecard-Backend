@@ -5,9 +5,18 @@ const VoteSchema = new mongoose.Schema(
     title: { type: String },
     quorumId: String,
     shortDesc: String,
-    longDesc: String,
-    rollCall: String,
-    readMore: String,
+    longDesc: {
+      type: String,
+      default: "",
+    },
+    rollCall: {
+      type: String,
+      default: "",
+    },
+    readMore:{
+      type: String,
+      default: "",
+    },
     date: Date,
     congress: { type: String },
     //termName: { type: String },

@@ -25,8 +25,12 @@ async function saveCosponsorshipToLegislator({
   personId,
   activityId,
   score = "yes",
+  editorInfo,
+  title
 }) {
   personId = String(personId); // Force string match
+  // console.log("editorInfo in save:", editorInfo);
+  // console.log("title in save:", title);
 
   let localPerson = await Senator.findOne({ senatorId: personId });
   let dataModel = SenatorData;
@@ -36,7 +40,7 @@ async function saveCosponsorshipToLegislator({
   if (!localPerson) {
     localPerson = await Representative.findOne({ repId: personId });
     if (!localPerson) {
-      // console.warn(`❌ No local legislator found for Quorum personId ${personId}`);
+      // console.warn(` No local legislator found for Quorum personId ${personId}`);
       return false;
     }
     dataModel = RepresentativeData;
@@ -62,8 +66,89 @@ async function saveCosponsorshipToLegislator({
     },
     { upsert: true, new: true }
   );
+   // Only update Representative document
+ if (roleLabel === "Representative") {
+  //  Check if rep is published before updating
+  if (localPerson.publishStatus === "published") {
+    const currentRep = await Representative.findById(localPerson._id);
+    const currentRepData = await RepresentativeData.find({
+      houseId: localPerson._id
+    });
 
-  //console.log(` Linked activity ${activityId} to ${roleLabel}: ${localPerson.fullName || localPerson._id}`);
+    if (currentRep && currentRepData.length > 0) {
+        
+      // Build snapshot object
+      const snapshot = {
+        oldData: {
+          repId: currentRep.repId,
+          district: currentRep.district,
+          name: currentRep.name,
+          party: currentRep.party,
+          photo: currentRep.photo,
+          editedFields: currentRep.editedFields || [],
+          fieldEditors: currentRep.fieldEditors || {},
+          modifiedAt: currentRep.modifiedAt,
+          modifiedBy: currentRep.modifiedBy,
+          publishStatus: currentRep.publishStatus,
+          snapshotSource: currentRep.snapshotSource,
+          status: currentRep.status,
+          representativeData: currentRepData.map(doc => doc.toObject())
+        },
+        timestamp: new Date().toISOString(),
+        actionType: "update",
+        _id: new mongoose.Types.ObjectId()
+      };
+
+      // Save snapshot in history (limit to last 50)
+      await Representative.findByIdAndUpdate(
+        localPerson._id,
+        {
+          $push: {
+            history: {
+              $each: [snapshot],
+              $slice: -50
+            }
+          }
+        }
+      );
+    }
+  }
+
+  //  Proceed with your normal editedFields/fieldEditors update
+  const editedFieldEntry = {
+    field: "activitiesScore",
+    name: `${title}`,
+    fromQuorum: true,
+    updatedAt: new Date().toISOString()
+  };
+
+  const normalizedTitle = title
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  const fieldKey = `activitiesScore_${normalizedTitle}`;
+
+  await Representative.updateOne(
+    { _id: localPerson._id },
+    {
+      $push: {
+        editedFields: {
+          $each: [editedFieldEntry],
+          $slice: -20
+        }
+      },
+      $set: {
+        updatedAt: new Date(),
+        publishStatus: "under review",
+        [`fieldEditors.${fieldKey}`]: {
+          editorName: editorInfo?.editorName || "System Auto-Update",
+          editedAt: new Date().toISOString()
+        }
+      }
+    }
+  );
+}
+
+
   return true;
 }
 
@@ -560,7 +645,7 @@ class activityController {
         return res.status(400).json({ message: "Invalid activity ID" });
       }
 
-      // 1️⃣ Find the activity
+      // 1️ Find the activity
       const activity = await Activity.findById(id).session(session);
       if (!activity) {
         await session.abortTransaction();
@@ -571,9 +656,9 @@ class activityController {
       const activityObjectId = activity._id;
       const activityStringId = activity._id.toString();
 
-      //console.log("📌 Found activity:", activity);
+      //console.log(" Found activity:", activity);
 
-      // 2️⃣ Debug: Check SenatorData matches before delete
+      //  Debug: Check SenatorData matches before delete
       const senatorMatches = await SenatorData.find({
         $or: [
           { "activitiesScore.activityId": activityObjectId },
@@ -582,7 +667,7 @@ class activityController {
       }).session(session);
 
       // console.log(` Senator matches: ${senatorMatches.length}`);
-      // 3️⃣ Debug: Check RepresentativeData matches before delete
+      //  Debug: Check RepresentativeData matches before delete
       const repMatches = await RepresentativeData.find({
         $or: [
           { "activitiesScore.activityId": activityObjectId },
@@ -592,10 +677,10 @@ class activityController {
 
       // console.log(` Representative matches: ${repMatches.length}`);
 
-      // 4️⃣ Delete activity
+      // Delete activity
       await Activity.findByIdAndDelete(id).session(session);
 
-      // 5️⃣ Remove from SenatorData / RepresentativeData
+      //  Remove from SenatorData / RepresentativeData
       if (activity.type === "senate") {
         await SenatorData.updateMany(
           {
@@ -632,7 +717,7 @@ class activityController {
         ).session(session);
       }
 
-      // ✅ Commit transaction
+      //  Commit transaction
       await session.commitTransaction();
       session.endSession();
 
@@ -711,13 +796,16 @@ class activityController {
       });
     }
   }
+  // Fetch and create activities from cosponsorships
   static async fetchAndCreateFromCosponsorships(
     billId,
     title,
     introduced,
-    congress
+    congress,
+    editorInfo
   ) {
     console.log(`Starting cosponsorship fetch for billId: ${billId}`);
+    console.log("Editor Info in create:", editorInfo);
     console.log("🚧 Cosponsorship input check:", {
       billId,
       title,
@@ -762,7 +850,7 @@ class activityController {
         return 0;
       }
 
-      // ✅ Only create activity once outside the loop
+      //  Only create activity once outside the loop
       let activity = await Activity.findOne({
         activityquorumId: billId,
         date: introduced,
@@ -787,7 +875,7 @@ class activityController {
           activityquorumId: billId,
         });
         await activity.save();
-        console.log(`✅ Created new cosponsorship activity for bill ${billId}`);
+        console.log(` Created new cosponsorship activity for bill ${billId}`);
       }
 
       let savedCount = 0;
@@ -827,12 +915,14 @@ class activityController {
             personId,
             activityId: activity._id,
             score: "yes",
+            title: bill.title,
+            editorInfo
           });
 
           if (linked) savedCount++;
         } catch (err) {
           console.warn(
-            `❗ Error processing sponsor ${sponsorId}:`,
+            ` Error processing sponsor ${sponsorId}:`,
             err.message
           );
         }
@@ -842,7 +932,7 @@ class activityController {
       return savedCount;
     } catch (err) {
       console.error(
-        `❌ Failed to fetch cosponsorships for bill ${billId}:`,
+        ` Failed to fetch cosponsorships for bill ${billId}:`,
         err.message
       );
       return 0;
