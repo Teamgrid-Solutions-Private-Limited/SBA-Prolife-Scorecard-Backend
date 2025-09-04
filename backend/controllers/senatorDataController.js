@@ -334,45 +334,176 @@ class senatorDataController {
   //     });
   //   }
   // }
+  // static async SenatorDataBySenatorId(req, res) {
+  //   try {
+  //     const senateId = req.params.senatorId; // Note: param is senatorId but schema uses senateId
+
+  //     // Run queries in parallel
+  //     const [currentTerm, pastTerms] = await Promise.all([
+  //       // Get currentTerm (only one, enforced by index)
+  //       SenatorData.findOne({ senateId, currentTerm: true })
+  //         .populate("termId")
+  //         .populate("senateId")
+  //         .populate("votesScore.voteId")
+  //         .populate("activitiesScore.activityId")
+  //         .lean(),
+
+  //       // Get past terms, sorted by startYear (or createdAt fallback)
+  //       SenatorData.find({ senateId, currentTerm: { $ne: true } })
+  //         .populate("termId")
+  //         .populate("votesScore.voteId")
+  //         .populate("activitiesScore.activityId")
+  //         .sort({ "termId.startYear": -1, createdAt: -1 })
+  //         .lean(),
+  //     ]);
+
+  //     if (!currentTerm && !pastTerms.length) {
+  //       return res.status(404).json({ message: "Senator data not found" });
+  //     }
+
+  //     // Senator details from either currentTerm or first pastTerm
+  //     const senatorDetails = currentTerm?.senateId || pastTerms[0]?.senateId;
+
+  //     res.status(200).json({
+  //       message: "Retrieved successfully",
+  //       senator: senatorDetails,
+  //       currentTerm: currentTerm
+  //         ? { ...currentTerm, senateId: undefined }
+  //         : null,
+  //       pastTerms: pastTerms.map(({ senateId, ...rest }) => rest),
+  //     });
+  //   } catch (error) {
+  //     res.status(500).json({
+  //       message: "Error retrieving senator data",
+  //       error: error.message,
+  //     });
+  //   }
+  // }
+
   static async SenatorDataBySenatorId(req, res) {
     try {
-      const senateId = req.params.senatorId; // Note: param is senatorId but schema uses senateId
+      const senateId = req.params.senatorId;
 
-      // Run queries in parallel
-      const [currentTerm, pastTerms] = await Promise.all([
-        // Get currentTerm (only one, enforced by index)
-        SenatorData.findOne({ senateId, currentTerm: true })
-          .populate("termId")
-          .populate("senateId")
-          .populate("votesScore.voteId")
-          .populate("activitiesScore.activityId")
-          .lean(),
+      // Get the main senator document - removed modifiedBy population since it doesn't exist
+      const senatorDocument = await Senator.findById(senateId).lean();
 
-        // Get past terms, sorted by startYear (or createdAt fallback)
-        SenatorData.find({ senateId, currentTerm: { $ne: true } })
-          .populate("termId")
-          .populate("votesScore.voteId")
-          .populate("activitiesScore.activityId")
-          .sort({ "termId.startYear": -1, createdAt: -1 })
-          .lean(),
-      ]);
-
-      if (!currentTerm && !pastTerms.length) {
+      if (!senatorDocument) {
         return res.status(404).json({ message: "Senator data not found" });
       }
 
-      // Senator details from either currentTerm or first pastTerm
-      const senatorDetails = currentTerm?.senateId || pastTerms[0]?.senateId;
+      // Check for historical data - get the latest history entry
+      const latestHistory = senatorDocument.history?.slice(-1)[0];
+      const hasHistoricalData = latestHistory?.oldData?.senatorData?.length > 0;
+
+      // Common function to format term data
+      const formatTermData = (term) => ({
+        _id: term._id,
+        termId: term.termId,
+        currentTerm: term.currentTerm,
+        summary: term.summary,
+        rating: term.rating,
+        votesScore: term.votesScore || [],
+        activitiesScore: term.activitiesScore || [],
+        createdAt: term.createdAt,
+        updatedAt: term.updatedAt,
+        __v: term.__v,
+      });
+
+      // Common function to get senator details - updated for your schema
+      const getSenatorDetails = (sourceData, isHistorical = false) => ({
+        _id: senatorDocument._id,
+        name: sourceData.name || senatorDocument.name,
+        state: sourceData.state || senatorDocument.state,
+        party: sourceData.party || senatorDocument.party,
+        photo: sourceData.photo || senatorDocument.photo,
+        status: sourceData.status || senatorDocument.status,
+        senatorId: sourceData.senatorId || senatorDocument.senatorId,
+        publishStatus: isHistorical
+          ? "published"
+          : senatorDocument.publishStatus,
+        editedFields:
+          sourceData.editedFields || senatorDocument.editedFields || [],
+        fieldEditors:
+          sourceData.fieldEditors || senatorDocument.fieldEditors || {},
+        // modifiedBy field doesn't exist in your schema, using fieldEditors instead
+        snapshotSource:
+          sourceData.snapshotSource || senatorDocument.snapshotSource,
+        createdAt: senatorDocument.createdAt,
+        updatedAt: isHistorical
+          ? latestHistory?.timestamp
+          : senatorDocument.updatedAt,
+      });
+
+      let finalCurrentTerm = null;
+      let finalPastTerms = [];
+      let senatorDetails = null;
+
+      if (hasHistoricalData) {
+        // ✅ USE ONLY HISTORICAL DATA
+        console.log(
+          "Using historical data with",
+          latestHistory.oldData.senatorData.length,
+          "term entries"
+        );
+
+        senatorDetails = getSenatorDetails(latestHistory.oldData, true);
+
+        // Process all senatorData from history
+        const historicalTerms = latestHistory.oldData.senatorData;
+
+        // Find current term (if exists in historical data)
+        const currentHistoricalTerm = historicalTerms.find(
+          (term) => term.currentTerm
+        );
+        if (currentHistoricalTerm) {
+          finalCurrentTerm = formatTermData(currentHistoricalTerm);
+        }
+
+        // Get all past terms from historical data
+        finalPastTerms = historicalTerms
+          .filter((term) => !term.currentTerm)
+          .map(formatTermData);
+      } else {
+        // ✅ USE CURRENT DATA (only if no historical data available)
+        // Run queries in parallel for better performance
+        const [currentTerm, pastTerms] = await Promise.all([
+          // Get current term
+          SenatorData.findOne({ senateId, currentTerm: true })
+            .populate("termId")
+            .populate("votesScore.voteId")
+            .populate("activitiesScore.activityId")
+            .lean(),
+
+          // Get past terms, sorted by startYear (or createdAt fallback)
+          SenatorData.find({ senateId, currentTerm: { $ne: true } })
+            .populate("termId")
+            .populate("votesScore.voteId")
+            .populate("activitiesScore.activityId")
+            .sort({ "termId.startYear": -1, createdAt: -1 })
+            .lean(),
+        ]);
+
+        senatorDetails = getSenatorDetails(senatorDocument, false);
+
+        // Use current term data
+        if (currentTerm) {
+          finalCurrentTerm = formatTermData(currentTerm);
+        }
+
+        // Use past terms data
+        finalPastTerms = pastTerms.map(formatTermData);
+      }
 
       res.status(200).json({
         message: "Retrieved successfully",
         senator: senatorDetails,
-        currentTerm: currentTerm
-          ? { ...currentTerm, senateId: undefined }
-          : null,
-        pastTerms: pastTerms.map(({ senateId, ...rest }) => rest),
+        currentTerm: finalCurrentTerm,
+        pastTerms: finalPastTerms,
+        dataSource: hasHistoricalData ? "historical" : "current",
+        hasHistoricalData,
       });
     } catch (error) {
+      console.error("Error retrieving senator data:", error);
       res.status(500).json({
         message: "Error retrieving senator data",
         error: error.message,

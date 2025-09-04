@@ -5,6 +5,13 @@ const Representative = require("../models/representativeSchema");
 const RepresentativeData = require("../models/representativeDataSchema");
 const SenatorData = require("../models/senatorDataSchema");
 const Vote = require("../models/voteSchema");
+const { ACTIVITY_PUBLIC_FIELDS } = require("../constants/projection");
+const {
+  applyCommonFilters,
+  applyCongressFilter,
+  applyChamberFilter,
+  applyActivityTermFilter,
+} = require("../middlewares/filter");
 const { buildSupportData } = require("../helper/supportDataHelper");
 
 const mongoose = require("mongoose");
@@ -111,37 +118,262 @@ class activityController {
     });
   }
 
+  static async getAllActivities(req, res) {
+    try {
+      const activities = await Activity.find({})
+        .select(ACTIVITY_PUBLIC_FIELDS)
+        .lean();
+      res.status(200).json(activities);
+    } catch (error) {
+      res.status(500).json({
+        message: "Error retrieving activity",
+        error: error.message,
+      });
+    }
+  }
+
   // Get all activities
-  static async getAllActivity(req, res) {
+  // static async AllActivity(req, res) {
+  //   try {
+  //     let filter = {};
+
+  //     // Apply common filters
+  //     filter = applyCommonFilters(req, filter);
+
+  //     // Apply congress filter
+  //     filter = applyCongressFilter(req, filter);
+
+  //     // Apply simplified term filter for activities
+  //     if (req.query.term) {
+  //       const termQuery = req.query.term.trim();
+  //       const congressMatch = termQuery.match(/^(\d+)(st|nd|rd|th)/i);
+  //       if (congressMatch) {
+  //         filter.congress = congressMatch[1];
+  //       }
+
+  //       if (!filter.congress) {
+  //         const anyNumberMatch = termQuery.match(/\d+/);
+  //         if (anyNumberMatch) {
+  //           filter.congress = anyNumberMatch[0];
+  //         }
+  //       }
+  //     }
+
+  //     // Apply chamber filter (for activities)
+  //     filter = applyChamberFilter(req, filter, false);
+
+  //     const activities = await Activity.find(filter)
+  //     .select(ACTIVITY_PUBLIC_FIELDS)
+  //       .sort({ date: -1, createdAt: -1 })
+  //       .lean();
+
+  //     res.status(200).json(activities);
+  //   } catch (error) {
+  //     console.error("Error retrieving activities:", error);
+  //     res.status(500).json({
+  //       message: "Error retrieving activity",
+  //       error: error.message,
+  //     });
+  //   }
+  // }
+
+  // static async AllActivity(req, res) {
+  //   try {
+  //     let filter = {};
+
+  //     // Apply congress filter
+  //     filter = applyCongressFilter(req, filter);
+
+  //     // Apply simplified term filter for activities
+  //     if (req.query.term) {
+  //       const termQuery = req.query.term.trim();
+  //       const congressMatch = termQuery.match(/^(\d+)(st|nd|rd|th)/i);
+  //       if (congressMatch) {
+  //         filter.congress = congressMatch[1];
+  //       }
+
+  //       if (!filter.congress) {
+  //         const anyNumberMatch = termQuery.match(/\d+/);
+  //         if (anyNumberMatch) {
+  //           filter.congress = anyNumberMatch[0];
+  //         }
+  //       }
+  //     }
+
+  //     // Apply chamber filter (for activities)
+  //     filter = applyChamberFilter(req, filter, false);
+
+  //     const { _id, ...ACTIVITY_FIELDS_NO_ID } = ACTIVITY_PUBLIC_FIELDS;
+
+  //     const activities = await Activity.aggregate([
+  //       {
+  //         $match: {
+  //           $or: [
+  //             { status: "published" },
+  //             { status: "under review", "history.oldData.status": "published" },
+  //           ],
+  //           ...filter,
+  //         },
+  //       },
+
+  //       { $unwind: { path: "$history", preserveNullAndEmptyArrays: true } },
+
+  //       {
+  //         $addFields: {
+  //           effectiveDoc: {
+  //             $cond: [
+  //               {
+  //                 $and: [
+  //                   { $eq: ["$status", "under review"] },
+  //                   { $eq: ["$history.oldData.status", "published"] },
+  //                 ],
+  //               },
+  //               {
+  //                 $mergeObjects: [
+  //                   {
+  //                     _id: "$_id",
+  //                     quorumId: "$quorumId",
+  //                     createdAt: "$createdAt",
+  //                   },
+  //                   "$history.oldData",
+  //                 ],
+  //               },
+  //               {
+  //                 $cond: [
+  //                   { $eq: ["$status", "published"] },
+  //                   "$$ROOT",
+  //                   "$$REMOVE",
+  //                 ],
+  //               },
+  //             ],
+  //           },
+  //         },
+  //       },
+
+  //       { $match: { effectiveDoc: { $ne: null } } },
+  //       { $replaceRoot: { newRoot: "$effectiveDoc" } },
+
+  //       { $sort: { date: -1, createdAt: -1 } },
+
+  //       {
+  //         $group: {
+  //           _id: "$quorumId",
+  //           latest: { $first: "$$ROOT" },
+  //         },
+  //       },
+  //       { $replaceRoot: { newRoot: "$latest" } },
+
+  //       { $sort: { date: -1, createdAt: -1 } },
+
+  //       {
+  //         $project: {
+  //           _id: 1, // ✅ always first
+  //           ...ACTIVITY_FIELDS_NO_ID,
+  //         },
+  //       },
+  //     ]);
+
+  //     res.status(200).json(activities);
+  //   } catch (error) {
+  //     console.error("Error retrieving activities:", error);
+  //     res.status(500).json({
+  //       message: "Error retrieving activity",
+  //       error: error.message,
+  //     });
+  //   }
+  // }
+
+  static async AllActivity(req, res) {
     try {
       let filter = {};
 
-      // Frontend filter
-      if (req.query.frontend === "true") {
-        filter.status = "published";
-      } else {
-        // Admin optional filters
-        if (req.query.published === "true") {
-          filter.status = "published";
-        } else if (req.query.published === "false") {
-          filter.status = { $ne: "published" };
-        }
-      }
+      // Common filters (status published / all)
+      filter = applyCommonFilters(req, filter);
 
       // Congress filter
-      if (req.query.congress) {
-        filter.congress = req.query.congress;
+      filter = applyCongressFilter(req, filter);
+
+      // Term filter
+      filter = applyActivityTermFilter(req, filter);
+
+      // Chamber filter
+      filter = applyChamberFilter(req, filter, false);
+
+      const { _id, ...ACTIVITY_FIELDS_NO_ID } = ACTIVITY_PUBLIC_FIELDS;
+
+      const isFrontend =
+        req.query.frontend === "true" || req.query.published === "true";
+
+      let pipeline = [];
+
+      if (isFrontend) {
+        // Only published or published-in-history
+        pipeline.push({
+          $match: {
+            $or: [
+              { status: "published" },
+              { status: "under review", "history.oldData.status": "published" },
+            ],
+            ...filter,
+          },
+        });
+
+        pipeline.push(
+          { $unwind: { path: "$history", preserveNullAndEmptyArrays: true } },
+          {
+            $addFields: {
+              effectiveDoc: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$status", "under review"] },
+                      { $eq: ["$history.oldData.status", "published"] },
+                    ],
+                  },
+                  {
+                    $mergeObjects: [
+                      {
+                        _id: "$_id",
+                        activityquorumId: "$activityquorumId",
+                        createdAt: "$createdAt",
+                      },
+                      "$history.oldData",
+                    ],
+                  },
+                  {
+                    $cond: [
+                      { $eq: ["$status", "published"] },
+                      "$$ROOT",
+                      "$$REMOVE",
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+          { $match: { effectiveDoc: { $ne: null } } },
+          { $replaceRoot: { newRoot: "$effectiveDoc" } }
+        );
+      } else {
+        // Default / admin → all activities
+        pipeline.push({ $match: { ...filter } });
       }
 
-      const activities = await Activity.find(filter)
-        .populate({
-          path: "termId",
-          select: "name",
-        })
-        .lean();
+      // Sorting & projecting
+      pipeline.push(
+        { $sort: { date: -1, createdAt: -1 } },
+        {
+          $project: {
+            _id: 1,
+            ...ACTIVITY_FIELDS_NO_ID,
+          },
+        }
+      );
 
+      const activities = await Activity.aggregate(pipeline);
       res.status(200).json(activities);
     } catch (error) {
+      console.error("Error retrieving activities:", error);
       res.status(500).json({
         message: "Error retrieving activity",
         error: error.message,

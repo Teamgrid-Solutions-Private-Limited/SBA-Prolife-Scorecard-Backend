@@ -2,6 +2,13 @@ const Vote = require("../models/voteSchema");
 const upload = require("../middlewares/fileUploads");
 const Term = require("../models/termSchema");
 const { buildSupportData } = require("../helper/supportDataHelper");
+const { VOTE_PUBLIC_FIELDS } = require("../constants/projection");
+const {
+  applyCommonFilters,
+  applyTermFilter,
+  applyCongressFilter,
+  applyChamberFilter,
+} = require("../middlewares/filter");
 const senatorDataSchema = require("../models/senatorDataSchema");
 const representativeDataSchema = require("../models/representativeDataSchema");
 class voteController {
@@ -65,40 +72,118 @@ class voteController {
 
   // Get all votes with populated termId
   // Get all votes with optional filtering by 'published' and populated termId
+  // static async getAllVotes(req, res) {
+  //   try {
+  //     let filter = {};
+
+  //     // Apply common filters
+  //     filter = applyCommonFilters(req, filter);
+
+  //     // Apply term-based filters
+  //     filter = applyTermFilter(req, filter);
+
+  //     // Apply congress filter
+  //     filter = applyCongressFilter(req, filter);
+
+  //     // Apply chamber filter (for votes)
+  //     filter = applyChamberFilter(req, filter, true);
+
+  //     const votes = await Vote.find(filter)
+  //       .select(VOTE_PUBLIC_FIELDS)
+  //       .sort({ date: -1, createdAt: -1 })
+  //       .lean();
+
+  //     res.status(200).json(votes);
+  //   } catch (error) {
+  //     res.status(500).json({
+  //       message: "Error retrieving votes",
+  //       error: error.message,
+  //     });
+  //   }
+  // }
   static async getAllVotes(req, res) {
+    try {
+      const votes = await Vote.find({})
+        .select(VOTE_PUBLIC_FIELDS) // projection fields
+        .sort({ date: -1, createdAt: -1 })
+        .lean();
+
+      res.status(200).json(votes);
+    } catch (error) {
+      res.status(500).json({
+        message: "Error retrieving admin votes",
+        error: error.message,
+      });
+    }
+  }
+
+  static async AllVotes(req, res) {
     try {
       let filter = {};
 
-      // Handle frontend/admin published filter
-      if (req.query.frontend === "true") {
-        filter.status = "published";
-      } else {
-        if (req.query.published === "true") {
-          filter.status = "published";
-        } else if (req.query.published === "false") {
-          filter.status = { $ne: "published" };
-        }
-      }
+      // Apply other filters (congress, term, chamber, etc.)
+      filter = applyTermFilter(req, filter);
+      filter = applyCongressFilter(req, filter);
+      filter = applyChamberFilter(req, filter, true);
 
-      // If term name is provided, resolve termId first
-      if (req.query.termName) {
-        const term = await Term.findOne({
-          name: { $regex: `^${req.query.termName}$`, $options: "i" }, // case-insensitive exact match
-        }).lean();
+      // Main aggregation
+     const votes = await Vote.aggregate([
+       {
+         $match: {
+           $or: [
+             { status: "published" },
+             { status: "under review", "history.oldData.status": "published" },
+           ],
+           ...filter,
+         },
+       },
 
-        if (term) {
-          filter.termId = term._id;
-        } else {
-          return res.status(404).json({ message: "Term not found" });
-        }
-      }
+       { $unwind: { path: "$history", preserveNullAndEmptyArrays: true } },
 
-      const votes = await Vote.find(filter)
-        .populate({
-          path: "termId",
-          select: "name",
-        })
-        .lean();
+       {
+         $addFields: {
+           effectiveDoc: {
+             $cond: [
+               {
+                 $and: [
+                   { $eq: ["$status", "under review"] },
+                   { $eq: ["$history.oldData.status", "published"] },
+                 ],
+               },
+               {
+                 $mergeObjects: [
+                   "$history.oldData", // snapshot
+                   { _id: "$_id" }, // keep parent _id
+                 ],
+               },
+               {
+                 $cond: [
+                   { $eq: ["$status", "published"] },
+                   "$$ROOT",
+                   "$$REMOVE",
+                 ],
+               },
+             ],
+           },
+         },
+       },
+
+       { $match: { effectiveDoc: { $ne: null } } },
+       { $replaceRoot: { newRoot: "$effectiveDoc" } },
+
+       { $sort: { date: -1, createdAt: -1 } },
+       {
+         $group: {
+           _id: "$quorumId",
+           latest: { $first: "$$ROOT" },
+         },
+       },
+       { $replaceRoot: { newRoot: "$latest" } },
+       { $sort: { date: -1, createdAt: -1 } },
+
+       { $project: VOTE_PUBLIC_FIELDS },
+     ]);
+
 
       res.status(200).json(votes);
     } catch (error) {
