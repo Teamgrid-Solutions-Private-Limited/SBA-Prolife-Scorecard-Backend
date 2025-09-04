@@ -47,7 +47,6 @@ const RepresentativeSchema = new mongoose.Schema({
         },
       },
     ],
-  modifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
   modifiedAt: Date,
   snapshotSource: {
   type: String, // 'deleted' | 'edited'

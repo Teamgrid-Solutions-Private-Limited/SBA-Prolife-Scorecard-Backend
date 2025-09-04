@@ -66,40 +66,89 @@ async function saveCosponsorshipToLegislator({
     { upsert: true, new: true }
   );
    // Only update Representative document
-  if (roleLabel === "Representative") {
-    const editedFieldEntry = {
-      field: "activitiesScore",
-      name: `${title}`,
-      fromQuorum: true,
-      updatedAt: new Date().toISOString()
-    };
-    
-const normalizedTitle = title
-  .replace(/[^a-zA-Z0-9]+/g, "_")
-  .replace(/^_+|_+$/g, "");
-const fieldKey = `activitiesScore_${normalizedTitle}`;
-console.log("Field Key:", fieldKey);
-    await Representative.updateOne(
-      { _id: localPerson._id },
-      {
-        $push: {
-          editedFields: {
-            $each: [editedFieldEntry],
-            $slice: -20
-          }
+ if (roleLabel === "Representative") {
+  //  Check if rep is published before updating
+  if (localPerson.publishStatus === "published") {
+    const currentRep = await Representative.findById(localPerson._id);
+    const currentRepData = await RepresentativeData.find({
+      houseId: localPerson._id
+    });
+
+    if (currentRep && currentRepData.length > 0) {
+        console.log("\n📸 SNAPSHOT LOGGING BEFORE HISTORY");
+                    console.log("Representative Info:", JSON.stringify(currentRep, null, 2));
+                    console.log("RepresentativeData Info:", JSON.stringify(currentRepData, null, 2));
+      // Build snapshot object
+      const snapshot = {
+        oldData: {
+          repId: currentRep.repId,
+          district: currentRep.district,
+          name: currentRep.name,
+          party: currentRep.party,
+          photo: currentRep.photo,
+          editedFields: currentRep.editedFields || [],
+          fieldEditors: currentRep.fieldEditors || {},
+          modifiedAt: currentRep.modifiedAt,
+          modifiedBy: currentRep.modifiedBy,
+          publishStatus: currentRep.publishStatus,
+          snapshotSource: currentRep.snapshotSource,
+          status: currentRep.status,
+          representativeData: currentRepData.map(doc => doc.toObject())
         },
-        $set: {
-          updatedAt: new Date(),
-          publishStatus: "under review",
-            [`fieldEditors.${fieldKey}`]: {
-            // editorId: editorInfo?.editorId || "system-auto",
-            editorName: editorInfo?.editorName || "System Auto-Update",
-            editedAt: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        actionType: "update",
+        _id: new mongoose.Types.ObjectId()
+      };
+
+      // Save snapshot in history (limit to last 50)
+      await Representative.findByIdAndUpdate(
+        localPerson._id,
+        {
+          $push: {
+            history: {
+              $each: [snapshot],
+              $slice: -50
+            }
           }
         }
-      }
-    );
+      );
+    }
   }
+
+  // ✅ Proceed with your normal editedFields/fieldEditors update
+  const editedFieldEntry = {
+    field: "activitiesScore",
+    name: `${title}`,
+    fromQuorum: true,
+    updatedAt: new Date().toISOString()
+  };
+
+  const normalizedTitle = title
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  const fieldKey = `activitiesScore_${normalizedTitle}`;
+
+  await Representative.updateOne(
+    { _id: localPerson._id },
+    {
+      $push: {
+        editedFields: {
+          $each: [editedFieldEntry],
+          $slice: -20
+        }
+      },
+      $set: {
+        updatedAt: new Date(),
+        publishStatus: "under review",
+        [`fieldEditors.${fieldKey}`]: {
+          editorName: editorInfo?.editorName || "System Auto-Update",
+          editedAt: new Date().toISOString()
+        }
+      }
+    }
+  );
+}
+
 
   console.log(` Linked activity ${activityId} to ${roleLabel}: ${localPerson.fullName || localPerson._id}`);
   return true;

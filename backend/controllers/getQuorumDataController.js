@@ -8,7 +8,7 @@ const Bill = require("../models/voteSchema");
 const SenatorData = require("../models/senatorDataSchema");
 const RepresentativeData = require("../models/representativeDataSchema");
 const ActivityController = require("../controllers/activityController");
-
+const mongoose = require("mongoose");
 // Circuit breaker implementation
 class CircuitBreaker {
   constructor(host) {
@@ -1110,17 +1110,12 @@ class QuorumDataController {
 
   async updateVoteScore(quorumId, editorInfo) {
     try {
-      console.log(`🔄 Starting vote score update for bill: ${quorumId}`);
-      console.log(`👤 Editor Info: ${JSON.stringify(editorInfo)}`);
-
-      // Determine editor information
       const editorData = editorInfo || {
         editorId: "system-auto",
         editorName: "System Auto-Update",
         editedAt: new Date().toISOString()
       };
 
-      // Queue the API request
       const fetchTask = () =>
         apiClient.get(process.env.VOTE_API_URL, {
           params: {
@@ -1133,21 +1128,11 @@ class QuorumDataController {
 
       const response = await this._requestQueue.add(fetchTask);
       const data = response.data?.objects?.[0];
-
-      if (!data) {
-        console.log(`❌ No vote data found for bill: ${quorumId}`);
-        return;
-      }
-
-      console.log(`✅ Vote data retrieved for bill: ${quorumId}`);
+      if (!data) return;
 
       const vote = await Bill.findOne({ quorumId });
-      if (!vote) {
-        console.log(`❌ Bill not found in database: ${quorumId}`);
-        return;
-      }
+      if (!vote) return;
 
-      // Get bill information for tracking
       const billInfo = {
         quorumId: vote.quorumId,
         title: vote.title,
@@ -1155,8 +1140,6 @@ class QuorumDataController {
         termId: vote.termId,
         type: vote.type
       };
-
-      console.log(`📋 Bill Info: ${JSON.stringify(billInfo)}`);
 
       const { bill_type } = data.related_bill || {};
       const voteTypes = {
@@ -1177,72 +1160,31 @@ class QuorumDataController {
       };
 
       const voteConfig = voteTypes[bill_type];
-      if (!voteConfig) {
-        console.log(`❌ Unsupported bill type: ${bill_type} for bill: ${quorumId}`);
-        return;
-      }
-
-      console.log(`📊 Processing ${voteConfig.type} votes for bill: ${quorumId}`);
+      if (!voteConfig) return;
 
       const { personModel, dataModel, idField, refField, type } = voteConfig;
       const votes = ["yea", "nay", "present", "other"];
 
-      // First get all the necessary person data in a single query instead of individual queries
       const voteUris = votes.flatMap((score) => data[`${score}_votes`] || []);
       const personIds = voteUris
         .map((uri) => uri?.replace(/\/$/, "").split("/").pop())
         .filter(Boolean);
 
-      if (!personIds.length) {
-        console.log(`ℹ️ No votes found for bill: ${quorumId}`);
-        return;
-      }
-
-      console.log(`👥 Found ${personIds.length} voters for bill: ${quorumId}`);
+      if (!personIds.length) return;
 
       const persons = await personModel.find({
         [refField]: { $in: personIds },
       });
 
-      console.log(`🔍 Found ${persons.length} matching ${type}s in database`);
+      const personMap = Object.fromEntries(persons.map((p) => [p[refField], p]));
 
-      const personMap = Object.fromEntries(
-        persons.map((p) => [p[refField], p])
-      );
-
-      // Log detailed information about each representative
-      console.log(`\n📋 ${type} VOTER DETAILS FOR BILL ${quorumId}:`);
-      console.log('='.repeat(60));
-
-      // Batch updates by vote type
       const updates = [];
-      const voteCounts = { yea: 0, nay: 0, present: 0, other: 0 };
-
       for (const score of votes) {
         const uris = data[`${score}_votes`] || [];
-        voteCounts[score] = uris.length;
-
         for (const uri of uris) {
           const personId = uri?.replace(/\/$/, "").split("/").pop();
           const person = personMap[personId];
-
-          if (!person) {
-            console.log(`❓ Unknown ${type.toLowerCase()} with ID: ${personId}`);
-            continue;
-          }
-
-          // Log representative details
-          console.log(`\n🎯 ${type} VOTE: ${score.toUpperCase()}`);
-          console.log(`   ID: ${person[refField]}`);
-          console.log(`   Name: ${person.name}`);
-          console.log(`   Party: ${person.party}`);
-          if (type === "Representative") {
-            console.log(`   District: ${person.district}`);
-          } else {
-            console.log(`   State: ${person.state}`);
-          }
-          console.log(`   Database ID: ${person._id}`);
-          console.log(`   Vote: ${score}`);
+          if (!person) continue;
 
           updates.push({
             filter: {
@@ -1254,7 +1196,6 @@ class QuorumDataController {
                 votesScore: {
                   voteId: vote._id,
                   score,
-                  // Add bill information to track which term and bill this vote came from
                   billInfo: {
                     quorumId: billInfo.quorumId,
                     title: billInfo.title,
@@ -1273,41 +1214,68 @@ class QuorumDataController {
         }
       }
 
-      // Log vote summary
-      console.log('\n📊 VOTE SUMMARY:');
-      console.log('='.repeat(30));
-      console.log(`Total votes: ${Object.values(voteCounts).reduce((a, b) => a + b, 0)}`);
-      console.log(`Yea: ${voteCounts.yea}`);
-      console.log(`Nay: ${voteCounts.nay}`);
-      console.log(`Present: ${voteCounts.present}`);
-      console.log(`Other: ${voteCounts.other}`);
-      console.log(`Matching ${type}s found: ${persons.length}`);
-      console.log(`Updates to perform: ${updates.length}`);
-      console.log(`Bill Congress: ${billInfo.congress}, Term: ${billInfo.termId}`);
-
-      // Perform updates in batches
       const BATCH_SIZE = 50;
-      let successfulUpdates = 0;
-      let failedUpdates = 0;
-
       for (let i = 0; i < updates.length; i += BATCH_SIZE) {
         const batch = updates.slice(i, i + BATCH_SIZE);
 
-        const batchResults = await Promise.allSettled(
+        await Promise.allSettled(
           batch.map(async (update) => {
             try {
-              // Update the RepresentativeData document (votesScore with bill info)
-              const result = await dataModel.updateOne(
-                update.filter,
-                update.update,
-                { upsert: true }
-              );
-              // Create the editedFields object with bill title as name
-              // Update the main person document only if it's a Representative
-              const repUpdatePayload = {};
+              if (type === "Representative" && update.personData.publishStatus === "published") {
+                try {
+                  const currentRep = await Representative.findById(update.personData._id);
+                  const currentRepData = await RepresentativeData.find({
+                    houseId: update.personData._id
+                  });
+
+                  if (currentRep && currentRepData) {
+                    // ✅ Only log here
+                    console.log("\n📸 SNAPSHOT LOGGING BEFORE HISTORY");
+                    console.log("Representative Info:", JSON.stringify(currentRep, null, 2));
+                    console.log("RepresentativeData Info:", JSON.stringify(currentRepData, null, 2));
+
+                    const snapshot = {
+                      oldData: {
+                        repId: currentRep.repId,
+                        district: currentRep.district,
+                        name: currentRep.name,
+                        party: currentRep.party,
+                        photo: currentRep.photo,
+                        editedFields: currentRep.editedFields || [],
+                        fieldEditors: currentRep.fieldEditors || {},
+                        modifiedAt: currentRep.modifiedAt,
+                        modifiedBy: currentRep.modifiedBy,
+                        publishStatus: currentRep.publishStatus,
+                        snapshotSource: currentRep.snapshotSource,
+                        status: currentRep.status,
+                        representativeData: currentRepData.map(doc => doc.toObject())
+                      },
+                      timestamp: new Date().toISOString(),
+                      actionType: "update",
+                      _id: new mongoose.Types.ObjectId()
+                    };
+
+                    await Representative.findByIdAndUpdate(
+                      update.personData._id,
+                      {
+                        $push: {
+                          history: {
+                            $each: [snapshot],
+                            $slice: -50
+                          }
+                        }
+                      },
+                      { new: true }
+                    );
+                  }
+                } catch (snapshotError) {
+                  console.error(`❌ Failed to take snapshot for ${update.personData.name}:`, snapshotError.message);
+                }
+              }
+
+              await dataModel.updateOne(update.filter, update.update, { upsert: true });
 
               if (type === "Representative") {
-                // Create the editedFields object with bill title as name
                 const editedFieldEntry = {
                   field: "votesScore",
                   name: `${update.billInfo.title}`,
@@ -1315,81 +1283,49 @@ class QuorumDataController {
                   updatedAt: new Date().toISOString()
                 };
 
-                // Normalize bill title into a safe key
                 const normalizedTitle = update.billInfo.title
                   .replace(/[^a-zA-Z0-9]+/g, "_")
-                  .replace(/^_+|_+$/g, ""); // trim leading/trailing underscores
+                  .replace(/^_+|_+$/g, "");
 
                 const fieldKey = `votesScore_${normalizedTitle}`;
 
-                repUpdatePayload.$push = {
-                  editedFields: {
-                    $each: [editedFieldEntry],
-                    $slice: -20, // Keep only the last 20 edits
+                const repUpdatePayload = {
+                  $push: {
+                    editedFields: {
+                      $each: [editedFieldEntry],
+                      $slice: -20,
+                    },
+                  },
+                  $set: {
+                    updatedAt: new Date(),
+                    modifiedAt: new Date(),
+                    publishStatus: "under review",
+                    snapshotSource: "edited",
+                    [`fieldEditors.${fieldKey}`]: {
+                      editorId: editorData.editorId,
+                      editorName: editorData.editorName,
+                      editedAt: editorData.editedAt,
+                    },
                   },
                 };
 
-                repUpdatePayload.$set = {
-                  updatedAt: new Date(),
-                  publishStatus: "under review",
-                  [`fieldEditors.${fieldKey}`]: {
-                    editorId: editorData.editorId,
-                    editorName: editorData.editorName,
-                    editedAt: editorData.editedAt,
-                  },
-                };
-              }
-
-              // Only perform update if payload is not empty
-              if (Object.keys(repUpdatePayload).length > 0) {
-                const repUpdateResult = await personModel.updateOne(
+                await personModel.updateOne(
                   { _id: update.personData._id },
                   repUpdatePayload
                 );
-
-                console.log(`   ↳ Representative update: ${repUpdateResult.modifiedCount} modified`);
               }
-
-
-              // Log successful update with detailed tracking info
-              console.log(`✅ Updated ${type} ${update.personData.name} (${update.personData[refField]})`);
-              console.log(`   ↳ Data: ${result.modifiedCount} modified, ${result.upsertedCount} upserted`);
-              console.log(`   ↳ Representative: ${repUpdateResult.modifiedCount} modified`);
-              console.log(`   ↳ Vote: ${update.voteScore}`);
-              console.log(`   ↳ Bill: ${update.billInfo.title} (${update.billInfo.quorumId})`);
-              console.log(`   ↳ Congress: ${update.billInfo.congress}, Term: ${update.billInfo.termId}`);
-              console.log(`   ↳ Added 'votesScore' to editedFields for tracking`);
-              console.log(`   ↳ Editor: ${editorData.editorName} (${editorData.editorId})`);
-
-              return { dataResult: result, repResult: repUpdateResult };
             } catch (error) {
               console.error(`❌ Failed to update ${type} ${update.personData.name}:`, error.message);
-              throw error;
             }
           })
         );
-
-        batchResults.forEach(result => {
-          if (result.status === 'fulfilled') {
-            successfulUpdates++;
-          } else {
-            failedUpdates++;
-          }
-        });
       }
-
-      console.log(`\n🎉 UPDATE COMPLETE FOR BILL ${quorumId}:`);
-      console.log(`   Successful updates: ${successfulUpdates}`);
-      console.log(`   Failed updates: ${failedUpdates}`);
-      console.log(`   Total processed: ${successfulUpdates + failedUpdates}`);
-      console.log(`   Bill: ${billInfo.title}`);
-      console.log(`   Congress: ${billInfo.congress}, Term: ${billInfo.termId}`);
-
     } catch (err) {
       console.error(`💥 Vote score update failed for bill ${quorumId}:`, err.message);
-      console.error('Error stack:', err.stack);
+      console.error("Error stack:", err.stack);
     }
   }
+
 
   // Method to check data status
   async getDataStatus(req, res) {
