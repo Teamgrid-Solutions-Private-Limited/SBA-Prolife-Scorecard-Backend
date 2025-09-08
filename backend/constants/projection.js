@@ -1,4 +1,5 @@
 exports.VOTE_PUBLIC_FIELDS = {
+  quroumId: 1,
   type: 1,
   title: 1,
   description: 1,

@@ -4,11 +4,10 @@ const activitySchema = new mongoose.Schema(
   {
     type: { type: String, enum: ["senate", "house"] },
     title: { type: String, required: true },
-     activityquorumId: String,
+    activityquorumId: String,
     shortDesc: String,
-    longDesc: String,
     rollCall: String,
-    readMore: String,
+    readMore: { type: String, default: "" },
     date: Date,
     congress: { type: String },
     termId: { type: mongoose.Schema.Types.ObjectId, ref: "terms" },
@@ -48,14 +47,14 @@ const activitySchema = new mongoose.Schema(
         },
         actionType: {
           type: String,
-          enum: ['update', 'delete'],
-          default: 'update',
+          enum: ["update", "delete"],
+          default: "update",
         },
       },
     ],
     snapshotSource: {
       type: String, // 'deleted' | 'edited'
-      enum: ['deleted_pending_update', 'edited'],
+      enum: ["deleted_pending_update", "edited"],
     },
     modifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
     modifiedAt: Date,
