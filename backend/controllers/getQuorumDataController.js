@@ -1231,8 +1231,8 @@ class QuorumDataController {
                     const currentPersonData = await dataModel.find({
                       [idField]: update.personData._id
                     });
-                    console.log("Taking snapshot for:", currentPerson.name);
-                    console.log("Current person data count:", currentPersonData);
+                    // console.log("Taking snapshot for:", currentPerson.name);
+                    // console.log("Current person data count:", currentPersonData);
                     const snapshotData = {
                       [refField]: currentPerson[refField],
                       name: currentPerson.name,

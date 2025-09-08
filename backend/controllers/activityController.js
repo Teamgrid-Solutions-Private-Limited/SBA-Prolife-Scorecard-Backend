@@ -65,8 +65,8 @@ async function saveCosponsorshipToLegislator({
     const currentPersonData = await dataModel.find({
       [personField]: localPerson._id
     });
-    console.log("currentPerson:", currentPerson.name);
-console.log("currentPersonData:", currentPersonData);
+    // console.log("currentPerson:", currentPerson.name);
+// console.log("currentPersonData:", currentPersonData);
     if (currentPerson && currentPersonData.length > 0) {
       // Build snapshot object
       const snapshotData = {
