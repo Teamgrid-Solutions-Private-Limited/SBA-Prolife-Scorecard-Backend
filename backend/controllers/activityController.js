@@ -29,22 +29,21 @@ async function saveCosponsorshipToLegislator({
   title
 }) {
   personId = String(personId); // Force string match
-  // console.log("editorInfo in save:", editorInfo);
-  // console.log("title in save:", title);
 
   let localPerson = await Senator.findOne({ senatorId: personId });
   let dataModel = SenatorData;
   let personField = "senateId";
+  let personModel = Senator;
   let roleLabel = "Senator";
 
   if (!localPerson) {
     localPerson = await Representative.findOne({ repId: personId });
     if (!localPerson) {
-      // console.warn(` No local legislator found for Quorum personId ${personId}`);
       return false;
     }
     dataModel = RepresentativeData;
     personField = "houseId";
+    personModel = Representative;
     roleLabel = "Representative";
   }
 
@@ -59,48 +58,57 @@ async function saveCosponsorshipToLegislator({
     return false;
   }
 
-  await dataModel.findOneAndUpdate(
-    filter,
-    {
-      $push: { activitiesScore: { activityId, score } },
-    },
-    { upsert: true, new: true }
-  );
-   // Only update Representative document
- if (roleLabel === "Representative") {
-  //  Check if rep is published before updating
-  if (localPerson.publishStatus === "published") {
-    const currentRep = await Representative.findById(localPerson._id);
-    const currentRepData = await RepresentativeData.find({
-      houseId: localPerson._id
-    });
 
-    if (currentRep && currentRepData.length > 0) {
-        
+  // Only update person document if they are published
+  if (localPerson.publishStatus === "published") {
+    const currentPerson = await personModel.findById(localPerson._id);
+    const currentPersonData = await dataModel.find({
+      [personField]: localPerson._id
+    });
+    console.log("currentPerson:", currentPerson.name);
+console.log("currentPersonData:", currentPersonData);
+    if (currentPerson && currentPersonData.length > 0) {
       // Build snapshot object
+      const snapshotData = {
+        [personField === "senateId" ? "senatorId" : "repId"]: currentPerson[personField === "senateId" ? "senatorId" : "repId"],
+        name: currentPerson.name,
+        party: currentPerson.party,
+        photo: currentPerson.photo,
+        editedFields: currentPerson.editedFields || [],
+        fieldEditors: currentPerson.fieldEditors || {},
+        modifiedAt: currentPerson.modifiedAt,
+        modifiedBy: currentPerson.modifiedBy,
+        publishStatus: currentPerson.publishStatus,
+        snapshotSource: currentPerson.snapshotSource,
+        status: currentPerson.status
+      };
+
+      // Add district field only for Representatives
+      if (roleLabel === "Representative" && currentPerson.district) {
+        snapshotData.district = currentPerson.district;
+      }
+
+      // Add state field for Senators
+      if (roleLabel === "Senator" && currentPerson.state) {
+        snapshotData.state = currentPerson.state;
+      }
+
+      // Add the appropriate data reference
+      if (roleLabel === "Representative") {
+        snapshotData.representativeData = currentPersonData.map(doc => doc.toObject());
+      } else if (roleLabel === "Senator") {
+        snapshotData.senatorData = currentPersonData.map(doc => doc.toObject());
+      }
+
       const snapshot = {
-        oldData: {
-          repId: currentRep.repId,
-          district: currentRep.district,
-          name: currentRep.name,
-          party: currentRep.party,
-          photo: currentRep.photo,
-          editedFields: currentRep.editedFields || [],
-          fieldEditors: currentRep.fieldEditors || {},
-          modifiedAt: currentRep.modifiedAt,
-          modifiedBy: currentRep.modifiedBy,
-          publishStatus: currentRep.publishStatus,
-          snapshotSource: currentRep.snapshotSource,
-          status: currentRep.status,
-          representativeData: currentRepData.map(doc => doc.toObject())
-        },
+        oldData: snapshotData,
         timestamp: new Date().toISOString(),
         actionType: "update",
         _id: new mongoose.Types.ObjectId()
       };
 
       // Save snapshot in history (limit to last 50)
-      await Representative.findByIdAndUpdate(
+      await personModel.findByIdAndUpdate(
         localPerson._id,
         {
           $push: {
@@ -114,7 +122,14 @@ async function saveCosponsorshipToLegislator({
     }
   }
 
-  //  Proceed with your normal editedFields/fieldEditors update
+  await dataModel.findOneAndUpdate(
+    filter,
+    {
+      $push: { activitiesScore: { activityId, score } },
+    },
+    { upsert: true, new: true }
+  );
+  // Proceed with normal editedFields/fieldEditors update for both Senators and Representatives
   const editedFieldEntry = {
     field: "activitiesScore",
     name: `${title}`,
@@ -127,7 +142,7 @@ async function saveCosponsorshipToLegislator({
     .replace(/^_+|_+$/g, "");
   const fieldKey = `activitiesScore_${normalizedTitle}`;
 
-  await Representative.updateOne(
+  await personModel.updateOne(
     { _id: localPerson._id },
     {
       $push: {
@@ -139,18 +154,149 @@ async function saveCosponsorshipToLegislator({
       $set: {
         updatedAt: new Date(),
         publishStatus: "under review",
+        snapshotSource: "edited",
         [`fieldEditors.${fieldKey}`]: {
+          editorId: editorInfo?.editorId || "system-auto",
           editorName: editorInfo?.editorName || "System Auto-Update",
-          editedAt: new Date().toISOString()
+          editedAt: editorInfo?.editedAt || new Date().toISOString()
         }
       }
     }
   );
-}
-
 
   return true;
 }
+
+// async function saveCosponsorshipToLegislator({
+//   personId,
+//   activityId,
+//   score = "yes",
+//   editorInfo,
+//   title
+// }) {
+//   personId = String(personId); // Force string match
+//   // console.log("editorInfo in save:", editorInfo);
+//   // console.log("title in save:", title);
+
+//   let localPerson = await Senator.findOne({ senatorId: personId });
+//   let dataModel = SenatorData;
+//   let personField = "senateId";
+//   let roleLabel = "Senator";
+
+//   if (!localPerson) {
+//     localPerson = await Representative.findOne({ repId: personId });
+//     if (!localPerson) {
+//       // console.warn(` No local legislator found for Quorum personId ${personId}`);
+//       return false;
+//     }
+//     dataModel = RepresentativeData;
+//     personField = "houseId";
+//     roleLabel = "Representative";
+//   }
+
+//   const filter = { [personField]: localPerson._id };
+//   const existing = await dataModel.findOne(filter);
+
+//   const alreadyLinked = existing?.activitiesScore?.some(
+//     (entry) => String(entry.activityId) === String(activityId)
+//   );
+
+//   if (alreadyLinked) {
+//     return false;
+//   }
+
+//   await dataModel.findOneAndUpdate(
+//     filter,
+//     {
+//       $push: { activitiesScore: { activityId, score } },
+//     },
+//     { upsert: true, new: true }
+//   );
+//    // Only update Representative document
+//  if (roleLabel === "Representative") {
+//   //  Check if rep is published before updating
+//   if (localPerson.publishStatus === "published") {
+//     const currentRep = await Representative.findById(localPerson._id);
+//     const currentRepData = await RepresentativeData.find({
+//       houseId: localPerson._id
+//     });
+
+//     if (currentRep && currentRepData.length > 0) {
+        
+//       // Build snapshot object
+//       const snapshot = {
+//         oldData: {
+//           repId: currentRep.repId,
+//           district: currentRep.district,
+//           name: currentRep.name,
+//           party: currentRep.party,
+//           photo: currentRep.photo,
+//           editedFields: currentRep.editedFields || [],
+//           fieldEditors: currentRep.fieldEditors || {},
+//           modifiedAt: currentRep.modifiedAt,
+//           modifiedBy: currentRep.modifiedBy,
+//           publishStatus: currentRep.publishStatus,
+//           snapshotSource: currentRep.snapshotSource,
+//           status: currentRep.status,
+//           representativeData: currentRepData.map(doc => doc.toObject())
+//         },
+//         timestamp: new Date().toISOString(),
+//         actionType: "update",
+//         _id: new mongoose.Types.ObjectId()
+//       };
+
+//       // Save snapshot in history (limit to last 50)
+//       await Representative.findByIdAndUpdate(
+//         localPerson._id,
+//         {
+//           $push: {
+//             history: {
+//               $each: [snapshot],
+//               $slice: -50
+//             }
+//           }
+//         }
+//       );
+//     }
+//   }
+
+//   //  Proceed with your normal editedFields/fieldEditors update
+//   const editedFieldEntry = {
+//     field: "activitiesScore",
+//     name: `${title}`,
+//     fromQuorum: true,
+//     updatedAt: new Date().toISOString()
+//   };
+
+//   const normalizedTitle = title
+//     .replace(/[^a-zA-Z0-9]+/g, "_")
+//     .replace(/^_+|_+$/g, "");
+//   const fieldKey = `activitiesScore_${normalizedTitle}`;
+
+//   await Representative.updateOne(
+//     { _id: localPerson._id },
+//     {
+//       $push: {
+//         editedFields: {
+//           $each: [editedFieldEntry],
+//           $slice: -20
+//         }
+//       },
+//       $set: {
+//         updatedAt: new Date(),
+//         publishStatus: "under review",
+//         [`fieldEditors.${fieldKey}`]: {
+//           editorName: editorInfo?.editorName || "System Auto-Update",
+//           editedAt: new Date().toISOString()
+//         }
+//       }
+//     }
+//   );
+// }
+
+
+//   return true;
+// }
 
 class activityController {
   // Create a new activity with file upload for readMore

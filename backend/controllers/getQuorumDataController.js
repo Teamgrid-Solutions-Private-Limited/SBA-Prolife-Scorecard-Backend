@@ -1221,40 +1221,53 @@ class QuorumDataController {
         await Promise.allSettled(
           batch.map(async (update) => {
             try {
-              if (type === "Representative" && update.personData.publishStatus === "published") {
+              // Check if person is published before proceeding
+              if (update.personData.publishStatus === "published") {
                 try {
-                  const currentRep = await Representative.findById(update.personData._id);
-                  const currentRepData = await RepresentativeData.find({
-                    houseId: update.personData._id
-                  });
+                  const currentPerson = await personModel.findById(update.personData._id);
 
-                  if (currentRep && currentRepData) {
-                    //  Only log here
-                    // console.log("Representative Info:", JSON.stringify(currentRep, null, 2));
-                    // console.log("RepresentativeData Info:", JSON.stringify(currentRepData, null, 2));
+                  // Only create history if the person is currently published
+                  if (currentPerson && currentPerson.publishStatus === "published") {
+                    const currentPersonData = await dataModel.find({
+                      [idField]: update.personData._id
+                    });
+                    console.log("Taking snapshot for:", currentPerson.name);
+                    console.log("Current person data count:", currentPersonData);
+                    const snapshotData = {
+                      [refField]: currentPerson[refField],
+                      name: currentPerson.name,
+                      party: currentPerson.party,
+                      photo: currentPerson.photo,
+                      editedFields: currentPerson.editedFields || [],
+                      fieldEditors: currentPerson.fieldEditors || {},
+                      modifiedAt: currentPerson.modifiedAt,
+                      modifiedBy: currentPerson.modifiedBy,
+                      publishStatus: currentPerson.publishStatus,
+                      snapshotSource: currentPerson.snapshotSource,
+                      status: currentPerson.status
+                    };
+
+                    // Add district field only for Representatives
+                    if (type === "Representative" && currentPerson.district) {
+                      snapshotData.district = currentPerson.district;
+                    }
+
+                    // Add the appropriate data reference
+                    if (type === "Representative") {
+                      snapshotData.representativeData = currentPersonData.map(doc => doc.toObject());
+                    } else if (type === "Senator") {
+                      snapshotData.senatorData = currentPersonData.map(doc => doc.toObject());
+                    }
 
                     const snapshot = {
-                      oldData: {
-                        repId: currentRep.repId,
-                        district: currentRep.district,
-                        name: currentRep.name,
-                        party: currentRep.party,
-                        photo: currentRep.photo,
-                        editedFields: currentRep.editedFields || [],
-                        fieldEditors: currentRep.fieldEditors || {},
-                        modifiedAt: currentRep.modifiedAt,
-                        modifiedBy: currentRep.modifiedBy,
-                        publishStatus: currentRep.publishStatus,
-                        snapshotSource: currentRep.snapshotSource,
-                        status: currentRep.status,
-                        representativeData: currentRepData.map(doc => doc.toObject())
-                      },
+                      oldData: snapshotData,
                       timestamp: new Date().toISOString(),
                       actionType: "update",
                       _id: new mongoose.Types.ObjectId()
                     };
 
-                    await Representative.findByIdAndUpdate(
+                    // Create history snapshot in a single operation
+                    await personModel.findByIdAndUpdate(
                       update.personData._id,
                       {
                         $push: {
@@ -1272,9 +1285,11 @@ class QuorumDataController {
                 }
               }
 
+              // Update the data model (votesScore)
               await dataModel.updateOne(update.filter, update.update, { upsert: true });
 
-              if (type === "Representative") {
+              // Update person document for both Senators and Representatives
+              if (type === "Senator" || type === "Representative") {
                 const editedFieldEntry = {
                   field: "votesScore",
                   name: `${update.billInfo.title}`,
@@ -1288,7 +1303,7 @@ class QuorumDataController {
 
                 const fieldKey = `votesScore_${normalizedTitle}`;
 
-                const repUpdatePayload = {
+                const personUpdatePayload = {
                   $push: {
                     editedFields: {
                       $each: [editedFieldEntry],
@@ -1308,9 +1323,17 @@ class QuorumDataController {
                   },
                 };
 
-                await personModel.updateOne(
-                  { _id: update.personData._id },
-                  repUpdatePayload
+                // Update person WITHOUT triggering additional history creation
+                // Use findByIdAndUpdate to avoid triggering pre-save hooks if possible
+                await personModel.findByIdAndUpdate(
+                  update.personData._id,
+                  personUpdatePayload,
+                  {
+                    new: true,
+                    // If your model has pre-save hooks that create history, you might need to:
+                    // 1. Temporarily disable the hook, or
+                    // 2. Use updateOne instead which might not trigger pre-save hooks
+                  }
                 );
               }
             } catch (error) {
@@ -1324,7 +1347,6 @@ class QuorumDataController {
       console.error("Error stack:", err.stack);
     }
   }
-
 
   // Method to check data status
   async getDataStatus(req, res) {
