@@ -275,6 +275,10 @@ class senatorDataController {
           populate: { path: "termId" }, // also populate vote's termId
         })
         .populate("activitiesScore.activityId")
+        .populate({
+        path: "pastVotesScore.voteId",
+        populate: { path: "termId" }, // also populate pastVote's termId
+      })
         .lean();
 
       if (!senatorData.length) {
