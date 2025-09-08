@@ -17,7 +17,7 @@ class houseDataController {
         votesScore,
         activitiesScore,
       } = req.body;
-
+      console.log("termId:", termId);
       //  Always clean invalid records first (no termId, null, or empty)
       //  Use separate deletes to avoid Mongoose ObjectId casting on empty strings
       let totalDeleted = 0;

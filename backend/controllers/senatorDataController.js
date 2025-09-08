@@ -13,6 +13,7 @@ class senatorDataController {
         rating,
         votesScore,
         activitiesScore,
+         pastVotesScore = [],
       } = req.body;
 
       // Validate ObjectId format first (cheaper operation)
@@ -79,6 +80,7 @@ class senatorDataController {
         rating,
         votesScore,
         activitiesScore,
+         pastVotesScore ,
       });
 
       // Use lean() for better performance if you don't need full Mongoose document

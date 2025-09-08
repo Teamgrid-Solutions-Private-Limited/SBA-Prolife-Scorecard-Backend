@@ -8,7 +8,7 @@ const Bill = require("../models/voteSchema");
 const SenatorData = require("../models/senatorDataSchema");
 const RepresentativeData = require("../models/representativeDataSchema");
 const ActivityController = require("../controllers/activityController");
-
+const mongoose = require("mongoose");
 // Circuit breaker implementation
 class CircuitBreaker {
   constructor(host) {
@@ -303,7 +303,7 @@ class QuorumDataController {
     if (
       cache?.data &&
       now - cache.timestamp <
-        (this._CACHE_TTL[type] || cacheConfig.CACHE_TTL.DEFAULT)
+      (this._CACHE_TTL[type] || cacheConfig.CACHE_TTL.DEFAULT)
     ) {
       console.log(
         `Using valid cache for ${cacheKey}, items: ${cache.data.length}`
@@ -355,8 +355,8 @@ class QuorumDataController {
         ...(type === "senator"
           ? { current: true }
           : type === "representative"
-          ? { current: true, most_recent_role_type: 2 }
-          : {}),
+            ? { current: true, most_recent_role_type: 2 }
+            : {}),
       };
 
       // Queue the initial API request
@@ -418,8 +418,7 @@ class QuorumDataController {
                 })
                 .then((res) => {
                   console.log(
-                    `Received page ${page + i} for ${type}, items: ${
-                      res.data?.objects?.length || 0
+                    `Received page ${page + i} for ${type}, items: ${res.data?.objects?.length || 0
                     }`
                   );
                   return res.data?.objects || [];
@@ -598,8 +597,7 @@ class QuorumDataController {
     ]);
 
     console.log(
-      `Loaded state map (${
-        Object.keys(stateMap).length
+      `Loaded state map (${Object.keys(stateMap).length
       } states) and district map (${Object.keys(districtMap).length} districts)`
     );
 
@@ -607,29 +605,27 @@ class QuorumDataController {
       senator: (item) =>
         item.title === "US Senator"
           ? {
-              senatorId: item.id,
-              name: `Sen. ${item.firstname || ""} ${item.middlename || ""} ${
-                item.lastname || ""
+            senatorId: item.id,
+            name: `Sen. ${item.firstname || ""} ${item.middlename || ""} ${item.lastname || ""
               }`.trim(),
-              party: partyMap[item.most_recent_party] || "Unknown",
-              photo: item.high_quality_image_url || item.image_url || null,
-              state: stateMap[item.most_recent_state] || "Unknown",
-            }
+            party: partyMap[item.most_recent_party] || "Unknown",
+            photo: item.high_quality_image_url || item.image_url || null,
+            state: stateMap[item.most_recent_state] || "Unknown",
+          }
           : null,
 
       representative: (item) =>
         item.title === "US Representative"
           ? {
-              repId: item.id,
-              name: `Rep. ${item.firstname || ""} ${item.middlename || ""} ${
-                item.lastname || ""
+            repId: item.id,
+            name: `Rep. ${item.firstname || ""} ${item.middlename || ""} ${item.lastname || ""
               }`.trim(),
-              party: partyMap[item.most_recent_party] || "Unknown",
-              photo: item.high_quality_image_url || item.image_url || null,
-              district: formatDistrict(
-                districtMap[item.most_recent_district] || "Unknown"
-              ),
-            }
+            party: partyMap[item.most_recent_party] || "Unknown",
+            photo: item.high_quality_image_url || item.image_url || null,
+            district: formatDistrict(
+              districtMap[item.most_recent_district] || "Unknown"
+            ),
+          }
           : null,
 
       bills: (item) => ({
@@ -652,8 +648,7 @@ class QuorumDataController {
       // Log progress for large datasets
       if (data.length > 500 && i % 500 === 0) {
         console.log(
-          `Filtered ${i + batch.length}/${
-            data.length
+          `Filtered ${i + batch.length}/${data.length
           } ${type} items so far, valid: ${filtered.length}`
         );
       }
@@ -693,7 +688,7 @@ class QuorumDataController {
       const isCacheValid =
         cache?.data &&
         now - cache.timestamp <
-          (this._CACHE_TTL[type] || cacheConfig.CACHE_TTL.DEFAULT);
+        (this._CACHE_TTL[type] || cacheConfig.CACHE_TTL.DEFAULT);
 
       if (isCacheValid && cache.data.length > 0) {
         // We have valid cached data - fast path
@@ -938,14 +933,14 @@ class QuorumDataController {
   //             const year = introducedDate.getUTCFullYear();
   //             const congress = String(Math.floor((year - 1789) / 2) + 1);
 
-  //             // ⏭️ Check for existing activities
+  //             //  Check for existing activities
   //             const existing = await activitySchema.find({
   //               quorumId: bill.quorumId,
   //               congress,
   //             });
   //             if (existing.length > 0) {
   //               console.log(
-  //                 `⏭️ Skipping bill ${bill.quorumId} — already has ${existing.length} activity(ies).`
+  //                 ` Skipping bill ${bill.quorumId} — already has ${existing.length} activity(ies).`
   //               );
   //               continue;
   //             }
@@ -965,7 +960,7 @@ class QuorumDataController {
   //             );
   //           } catch (err) {
   //             console.warn(
-  //               `❌ Cosponsorship fetch failed for ${bill.quorumId}:`,
+  //               ` Cosponsorship fetch failed for ${bill.quorumId}:`,
   //               err.message
   //             );
   //           }
@@ -982,7 +977,7 @@ class QuorumDataController {
 
   async saveBills(req, res) {
     try {
-      const { bills } = req.body;
+      const { bills, editorInfo } = req.body;
       if (!Array.isArray(bills) || bills.length === 0) {
         return res.status(400).json({ error: "Invalid bills" });
       }
@@ -1006,7 +1001,7 @@ class QuorumDataController {
         // Upsert
         await model.updateOne(
           { [idField]: bill[idField] },
-          { $setOnInsert: bill }, // ✅ Only set congress/termId when inserting
+          { $setOnInsert: bill }, //  Only set congress/termId when inserting
           { upsert: true }
         );
 
@@ -1030,14 +1025,14 @@ class QuorumDataController {
           for (let i = 0; i < saved.length; i += CHUNK_SIZE) {
             const chunk = saved.slice(i, i + CHUNK_SIZE);
             await Promise.all(
-              chunk.map((bill) => this.updateVoteScore(bill.quorumId))
+              chunk.map((bill) => this.updateVoteScore(bill.quorumId, editorInfo))
             );
           }
 
           for (const bill of saved) {
             try {
               console.log(
-                `→ Fetching cosponsors for bill ${bill.quorumId} (${bill.title})...`
+                ` Fetching cosponsors for bill ${bill.quorumId} (${bill.title})...`
               );
 
               const introduced = bill.date
@@ -1048,11 +1043,12 @@ class QuorumDataController {
                 String(bill.quorumId),
                 String(bill.title || "Untitled Bill"),
                 introduced,
-                bill.congress
+                bill.congress,
+                editorInfo
               );
             } catch (err) {
               console.warn(
-                `❌ Cosponsorship fetch failed for ${bill.quorumId}:`,
+                ` Cosponsorship fetch failed for ${bill.quorumId}:`,
                 err.message
               );
             }
@@ -1112,9 +1108,14 @@ class QuorumDataController {
     }
   }
 
-  async updateVoteScore(quorumId) {
+  async updateVoteScore(quorumId, editorInfo) {
     try {
-      // Queue the API request
+      const editorData = editorInfo || {
+        editorId: "system-auto",
+        editorName: "System Auto-Update",
+        editedAt: new Date().toISOString()
+      };
+
       const fetchTask = () =>
         apiClient.get(process.env.VOTE_API_URL, {
           params: {
@@ -1132,6 +1133,14 @@ class QuorumDataController {
       const vote = await Bill.findOne({ quorumId });
       if (!vote) return;
 
+      const billInfo = {
+        quorumId: vote.quorumId,
+        title: vote.title,
+        congress: vote.congress,
+        termId: vote.termId,
+        type: vote.type
+      };
+
       const { bill_type } = data.related_bill || {};
       const voteTypes = {
         senate_bill: {
@@ -1139,22 +1148,23 @@ class QuorumDataController {
           dataModel: SenatorData,
           idField: "senateId",
           refField: "senatorId",
+          type: "Senator"
         },
         house_bill: {
           personModel: Representative,
           dataModel: RepresentativeData,
           idField: "houseId",
           refField: "repId",
+          type: "Representative"
         },
       };
 
       const voteConfig = voteTypes[bill_type];
       if (!voteConfig) return;
 
-      const { personModel, dataModel, idField } = voteConfig;
+      const { personModel, dataModel, idField, refField, type } = voteConfig;
       const votes = ["yea", "nay", "present", "other"];
 
-      // First get all the necessary person data in a single query instead of individual queries
       const voteUris = votes.flatMap((score) => data[`${score}_votes`] || []);
       const personIds = voteUris
         .map((uri) => uri?.replace(/\/$/, "").split("/").pop())
@@ -1163,15 +1173,12 @@ class QuorumDataController {
       if (!personIds.length) return;
 
       const persons = await personModel.find({
-        [voteConfig.refField]: { $in: personIds },
+        [refField]: { $in: personIds },
       });
-      const personMap = Object.fromEntries(
-        persons.map((p) => [p[voteConfig.refField], p])
-      );
 
-      // Batch updates by vote type
+      const personMap = Object.fromEntries(persons.map((p) => [p[refField], p]));
+
       const updates = [];
-
       for (const score of votes) {
         const uris = data[`${score}_votes`] || [];
         for (const uri of uris) {
@@ -1184,23 +1191,160 @@ class QuorumDataController {
               [idField]: person._id,
               "votesScore.voteId": { $ne: vote._id },
             },
-            update: { $push: { votesScore: { voteId: vote._id, score } } },
+            update: {
+              $push: {
+                votesScore: {
+                  voteId: vote._id,
+                  score,
+                  billInfo: {
+                    quorumId: billInfo.quorumId,
+                    title: billInfo.title,
+                    congress: billInfo.congress,
+                    termId: billInfo.termId,
+                    type: billInfo.type,
+                    voteDate: new Date().toISOString()
+                  }
+                }
+              }
+            },
+            personData: person,
+            voteScore: score,
+            billInfo: billInfo
           });
         }
       }
 
-      // Perform updates in batches
       const BATCH_SIZE = 50;
       for (let i = 0; i < updates.length; i += BATCH_SIZE) {
         const batch = updates.slice(i, i + BATCH_SIZE);
-        await Promise.all(
-          batch.map((update) =>
-            dataModel.updateOne(update.filter, update.update, { upsert: true })
-          )
+
+        await Promise.allSettled(
+          batch.map(async (update) => {
+            try {
+              // Check if person is published before proceeding
+              if (update.personData.publishStatus === "published") {
+                try {
+                  const currentPerson = await personModel.findById(update.personData._id);
+
+                  // Only create history if the person is currently published
+                  if (currentPerson && currentPerson.publishStatus === "published") {
+                    const currentPersonData = await dataModel.find({
+                      [idField]: update.personData._id
+                    });
+                    // console.log("Taking snapshot for:", currentPerson.name);
+                    // console.log("Current person data count:", currentPersonData);
+                    const snapshotData = {
+                      [refField]: currentPerson[refField],
+                      name: currentPerson.name,
+                      party: currentPerson.party,
+                      photo: currentPerson.photo,
+                      editedFields: currentPerson.editedFields || [],
+                      fieldEditors: currentPerson.fieldEditors || {},
+                      modifiedAt: currentPerson.modifiedAt,
+                      modifiedBy: currentPerson.modifiedBy,
+                      publishStatus: currentPerson.publishStatus,
+                      snapshotSource: currentPerson.snapshotSource,
+                      status: currentPerson.status
+                    };
+
+                    // Add district field only for Representatives
+                    if (type === "Representative" && currentPerson.district) {
+                      snapshotData.district = currentPerson.district;
+                    }
+
+                    // Add the appropriate data reference
+                    if (type === "Representative") {
+                      snapshotData.representativeData = currentPersonData.map(doc => doc.toObject());
+                    } else if (type === "Senator") {
+                      snapshotData.senatorData = currentPersonData.map(doc => doc.toObject());
+                    }
+
+                    const snapshot = {
+                      oldData: snapshotData,
+                      timestamp: new Date().toISOString(),
+                      actionType: "update",
+                      _id: new mongoose.Types.ObjectId()
+                    };
+
+                    // Create history snapshot in a single operation
+                    await personModel.findByIdAndUpdate(
+                      update.personData._id,
+                      {
+                        $push: {
+                          history: {
+                            $each: [snapshot],
+                            $slice: -50
+                          }
+                        }
+                      },
+                      { new: true }
+                    );
+                  }
+                } catch (snapshotError) {
+                  console.error(` Failed to take snapshot for ${update.personData.name}:`, snapshotError.message);
+                }
+              }
+
+              // Update the data model (votesScore)
+              await dataModel.updateOne(update.filter, update.update, { upsert: true });
+
+              // Update person document for both Senators and Representatives
+              if (type === "Senator" || type === "Representative") {
+                const editedFieldEntry = {
+                  field: "votesScore",
+                  name: `${update.billInfo.title}`,
+                  fromQuorum: true,
+                  updatedAt: new Date().toISOString()
+                };
+
+                const normalizedTitle = update.billInfo.title
+                  .replace(/[^a-zA-Z0-9]+/g, "_")
+                  .replace(/^_+|_+$/g, "");
+
+                const fieldKey = `votesScore_${normalizedTitle}`;
+
+                const personUpdatePayload = {
+                  $push: {
+                    editedFields: {
+                      $each: [editedFieldEntry],
+                      $slice: -20,
+                    },
+                  },
+                  $set: {
+                    updatedAt: new Date(),
+                    modifiedAt: new Date(),
+                    publishStatus: "under review",
+                    snapshotSource: "edited",
+                    [`fieldEditors.${fieldKey}`]: {
+                      editorId: editorData.editorId,
+                      editorName: editorData.editorName,
+                      editedAt: editorData.editedAt,
+                    },
+                  },
+                };
+
+                // Update person WITHOUT triggering additional history creation
+                // Use findByIdAndUpdate to avoid triggering pre-save hooks if possible
+                await personModel.findByIdAndUpdate(
+                  update.personData._id,
+                  personUpdatePayload,
+                  {
+                    new: true,
+                    // If your model has pre-save hooks that create history, you might need to:
+                    // 1. Temporarily disable the hook, or
+                    // 2. Use updateOne instead which might not trigger pre-save hooks
+                  }
+                );
+              }
+            } catch (error) {
+              console.error(` Failed to update ${type} ${update.personData.name}:`, error.message);
+            }
+          })
         );
       }
     } catch (err) {
-      console.error("Vote score update failed:", err.message);
+      console.error(` Vote score update failed for bill ${quorumId}:`, err.message);
+      console.error("Error stack:", err.stack);
     }
   }
 

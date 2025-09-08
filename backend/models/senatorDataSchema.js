@@ -26,6 +26,12 @@ const SenatorDataSchema = new mongoose.Schema(
         score: String,
       },
     ],
+     pastVotesScore: [
+      {
+        voteId: { type: mongoose.Schema.Types.ObjectId, ref: "votes" },
+        score: String,
+      },
+    ],
   },
   { timestamps: true }
 );
