@@ -12,7 +12,7 @@ class senatorDataController {
         rating,
         votesScore,
         activitiesScore,
-        summaries = [], // frontend summaries array
+        // summaries = [], // frontend summaries array
       } = req.body;
 
       // Create new senator data
@@ -24,7 +24,7 @@ class senatorDataController {
         rating,
         votesScore,
         activitiesScore,
-        summaries,
+        // summaries,
       });
 
       await newSenatorData.save();
