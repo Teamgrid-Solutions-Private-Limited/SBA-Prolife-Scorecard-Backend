@@ -37,7 +37,7 @@ class voteController {
 
         // Get the uploaded file path (null if no file is uploaded)
         const readMore = req.file
-          ? `/uploads/documents/${req.file.filename}`
+          ? `/${req.file.path.replace(/\\/g, "/").replace(/^\.\//, "")}` // Convert Windows path to URL format
           : null;
 
         // Create a new vote document
