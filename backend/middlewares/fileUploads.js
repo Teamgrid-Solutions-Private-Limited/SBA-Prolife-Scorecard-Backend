@@ -80,6 +80,7 @@ const storage = multer.diskStorage({
 
     } else if (
       file.mimetype === 'application/pdf' || 
+      file.mimetype === 'text/html' ||
       file.mimetype === 'application/msword' || 
       file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     ) {
