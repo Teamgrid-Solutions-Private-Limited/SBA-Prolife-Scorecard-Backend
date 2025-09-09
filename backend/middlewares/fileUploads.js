@@ -103,11 +103,12 @@ const storage = multer.diskStorage({
 const fileFilter = (req, file, cb) => {
   console.log('Uploading File Type:', file.mimetype); // Debugging
 
-  const allowedImageTypes = ['image/jpeg', 'image/png', 'image/jpg'];
+  const allowedImageTypes = ['image/jpeg', 'image/png', 'image/jpg' ];
   const allowedDocumentTypes = [
-    'application/pdf',
-    'application/msword',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "text/html",
   ];
 
   // Allow images and documents only

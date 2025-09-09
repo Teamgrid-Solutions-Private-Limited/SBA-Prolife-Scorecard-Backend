@@ -12,10 +12,14 @@ const SenatorSchema = new mongoose.Schema({
     enum: ["draft", "published", "under review"],
     default: "draft",
   },
-      editedFields: {
-      type: [String],
-      default: [],
-    },
+      editedFields: [{
+     field: [String],
+    name: String,
+        fromQuorum: {
+      type: Boolean,
+      default: false
+    }
+    }],
     fieldEditors: {
       type: Map,
       of: new mongoose.Schema(

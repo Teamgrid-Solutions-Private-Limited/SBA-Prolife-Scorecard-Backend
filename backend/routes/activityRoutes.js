@@ -5,7 +5,8 @@ const protectedKey = require('../middlewares/protectedKey');
 
 /* ---------- GET ROUTES ---------- */
 // All activities
-router.get('/activities/', protectedKey, AC.getAllActivity);
+router.get('/admin/activities/', protectedKey, AC.getAllActivities);
+router.get('/activities/', protectedKey, AC.AllActivity);
 // Single activity by ID (last in GET group)
 router.get('/activities/:id', protectedKey, AC.getActivityById);
  
