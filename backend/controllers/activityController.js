@@ -791,7 +791,7 @@ class activityController {
         return res.status(400).json({ message: "Invalid activity ID" });
       }
 
-      // 1️ Find the activity
+      // 1️⃣ Find the activity
       const activity = await Activity.findById(id).session(session);
       if (!activity) {
         await session.abortTransaction();
@@ -802,43 +802,31 @@ class activityController {
       const activityObjectId = activity._id;
       const activityStringId = activity._id.toString();
 
-      // Get the senator and representative models
-      const Senator = require("../models/senatorSchema");
-      const Representative = require("../models/representativeSchema");
+      //console.log("📌 Found activity:", activity);
 
-      // Debug: Check SenatorData matches before delete
+      // 2️⃣ Debug: Check SenatorData matches before delete
       const senatorMatches = await SenatorData.find({
         $or: [
           { "activitiesScore.activityId": activityObjectId },
           { "activitiesScore.activityId": activityStringId },
         ],
-      })
-        .populate("senateId")
-        .session(session);
+      }).session(session);
 
       // console.log(` Senator matches: ${senatorMatches.length}`);
-      // Debug: Check RepresentativeData matches before delete
+      // 3️⃣ Debug: Check RepresentativeData matches before delete
       const repMatches = await RepresentativeData.find({
         $or: [
           { "activitiesScore.activityId": activityObjectId },
           { "activitiesScore.activityId": activityStringId },
         ],
-      })
-        .populate("repId")
-        .session(session);
+      }).session(session);
 
       // console.log(` Representative matches: ${repMatches.length}`);
 
-      // Get IDs of affected senators and representatives
-      const affectedSenatorIds = senatorMatches.map(
-        (match) => match.senateId._id
-      );
-      const affectedRepIds = repMatches.map((match) => match.repId._id);
-
-      // Delete activity
+      // 4️⃣ Delete activity
       await Activity.findByIdAndDelete(id).session(session);
 
-      // Remove from SenatorData / RepresentativeData
+      // 5️⃣ Remove from SenatorData / RepresentativeData
       if (activity.type === "senate") {
         await SenatorData.updateMany(
           {
@@ -852,18 +840,6 @@ class activityController {
               activitiesScore: {
                 activityId: { $in: [activityObjectId, activityStringId] },
               },
-            },
-          }
-        ).session(session);
-
-        // Update senator status to draft and clear editor fields for affected senators
-        await Senator.updateMany(
-          { _id: { $in: affectedSenatorIds }, publishStatus: "under review" },
-          {
-            $set: {
-              publishStatus: "draft",
-              fieldEditors: {},
-              editedFields: [],
             },
           }
         ).session(session);
@@ -885,35 +861,18 @@ class activityController {
             },
           }
         ).session(session);
-
-        // Update representative status to draft and clear editor fields for affected representatives
-        await Representative.updateMany(
-          { _id: { $in: affectedRepIds }, publishStatus: "under review" },
-          {
-            $set: {
-              publishStatus: "draft",
-              fieldEditors: {},
-              editedFields: [],
-            },
-          }
-        ).session(session);
       }
 
-      // Commit transaction
+      // ✅ Commit transaction
       await session.commitTransaction();
       session.endSession();
 
-      res.json({
-        message:
-          "Activity deleted and related references removed. Affected Senators/Representatives reset to draft.",
-        affectedSenators: affectedSenatorIds.length,
-        affectedRepresentatives: affectedRepIds.length,
-      });
+      res.json({ message: "Activity deleted and related references removed" });
     } catch (err) {
       await session.abortTransaction();
       session.endSession();
-      console.error("Error deleting activity:", err);
-      res.status(500).json({ message: "Server error", error: err.message });
+
+      res.status(500).json({ message: "Server error" });
     }
   }
 
