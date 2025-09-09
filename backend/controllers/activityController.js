@@ -802,31 +802,43 @@ class activityController {
       const activityObjectId = activity._id;
       const activityStringId = activity._id.toString();
 
-      //console.log(" Found activity:", activity);
+      // Get the senator and representative models
+      const Senator = require("../models/senatorSchema");
+      const Representative = require("../models/representativeSchema");
 
-      //  Debug: Check SenatorData matches before delete
+      // Debug: Check SenatorData matches before delete
       const senatorMatches = await SenatorData.find({
         $or: [
           { "activitiesScore.activityId": activityObjectId },
           { "activitiesScore.activityId": activityStringId },
         ],
-      }).session(session);
+      })
+        .populate("senateId")
+        .session(session);
 
       // console.log(` Senator matches: ${senatorMatches.length}`);
-      //  Debug: Check RepresentativeData matches before delete
+      // Debug: Check RepresentativeData matches before delete
       const repMatches = await RepresentativeData.find({
         $or: [
           { "activitiesScore.activityId": activityObjectId },
           { "activitiesScore.activityId": activityStringId },
         ],
-      }).session(session);
+      })
+        .populate("repId")
+        .session(session);
 
       // console.log(` Representative matches: ${repMatches.length}`);
+
+      // Get IDs of affected senators and representatives
+      const affectedSenatorIds = senatorMatches.map(
+        (match) => match.senateId._id
+      );
+      const affectedRepIds = repMatches.map((match) => match.repId._id);
 
       // Delete activity
       await Activity.findByIdAndDelete(id).session(session);
 
-      //  Remove from SenatorData / RepresentativeData
+      // Remove from SenatorData / RepresentativeData
       if (activity.type === "senate") {
         await SenatorData.updateMany(
           {
@@ -840,6 +852,18 @@ class activityController {
               activitiesScore: {
                 activityId: { $in: [activityObjectId, activityStringId] },
               },
+            },
+          }
+        ).session(session);
+
+        // Update senator status to draft and clear editor fields for affected senators
+        await Senator.updateMany(
+          { _id: { $in: affectedSenatorIds }, publishStatus: "under review" },
+          {
+            $set: {
+              publishStatus: "draft",
+              fieldEditors: {},
+              editedFields: [],
             },
           }
         ).session(session);
@@ -861,18 +885,35 @@ class activityController {
             },
           }
         ).session(session);
+
+        // Update representative status to draft and clear editor fields for affected representatives
+        await Representative.updateMany(
+          { _id: { $in: affectedRepIds }, publishStatus: "under review" },
+          {
+            $set: {
+              publishStatus: "draft",
+              fieldEditors: {},
+              editedFields: [],
+            },
+          }
+        ).session(session);
       }
 
-      //  Commit transaction
+      // Commit transaction
       await session.commitTransaction();
       session.endSession();
 
-      res.json({ message: "Activity deleted and related references removed" });
+      res.json({
+        message:
+          "Activity deleted and related references removed. Affected Senators/Representatives reset to draft.",
+        affectedSenators: affectedSenatorIds.length,
+        affectedRepresentatives: affectedRepIds.length,
+      });
     } catch (err) {
       await session.abortTransaction();
       session.endSession();
-
-      res.status(500).json({ message: "Server error" });
+      console.error("Error deleting activity:", err);
+      res.status(500).json({ message: "Server error", error: err.message });
     }
   }
 
@@ -1062,15 +1103,12 @@ class activityController {
             activityId: activity._id,
             score: "yes",
             title: bill.title,
-            editorInfo
+            editorInfo,
           });
 
           if (linked) savedCount++;
         } catch (err) {
-          console.warn(
-            ` Error processing sponsor ${sponsorId}:`,
-            err.message
-          );
+          console.warn(` Error processing sponsor ${sponsorId}:`, err.message);
         }
       }
 

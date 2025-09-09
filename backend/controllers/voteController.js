@@ -127,63 +127,62 @@ class voteController {
       filter = applyChamberFilter(req, filter, true);
 
       // Main aggregation
-     const votes = await Vote.aggregate([
-       {
-         $match: {
-           $or: [
-             { status: "published" },
-             { status: "under review", "history.oldData.status": "published" },
-           ],
-           ...filter,
-         },
-       },
+      const votes = await Vote.aggregate([
+        {
+          $match: {
+            $or: [
+              { status: "published" },
+              { status: "under review", "history.oldData.status": "published" },
+            ],
+            ...filter,
+          },
+        },
 
-       { $unwind: { path: "$history", preserveNullAndEmptyArrays: true } },
+        { $unwind: { path: "$history", preserveNullAndEmptyArrays: true } },
 
-       {
-         $addFields: {
-           effectiveDoc: {
-             $cond: [
-               {
-                 $and: [
-                   { $eq: ["$status", "under review"] },
-                   { $eq: ["$history.oldData.status", "published"] },
-                 ],
-               },
-               {
-                 $mergeObjects: [
-                   "$history.oldData", // snapshot
-                   { _id: "$_id" }, // keep parent _id
-                 ],
-               },
-               {
-                 $cond: [
-                   { $eq: ["$status", "published"] },
-                   "$$ROOT",
-                   "$$REMOVE",
-                 ],
-               },
-             ],
-           },
-         },
-       },
+        {
+          $addFields: {
+            effectiveDoc: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ["$status", "under review"] },
+                    { $eq: ["$history.oldData.status", "published"] },
+                  ],
+                },
+                {
+                  $mergeObjects: [
+                    "$history.oldData", // snapshot
+                    { _id: "$_id" }, // keep parent _id
+                  ],
+                },
+                {
+                  $cond: [
+                    { $eq: ["$status", "published"] },
+                    "$$ROOT",
+                    "$$REMOVE",
+                  ],
+                },
+              ],
+            },
+          },
+        },
 
-       { $match: { effectiveDoc: { $ne: null } } },
-       { $replaceRoot: { newRoot: "$effectiveDoc" } },
+        { $match: { effectiveDoc: { $ne: null } } },
+        { $replaceRoot: { newRoot: "$effectiveDoc" } },
 
-       { $sort: { date: -1, createdAt: -1 } },
-       {
-         $group: {
-           _id: "$quorumId",
-           latest: { $first: "$$ROOT" },
-         },
-       },
-       { $replaceRoot: { newRoot: "$latest" } },
-       { $sort: { date: -1, createdAt: -1 } },
+        { $sort: { date: -1, createdAt: -1 } },
+        {
+          $group: {
+            _id: "$quorumId",
+            latest: { $first: "$$ROOT" },
+          },
+        },
+        { $replaceRoot: { newRoot: "$latest" } },
+        { $sort: { date: -1, createdAt: -1 } },
 
-       { $project: VOTE_PUBLIC_FIELDS },
-     ]);
-
+        { $project: VOTE_PUBLIC_FIELDS },
+      ]);
 
       res.status(200).json(votes);
     } catch (error) {
@@ -387,6 +386,47 @@ class voteController {
   }
 
   // Delete a vote by ID and remove its references from senator and representative data
+  // static async deleteVote(req, res) {
+  //   try {
+  //     const voteId = req.params.id;
+
+  //     // First check if vote exists
+  //     const vote = await Vote.findById(voteId);
+  //     if (!vote) {
+  //       return res.status(404).json({ message: "Vote not found" });
+  //     }
+
+  //     // Get the models for senator and representative data
+  //     const SenatorData = require("../models/senatorDataSchema");
+  //     const RepresentativeData = require("../models/representativeDataSchema");
+
+  //     // Remove vote references from senator data
+  //     await SenatorData.updateMany(
+  //       { "votesScore.voteId": voteId },
+  //       { $pull: { votesScore: { voteId: voteId } } }
+  //     );
+
+  //     // Remove vote references from representative data
+  //     await RepresentativeData.updateMany(
+  //       { "votesScore.voteId": voteId },
+  //       { $pull: { votesScore: { voteId: voteId } } }
+  //     );
+
+  //     // Delete the vote
+  //     await Vote.findByIdAndDelete(voteId);
+
+  //     res.status(200).json({
+  //       message: "Vote and its references deleted successfully",
+  //       deletedVoteId: voteId,
+  //     });
+  //   } catch (error) {
+  //     res.status(500).json({
+  //       message: "Error deleting vote and its references",
+  //       error: error.message,
+  //     });
+  //   }
+  // }
+
   static async deleteVote(req, res) {
     try {
       const voteId = req.params.id;
@@ -400,25 +440,70 @@ class voteController {
       // Get the models for senator and representative data
       const SenatorData = require("../models/senatorDataSchema");
       const RepresentativeData = require("../models/representativeDataSchema");
+      const Senator = require("../models/senatorSchema");
+      const Representative = require("../models/representativeSchema");
+
+      // Find senator datas with this vote reference
+      const senatorDatasWithVote = await SenatorData.find({
+        "votesScore.voteId": voteId,
+      }).populate("senateId");
+      const senatorIds = senatorDatasWithVote.map((data) => data.senateId._id);
+
+      // Find representative datas with this vote reference
+      const repDatasWithVote = await RepresentativeData.find({
+        "votesScore.voteId": voteId,
+      }).populate("repId");
+      const repIds = repDatasWithVote.map((data) => data.repId._id);
 
       // Remove vote references from senator data
       await SenatorData.updateMany(
         { "votesScore.voteId": voteId },
-        { $pull: { votesScore: { voteId: voteId } } }
+        {
+          $pull: { votesScore: { voteId: voteId } },
+        }
       );
 
       // Remove vote references from representative data
       await RepresentativeData.updateMany(
         { "votesScore.voteId": voteId },
-        { $pull: { votesScore: { voteId: voteId } } }
+        {
+          $pull: { votesScore: { voteId: voteId } },
+        }
+      );
+
+      // Update senator status to draft and clear editor fields for affected senators
+      await Senator.updateMany(
+        { _id: { $in: senatorIds }, publishStatus: "under review" },
+        {
+          $set: {
+            publishStatus: "draft",
+            fieldEditors: {},
+            editedFields: [],
+          },
+        }
+      );
+
+      // Update representative status to draft and clear editor fields for affected representatives
+      await Representative.updateMany(
+        { _id: { $in: repIds }, publishStatus: "under review" },
+        {
+          $set: {
+            publishStatus: "draft",
+            fieldEditors: {},
+            editedFields: [],
+          },
+        }
       );
 
       // Delete the vote
       await Vote.findByIdAndDelete(voteId);
 
       res.status(200).json({
-        message: "Vote and its references deleted successfully",
+        message:
+          "Vote and its references deleted successfully. Affected Senators and Representatives have been reset to draft.",
         deletedVoteId: voteId,
+        affectedSenators: senatorIds.length,
+        affectedRepresentatives: repIds.length,
       });
     } catch (error) {
       res.status(500).json({
