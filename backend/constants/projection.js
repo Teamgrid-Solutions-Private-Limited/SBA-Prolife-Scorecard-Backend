@@ -2,6 +2,8 @@ exports.VOTE_PUBLIC_FIELDS = {
   quorumId: 1,
   type: 1,
   title: 1,
+  shortDesc: 1,
+  longDesc: 1,
   description: 1,
   result: 1,
   date: 1,
