@@ -1,7 +1,6 @@
 const HouseData = require("../models/representativeDataSchema");
 const House = require("../models/representativeSchema");
-const { getCongresses, isValidTerm } = require("../helper/termUtils")
- 
+const { getCongresses, isValidTerm } = require("../helper/termUtils");
 
 const mongoose = require("mongoose");
 class houseDataController {
@@ -492,9 +491,7 @@ class houseDataController {
       const houseId = req.params.repId;
 
       // Get the main house document with history populated
-      const houseDocument = await House.findById(houseId)
-        .populate("modifiedBy")
-        .lean();
+      const houseDocument = await House.findById(houseId).lean();
 
       if (!houseDocument) {
         return res.status(404).json({ message: "House data not found" });
