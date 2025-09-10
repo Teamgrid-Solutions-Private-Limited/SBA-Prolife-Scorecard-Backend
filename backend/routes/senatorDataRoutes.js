@@ -23,6 +23,11 @@ router.delete('/admin/senator-data/:id', SenatorDataController.deleteSenatorData
  
 //frontend ui display
 router.get(
+  "/senators-past-votes/:senateId/",
+  protectedKey,
+  SenatorDataController.getPastVotesWithDetails
+);
+router.get(
   "/senator-data/:senatorId",
   protectedKey,
   SenatorDataController.SenatorDataBySenatorId

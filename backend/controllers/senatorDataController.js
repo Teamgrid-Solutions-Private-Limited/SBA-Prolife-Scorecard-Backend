@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const SenatorData = require("../models/senatorDataSchema");
 const Senator = require("../models/senatorSchema");
+const Vote = require("../models/voteSchema");
 class senatorDataController {
   // Create a new senator data
   static async createSenatorData(req, res) {
@@ -13,7 +14,7 @@ class senatorDataController {
         rating,
         votesScore,
         activitiesScore,
-         pastVotesScore = [],
+        pastVotesScore = [],
       } = req.body;
 
       // Validate ObjectId format first (cheaper operation)
@@ -80,7 +81,7 @@ class senatorDataController {
         rating,
         votesScore,
         activitiesScore,
-         pastVotesScore ,
+        pastVotesScore,
       });
 
       // Use lean() for better performance if you don't need full Mongoose document
@@ -276,9 +277,9 @@ class senatorDataController {
         })
         .populate("activitiesScore.activityId")
         .populate({
-        path: "pastVotesScore.voteId",
-        populate: { path: "termId" }, // also populate pastVote's termId
-      })
+          path: "pastVotesScore.voteId",
+          populate: { path: "termId" }, // also populate pastVote's termId
+        })
         .lean();
 
       if (!senatorData.length) {
@@ -513,6 +514,82 @@ class senatorDataController {
       res.status(500).json({
         message: "Error retrieving senator data",
         error: error.message,
+      });
+    }
+  }
+
+  // Fetch all past votes with details by senate ID
+  static async getPastVotesWithDetails(req, res) {
+    try {
+      const { senateId } = req.params;
+
+      // Validate senateId
+      if (!mongoose.Types.ObjectId.isValid(senateId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid senate ID format",
+        });
+      }
+
+      const voteDetails = await SenatorData.aggregate([
+        { $match: { senateId: new mongoose.Types.ObjectId(senateId) } },
+        {
+          $match: {
+            pastVotesScore: { $exists: true, $ne: [] },
+            "pastVotesScore.0": { $exists: true },
+          },
+        },
+        { $unwind: "$pastVotesScore" },
+        {
+          $lookup: {
+            from: "votes",
+            localField: "pastVotesScore.voteId",
+            foreignField: "_id",
+            as: "voteDetails",
+          },
+        },
+        { $unwind: "$voteDetails" },
+        {
+          $project: {
+            _id: "$voteDetails._id",
+            type: "$voteDetails.type",
+            title: "$voteDetails.title",
+            date: "$voteDetails.date",
+            congress: "$voteDetails.congress",
+            shortDesc: "$voteDetails.shortDesc",
+            readMore: "$voteDetails.readMore",
+            rollCall: "$voteDetails.rollCall",
+            sbaPosition: "$voteDetails.sbaPosition",
+            status: "$voteDetails.status",
+            score: "$pastVotesScore.score",
+            voteScoreId: "$pastVotesScore._id",
+          },
+        },
+        { $sort: { date: -1 } },
+      ]);
+
+      if (!voteDetails.length) {
+        return res.status(404).json({
+          success: false,
+          message: "No past votes found for this senator",
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          senateId,
+          pastVotes: voteDetails,
+          count: voteDetails.length,
+        },
+      });
+    } catch (error) {
+      console.error("Error fetching past votes:", error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+        error:
+          process.env.NODE_ENV === "development" ? error.message : undefined,
       });
     }
   }
