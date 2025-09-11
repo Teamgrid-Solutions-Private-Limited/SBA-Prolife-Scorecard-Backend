@@ -1222,68 +1222,74 @@ class QuorumDataController {
           batch.map(async (update) => {
             try {
               // Check if person is published before proceeding
-              if (update.personData.publishStatus === "published") {
-                try {
-                  const currentPerson = await personModel.findById(update.personData._id);
+// Check if person is published before proceeding
+if (update.personData.publishStatus === "published") {
+  try {
+    const currentPerson = await personModel.findById(update.personData._id);
 
-                  // Only create history if the person is currently published
-                  if (currentPerson && currentPerson.publishStatus === "published") {
-                    const currentPersonData = await dataModel.find({
-                      [idField]: update.personData._id
-                    });
-                    // console.log("Taking snapshot for:", currentPerson.name);
-                    // console.log("Current person data count:", currentPersonData);
-                    const snapshotData = {
-                      [refField]: currentPerson[refField],
-                      name: currentPerson.name,
-                      party: currentPerson.party,
-                      photo: currentPerson.photo,
-                      editedFields: currentPerson.editedFields || [],
-                      fieldEditors: currentPerson.fieldEditors || {},
-                      modifiedAt: currentPerson.modifiedAt,
-                      modifiedBy: currentPerson.modifiedBy,
-                      publishStatus: currentPerson.publishStatus,
-                      snapshotSource: currentPerson.snapshotSource,
-                      status: currentPerson.status
-                    };
+    // Only create history if the person is currently published
+    if (currentPerson && currentPerson.publishStatus === "published") {
+      // 🆕 Extra check: skip if history already exists
+      if (Array.isArray(currentPerson.history) && currentPerson.history.length > 0) {
+        console.log(`⏭️ Skipping history creation for ${currentPerson.name}, history already exists`);
+      } else {
+        const currentPersonData = await dataModel.find({
+          [idField]: update.personData._id
+        });
+        // console.log("Taking snapshot for:", currentPerson.name);
+        // console.log("Current person data count:", currentPersonData);
+        const snapshotData = {
+          [refField]: currentPerson[refField],
+          name: currentPerson.name,
+          party: currentPerson.party,
+          photo: currentPerson.photo,
+          editedFields: currentPerson.editedFields || [],
+          fieldEditors: currentPerson.fieldEditors || {},
+          modifiedAt: currentPerson.modifiedAt,
+          modifiedBy: currentPerson.modifiedBy,
+          publishStatus: currentPerson.publishStatus,
+          snapshotSource: currentPerson.snapshotSource,
+          status: currentPerson.status
+        };
 
-                    // Add district field only for Representatives
-                    if (type === "Representative" && currentPerson.district) {
-                      snapshotData.district = currentPerson.district;
-                    }
+        // Add district field only for Representatives
+        if (type === "Representative" && currentPerson.district) {
+          snapshotData.district = currentPerson.district;
+        }
 
-                    // Add the appropriate data reference
-                    if (type === "Representative") {
-                      snapshotData.representativeData = currentPersonData.map(doc => doc.toObject());
-                    } else if (type === "Senator") {
-                      snapshotData.senatorData = currentPersonData.map(doc => doc.toObject());
-                    }
+        // Add the appropriate data reference
+        if (type === "Representative") {
+          snapshotData.representativeData = currentPersonData.map(doc => doc.toObject());
+        } else if (type === "Senator") {
+          snapshotData.senatorData = currentPersonData.map(doc => doc.toObject());
+        }
 
-                    const snapshot = {
-                      oldData: snapshotData,
-                      timestamp: new Date().toISOString(),
-                      actionType: "update",
-                      _id: new mongoose.Types.ObjectId()
-                    };
+        const snapshot = {
+          oldData: snapshotData,
+          timestamp: new Date().toISOString(),
+          actionType: "update",
+          _id: new mongoose.Types.ObjectId()
+        };
 
-                    // Create history snapshot in a single operation
-                    await personModel.findByIdAndUpdate(
-                      update.personData._id,
-                      {
-                        $push: {
-                          history: {
-                            $each: [snapshot],
-                            $slice: -50
-                          }
-                        }
-                      },
-                      { new: true }
-                    );
-                  }
-                } catch (snapshotError) {
-                  console.error(` Failed to take snapshot for ${update.personData.name}:`, snapshotError.message);
-                }
+        // Create history snapshot in a single operation
+        await personModel.findByIdAndUpdate(
+          update.personData._id,
+          {
+            $push: {
+              history: {
+                $each: [snapshot],
+                $slice: -50
               }
+            }
+          },
+          { new: true }
+        );
+      }
+    }
+  } catch (snapshotError) {
+    console.error(` Failed to take snapshot for ${update.personData.name}:`, snapshotError.message);
+  }
+}
 
               // Update the data model (votesScore)
               await dataModel.updateOne(update.filter, update.update, { upsert: true });
