@@ -27,15 +27,19 @@ class representativeController {
         .json({ message: "Error creating house", error: error.message });
     }
   };
-  // Get all  House for admin dashboard
+  // Get all House for admin dashboard
   static async getAllHouse(req, res) {
     try {
-      const house = await House.find();
+      const house = await House.find()
+        .select("name repId district party photo status publishStatus")
+        .lean();
+
       res.status(200).json(house);
     } catch (error) {
-      res
-        .status(500)
-        .json({ message: "Error retrieving  House", error: error.message });
+      res.status(500).json({
+        message: "Error retrieving House",
+        error: error.message,
+      });
     }
   }
 
