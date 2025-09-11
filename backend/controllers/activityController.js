@@ -57,6 +57,8 @@ async function saveCosponsorshipToLegislator({
   if (alreadyLinked) {
     return false;
   }
+
+
   // Only update person document if they are published
   if (localPerson.publishStatus === "published") {
     const currentPerson = await personModel.findById(localPerson._id);
@@ -110,14 +112,17 @@ async function saveCosponsorshipToLegislator({
       };
 
       // Save snapshot in history (limit to last 50)
-      await personModel.findByIdAndUpdate(localPerson._id, {
-        $push: {
-          history: {
-            $each: [snapshot],
-            $slice: -50
+      await personModel.findByIdAndUpdate(
+        localPerson._id,
+        {
+          $push: {
+            history: {
+              $each: [snapshot],
+              $slice: -50
+            }
           }
         }
-      });
+      );
     }
   }
 
@@ -221,7 +226,7 @@ async function saveCosponsorshipToLegislator({
 //     });
 
 //     if (currentRep && currentRepData.length > 0) {
-
+        
 //       // Build snapshot object
 //       const snapshot = {
 //         oldData: {
