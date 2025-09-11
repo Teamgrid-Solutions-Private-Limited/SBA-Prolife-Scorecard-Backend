@@ -30,18 +30,19 @@ class senatorController {
     }
   };
 
-  // Get all senators for admin dashboard
-  // GET /api/senators?published=true OR published=false
   static async getAllSenators(req, res) {
     try {
       const filter = {};
       if (req.query.published === "true") {
-        filter.published = true;
+        filter.publishStatus = "published";
       } else if (req.query.published === "false") {
-        filter.published = false;
+        filter.publishStatus = { $ne: "published" };
       }
 
-      const senators = await Senator.find(filter);
+      const senators = await Senator.find(filter)
+        .select("name state party photo status senatorId publishStatus")
+        .lean();
+
       res.status(200).json(senators);
     } catch (error) {
       res.status(500).json({ message: "Error fetching senators", error });
@@ -61,71 +62,15 @@ class senatorController {
     }
   }
 
-  // Get all senators for  frontend display
-  // static async Senators(req, res) {
-  //   try {
-  //     const { state, party, name } = req.query;
-
-  //     // Build filter object dynamically
-  //     const filter = {};
-  //     if (state) filter.state = new RegExp(`^${state}$`, "i"); // exact match, case-insensitive
-  //     if (party) filter.party = new RegExp(`^${party}$`, "i"); // exact match, case-insensitive
-  //     if (name) filter.name = new RegExp(name, "i"); // partial match in name
-
-  //     const senators = await Senator.find(filter).lean(); // filtered fast read-only fetch
-
-  //     const senatorsWithRatings = await Promise.all(
-  //       senators.map(async (senator) => {
-  //         // Try current term rating
-  //         let ratingData = await SenatorData.findOne({
-  //           senateId: senator._id,
-  //           currentTerm: true,
-  //         })
-  //           .select("rating currentTerm")
-  //           .lean();
-
-  //         // If not found, fallback to most recent term
-  //         if (!ratingData) {
-  //           ratingData = await SenatorData.findOne({
-  //             senateId: senator._id,
-  //           })
-  //             .sort({ termId: -1 })
-  //             .select("rating currentTerm")
-  //             .lean();
-  //         }
-
-  //         // Remove "Sen." or "Sen" from start of name
-  //         const cleanName = senator.name.replace(/^Sen\.?\s+/i, "");
-
-  //         return {
-  //           id: senator._id,
-  //           senatorId: senator.senatorId,
-  //           name: cleanName,
-  //           state: senator.state,
-  //           party: senator.party,
-  //           photo: senator.photo,
-  //           status: senator.status,
-  //           rating: ratingData?.rating || "N/A",
-  //           isCurrentTerm: ratingData?.currentTerm || false,
-  //         };
-  //       })
-  //     );
-
-  //     res.status(200).json({
-  //       message: "Retrieved successfully",
-  //       info: senatorsWithRatings,
-  //     });
-  //   } catch (error) {
-  //     res.status(500).json({
-  //       message: "Error retrieving senators",
-  //       error: error.message,
-  //     });
-  //   }
-  // }
+  // Get all senators for frontend display with filters, pagination, and ratings
+  // GET /api/senators?state=&party=&name=&publishedOnly=true&page=1&limit=10
 
   static async Senators(req, res) {
     try {
-      const { state, party, name } = req.query;
+      const { state, party, name, publishedOnly, page, limit } = req.query;
+      const pageNum = parseInt(page) || 1;
+      const limitNum = parseInt(limit) || 0;
+      const skip = (pageNum - 1) * limitNum;
 
       // Build filter object dynamically
       const filter = {};
@@ -133,22 +78,52 @@ class senatorController {
       if (party) filter.party = new RegExp(`^${party}$`, "i");
       if (name) filter.name = new RegExp(name, "i");
 
-      // Fetch all senators first
-      const senators = await Senator.find(filter)
-        .lean()
-        .select("_id senatorId name state party photo status");
+      // Only filter by published if explicitly requested
+      if (publishedOnly && publishedOnly.toLowerCase() === "true") {
+        filter.publishStatus = "published";
+      }
 
-      if (!senators.length) {
-        return res.status(200).json({ message: "No senators found", info: [] });
+      // Use Promise.all to execute count and find in parallel
+      const [totalCount, senators] = await Promise.all([
+        Senator.countDocuments(filter),
+        Senator.find(filter)
+          .lean()
+          .select("_id senatorId name state party photo status publishStatus")
+          .skip(skip)
+          .limit(limitNum > 0 ? limitNum : null),
+      ]);
+
+      const fetchedCount = senators.length;
+      const totalPages = limitNum > 0 ? Math.ceil(totalCount / limitNum) : 1;
+
+      if (fetchedCount === 0) {
+        return res.status(200).json({
+          message: "No senators found",
+          info: [],
+          totalCount,
+          fetchedCount: 0,
+          page: pageNum,
+          totalPages,
+          hasNextPage: false,
+          hasPrevPage: false,
+        });
       }
 
       const senatorIds = senators.map((s) => s._id);
 
-      // Fetch all ratings in one go
+      // Fetch all ratings in one go with optimized aggregation
       const ratings = await SenatorData.aggregate([
-        { $match: { senateId: { $in: senatorIds } } },
         {
-          $sort: { currentTerm: -1, termId: -1 }, // prefer currentTerm, then latest term
+          $match: {
+            senateId: { $in: senatorIds },
+            $or: [{ currentTerm: true }, { termId: { $exists: true } }],
+          },
+        },
+        {
+          $sort: {
+            currentTerm: -1,
+            termId: -1,
+          },
         },
         {
           $group: {
@@ -159,28 +134,28 @@ class senatorController {
         },
       ]);
 
-      // Map senatorId → rating
-      const ratingMap = ratings.reduce((acc, r) => {
-        acc[r._id.toString()] = {
+      // Create rating map for faster lookup
+      const ratingMap = new Map();
+      ratings.forEach((r) => {
+        ratingMap.set(r._id.toString(), {
           rating: r.rating,
           currentTerm: r.currentTerm,
-        };
-        return acc;
-      }, {});
+        });
+      });
 
-      // Merge ratings back with senators
+      // Process senators data efficiently
       const senatorsWithRatings = senators.map((senator) => {
-        const ratingData = ratingMap[senator._id.toString()];
-        const cleanName = senator.name.replace(/^Sen\.?\s+/i, "");
+        const ratingData = ratingMap.get(senator._id.toString());
 
         return {
           id: senator._id,
           senatorId: senator.senatorId,
-          name: cleanName,
+          name: senator.name.replace(/^Sen\.?\s+/i, ""),
           state: senator.state,
           party: senator.party,
           photo: senator.photo,
           status: senator.status,
+          publishStatus: senator.publishStatus, // Include publish status in response
           rating: ratingData?.rating || "N/A",
           isCurrentTerm: ratingData?.currentTerm || false,
         };
@@ -189,11 +164,27 @@ class senatorController {
       res.status(200).json({
         message: "Retrieved successfully",
         info: senatorsWithRatings,
+        totalCount, // Total documents matching the filter
+        fetchedCount, // Number of documents actually returned in this request
+        page: pageNum,
+        totalPages,
+        hasNextPage: pageNum < totalPages,
+        hasPrevPage: pageNum > 1,
+        pagination: {
+          current: pageNum,
+          limit: limitNum > 0 ? limitNum : totalCount,
+          total: totalCount,
+          pages: totalPages,
+        },
       });
     } catch (error) {
+      console.error("Error retrieving senators:", error);
       res.status(500).json({
         message: "Error retrieving senators",
-        error: error.message,
+        error:
+          process.env.NODE_ENV === "production"
+            ? "Internal server error"
+            : error.message,
       });
     }
   }
@@ -387,7 +378,7 @@ class senatorController {
       });
     }
   }
-  
+
   static async deleteSenator(req, res) {
     try {
       const deletedSenator = await Senator.findByIdAndDelete(req.params.id);
@@ -485,8 +476,6 @@ class senatorController {
       });
     }
   }
-
-  
 }
 
 module.exports = senatorController;
