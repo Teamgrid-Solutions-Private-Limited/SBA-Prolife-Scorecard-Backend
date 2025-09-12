@@ -5,7 +5,7 @@ const Representative = require("../models/representativeSchema");
 const RepresentativeData = require("../models/representativeDataSchema");
 const SenatorData = require("../models/senatorDataSchema");
 const Vote = require("../models/voteSchema");
-const { ACTIVITY_PUBLIC_FIELDS } = require("../constants/projection");
+const { ACTIVITY_PUBLIC_FIELDS, ADMIN_ACTIVITY_FIELDS } = require("../constants/projection");
 const {
   applyCommonFilters,
   applyCongressFilter,
@@ -356,6 +356,7 @@ class activityController {
   static async getAllActivities(req, res) {
     try {
       const activities = await Activity.find({})
+        .sort({ date: -1, createdAt: -1 })
         .select(ACTIVITY_PUBLIC_FIELDS)
         .lean();
       res.status(200).json(activities);

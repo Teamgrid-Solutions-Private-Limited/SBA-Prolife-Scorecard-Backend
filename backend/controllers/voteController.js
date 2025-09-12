@@ -104,7 +104,7 @@ class voteController {
   static async getAllVotes(req, res) {
     try {
       const votes = await Vote.find({})
-        .select(VOTE_PUBLIC_FIELDS) // projection fields
+        .select(VOTE_PUBLIC_FIELDS) 
         .sort({ date: -1, createdAt: -1 })
         .lean();
 

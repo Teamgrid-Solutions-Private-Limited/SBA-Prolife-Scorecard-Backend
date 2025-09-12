@@ -261,24 +261,37 @@ class senatorDataController {
     }
   }
 
-  // Get senator data by senatorId with populated votesScore and activitiesScore
-
   static async getSenatorDataBySenatorId(req, res) {
     try {
       const senateId = req.params.id;
 
-      let senatorData = await SenatorData.find({ senateId })
+      const senatorData = await SenatorData.find({ senateId })
+        .select("-__v -createdAt -updatedAt") // Strip unnecessary fields
         .sort({ createdAt: 1 })
-        .populate("termId")
-        .populate("senateId")
+        .populate("termId", "-__v -createdAt -updatedAt")
+        .populate(
+          "senateId",
+          "name state party photo status senatorId publishStatus"
+        )
         .populate({
           path: "votesScore.voteId",
-          populate: { path: "termId" }, // also populate vote's termId
+          select: "title result date termId", // only useful fields
+          populate: {
+            path: "termId",
+            select: "name start end",
+          },
         })
-        .populate("activitiesScore.activityId")
+        .populate({
+          path: "activitiesScore.activityId",
+          select: "title quorumId status date",
+        })
         .populate({
           path: "pastVotesScore.voteId",
-          populate: { path: "termId" }, // also populate pastVote's termId
+          select: "title result date termId",
+          populate: {
+            path: "termId",
+            select: "name start end",
+          },
         })
         .lean();
 
@@ -286,9 +299,10 @@ class senatorDataController {
         return res.status(404).json({ message: "Senator data not found" });
       }
 
-      res
-        .status(200)
-        .json({ message: "Retrieve successfully", info: senatorData });
+      res.status(200).json({
+        message: "Retrieve successfully",
+        info: senatorData,
+      });
     } catch (error) {
       res.status(500).json({
         message: "Error retrieving senator data",
@@ -297,95 +311,95 @@ class senatorDataController {
     }
   }
 
-  ////frontend ui display
-  // static async SenatorDataBySenatorId(req, res) {
-  //   try {
-  //     const senateId = req.params.senatorId;
+  //frontend ui display
+  static async SenatorDataBySenatorId(req, res) {
+    try {
+      const senateId = req.params.senatorId;
 
-  //     // Fetch all terms for this senator
-  //     const senatorData = await SenatorData.find({ senateId })
-  //       .populate("termId")
-  //       .populate("senateId")
-  //       .populate("votesScore.voteId")
-  //       .populate("activitiesScore.activityId");
+      // Fetch all terms for this senator
+      const senatorData = await SenatorData.find({ senateId })
+        .populate("termId")
+        .populate("senateId")
+        .populate("votesScore.voteId")
+        .populate("activitiesScore.activityId");
 
-  //     if (!senatorData.length) {
-  //       return res.status(404).json({ message: "Senator data not found" });
-  //     }
+      if (!senatorData.length) {
+        return res.status(404).json({ message: "Senator data not found" });
+      }
 
-  //     // Sort: currentTerm first, then latest by createdAt
-  //     const sortedData = senatorData.sort((a, b) => {
-  //       if (a.currentTerm && !b.currentTerm) return -1;
-  //       if (!a.currentTerm && b.currentTerm) return 1;
-  //       return new Date(b.createdAt) - new Date(a.createdAt);
-  //     });
+      // Sort: currentTerm first, then latest by createdAt
+      const sortedData = senatorData.sort((a, b) => {
+        if (a.currentTerm && !b.currentTerm) return -1;
+        if (!a.currentTerm && b.currentTerm) return 1;
+        return new Date(b.createdAt) - new Date(a.createdAt);
+      });
 
-  //     // Senator details from the latest record (first after sorting)
-  //     const latestSenatorDetails = sortedData[0].senateId;
+      // Senator details from the latest record (first after sorting)
+      const latestSenatorDetails = sortedData[0].senateId;
 
-  //     // Remove senateId from term records
-  //     const termData = sortedData.map((term) => {
-  //       const { senateId, ...rest } = term.toObject();
-  //       return rest;
-  //     });
+      // Remove senateId from term records
+      const termData = sortedData.map((term) => {
+        const { senateId, ...rest } = term.toObject();
+        return rest;
+      });
 
-  //     res.status(200).json({
-  //       message: "Retrieved successfully",
-  //       senator: latestSenatorDetails,
-  //       terms: termData,
-  //     });
-  //   } catch (error) {
-  //     res.status(500).json({
-  //       message: "Error retrieving senator data",
-  //       error: error.message,
-  //     });
-  //   }
-  // }
-  // static async SenatorDataBySenatorId(req, res) {
-  //   try {
-  //     const senateId = req.params.senatorId; // Note: param is senatorId but schema uses senateId
+      res.status(200).json({
+        message: "Retrieved successfully",
+        senator: latestSenatorDetails,
+        terms: termData,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: "Error retrieving senator data",
+        error: error.message,
+      });
+    }
+  }
+  static async SenatorDataBySenatorId(req, res) {
+    try {
+      const senateId = req.params.senatorId; // Note: param is senatorId but schema uses senateId
 
-  //     // Run queries in parallel
-  //     const [currentTerm, pastTerms] = await Promise.all([
-  //       // Get currentTerm (only one, enforced by index)
-  //       SenatorData.findOne({ senateId, currentTerm: true })
-  //         .populate("termId")
-  //         .populate("senateId")
-  //         .populate("votesScore.voteId")
-  //         .populate("activitiesScore.activityId")
-  //         .lean(),
+      // Run queries in parallel
+      const [currentTerm, pastTerms] = await Promise.all([
+        // Get currentTerm (only one, enforced by index)
+        SenatorData.findOne({ senateId, currentTerm: true })
+          .populate("termId")
+          .populate("senateId")
+          .populate("votesScore.voteId")
+          .populate("activitiesScore.activityId")
+          .lean(),
 
-  //       // Get past terms, sorted by startYear (or createdAt fallback)
-  //       SenatorData.find({ senateId, currentTerm: { $ne: true } })
-  //         .populate("termId")
-  //         .populate("votesScore.voteId")
-  //         .populate("activitiesScore.activityId")
-  //         .sort({ "termId.startYear": -1, createdAt: -1 })
-  //         .lean(),
-  //     ]);
+        // Get past terms, sorted by startYear (or createdAt fallback)
+        SenatorData.find({ senateId, currentTerm: { $ne: true } })
+          .populate("termId")
+          .populate("votesScore.voteId")
+          .populate("activitiesScore.activityId")
+          .sort({ "termId.startYear": -1, createdAt: -1 })
+          .lean(),
+      ]);
 
-  //     if (!currentTerm && !pastTerms.length) {
-  //       return res.status(404).json({ message: "Senator data not found" });
-  //     }
+      if (!currentTerm && !pastTerms.length) {
+        return res.status(404).json({ message: "Senator data not found" });
+      }
 
-  //     // Senator details from either currentTerm or first pastTerm
-  //     const senatorDetails = currentTerm?.senateId || pastTerms[0]?.senateId;
+      // Senator details from either currentTerm or first pastTerm
+      const senatorDetails = currentTerm?.senateId || pastTerms[0]?.senateId;
 
-  //     res.status(200).json({
-  //       message: "Retrieved successfully",
-  //       senator: senatorDetails,
-  //       currentTerm: currentTerm
-  //         ? { ...currentTerm, senateId: undefined }
-  //         : null,
-  //       pastTerms: pastTerms.map(({ senateId, ...rest }) => rest),
-  //     });
-  //   } catch (error) {
-  //     res.status(500).json({
-  //       message: "Error retrieving senator data",
-  //       error: error.message,
-  //     });
-  //   }
-  // }
+      res.status(200).json({
+        message: "Retrieved successfully",
+        senator: senatorDetails,
+        currentTerm: currentTerm
+          ? { ...currentTerm, senateId: undefined }
+          : null,
+        pastTerms: pastTerms.map(({ senateId, ...rest }) => rest),
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: "Error retrieving senator data",
+        error: error.message,
+      });
+    }
+  }
 
   static async SenatorDataBySenatorId(req, res) {
     try {

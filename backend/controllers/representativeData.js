@@ -1,5 +1,6 @@
 const HouseData = require("../models/representativeDataSchema");
 const House = require("../models/representativeSchema");
+const Term = require("../models/termSchema");
 const { getCongresses, isValidTerm } = require("../helper/termUtils");
 
 const mongoose = require("mongoose");
@@ -17,22 +18,18 @@ class houseDataController {
         activitiesScore,
       } = req.body;
       console.log("termId:", termId);
-      //  Always clean invalid records first (no termId, null, or empty)
-      //  Use separate deletes to avoid Mongoose ObjectId casting on empty strings
+
       let totalDeleted = 0;
 
-      // a) termId missing
       const delMissing = await HouseData.deleteMany({
         houseId,
         termId: { $exists: false },
       });
       totalDeleted += delMissing.deletedCount || 0;
 
-      // b) termId is null
       const delNull = await HouseData.deleteMany({ houseId, termId: null });
       totalDeleted += delNull.deletedCount || 0;
 
-      // c) termId is an empty string — use native driver to avoid cast
       try {
         const nativeDel = await HouseData.collection.deleteMany({
           houseId: new mongoose.Types.ObjectId(houseId),
@@ -41,14 +38,11 @@ class houseDataController {
         totalDeleted += nativeDel.deletedCount || 0;
       } catch (e) {}
 
-      // Validate required fields
       if (!houseId || !termId || termId.toString().trim() === "") {
         return res.status(400).json({
           message: "houseId and termId are required",
         });
       }
-
-      // Check if a HouseData already exists for this houseId and termId
 
       const existingHouseData = await HouseData.findOne({ houseId, termId });
 
@@ -59,7 +53,6 @@ class houseDataController {
         });
       }
 
-      // If currentTerm is being set to true, ensure no other currentTerm exists
       if (currentTerm === true) {
         const existingCurrentTerm = await HouseData.findOne({
           houseId,
@@ -147,7 +140,6 @@ class houseDataController {
 
       const { termId, houseId } = req.body;
 
-      //  Validate termId - if it's null/empty, delete the document instead of updating
       if (!termId || termId.toString().trim() === "") {
         // Find and delete the document
         const documentToDelete = await HouseData.findById(
@@ -202,7 +194,7 @@ class houseDataController {
         const duplicateHouseData = await HouseData.findOne({
           houseId: existing.houseId, // Use existing houseId to avoid changing it
           termId: termId,
-          _id: { $ne: req.params.id }, // Exclude current document
+          _id: { $ne: req.params.id },
         }).session(session);
 
         if (duplicateHouseData) {
@@ -337,16 +329,17 @@ class houseDataController {
     try {
       const houseId = req.params.id;
 
-      const Term = require("../models/termSchema");
-
       // Fetch all terms and filter valid ones using utility
       const allTerms = await Term.find().sort({ startYear: -1 }).lean();
       const validTerms = allTerms.filter(isValidTerm);
 
-      // Fetch all HouseData for this house
+      // Fetch all HouseData for this house - exclude history field from houseId population
       const houseData = await HouseData.find({ houseId })
         .sort({ createdAt: 1 })
-        .populate("houseId")
+        .populate({
+          path: "houseId",
+          select: "-history", // Exclude the history field
+        })
         .populate({
           path: "votesScore.voteId",
           populate: { path: "termId" },
@@ -440,52 +433,6 @@ class houseDataController {
     }
   }
 
-  // Get house data by houseId with currentTerm and pastTerms separation
-  // static async HouseDataByHouseId(req, res) {
-  //   try {
-  //     const houseId = req.params.repId;
-
-  //     // Run queries in parallel
-  //     const [currentTerm, pastTerms] = await Promise.all([
-  //       // ✅ Get currentTerm (only one, enforced by index)
-  //       HouseData.findOne({ houseId, currentTerm: true })
-  //         .populate("termId")
-  //         .populate("houseId")
-  //         .populate("votesScore.voteId")
-  //         .populate("activitiesScore.activityId")
-  //         .lean(),
-
-  //       // ✅ Get past terms, sorted by startYear (or createdAt fallback)
-  //       HouseData.find({ houseId, currentTerm: { $ne: true } })
-  //         .populate("termId")
-  //         .populate("votesScore.voteId")
-  //         .populate("activitiesScore.activityId")
-  //         .sort({ "termId.startYear": -1, createdAt: -1 })
-  //         .lean(),
-  //     ]);
-
-  //     if (!currentTerm && !pastTerms.length) {
-  //       return res.status(404).json({ message: "House data not found" });
-  //     }
-
-  //     // ✅ House details from either currentTerm or first pastTerm
-  //     const houseDetails = currentTerm?.houseId || pastTerms[0]?.houseId;
-
-  //     res.status(200).json({
-  //       message: "Retrieved successfully",
-  //       house: houseDetails,
-  //       currentTerm: currentTerm
-  //         ? { ...currentTerm, houseId: undefined }
-  //         : null,
-  //       pastTerms: pastTerms.map(({ houseId, ...rest }) => rest),
-  //     });
-  //   } catch (error) {
-  //     res.status(500).json({
-  //       message: "Error retrieving house data",
-  //       error: error.message,
-  //     });
-  //   }
-  // }
   static async HouseDataByHouseId(req, res) {
     try {
       const houseId = req.params.repId;
