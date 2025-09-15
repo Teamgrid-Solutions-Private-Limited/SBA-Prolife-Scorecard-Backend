@@ -26,7 +26,7 @@ async function saveCosponsorshipToLegislator({
   activityId,
   score = "yes",
   editorInfo,
-  title
+  title,
 }) {
   personId = String(personId); // Force string match
 
@@ -58,12 +58,11 @@ async function saveCosponsorshipToLegislator({
     return false;
   }
 
-
   // Only update person document if they are published
   if (localPerson.publishStatus === "published") {
     const currentPerson = await personModel.findById(localPerson._id);
     const currentPersonData = await dataModel.find({
-      [personField]: localPerson._id
+      [personField]: localPerson._id,
     });
 
     if (
@@ -84,7 +83,7 @@ async function saveCosponsorshipToLegislator({
         modifiedBy: currentPerson.modifiedBy,
         publishStatus: currentPerson.publishStatus,
         snapshotSource: currentPerson.snapshotSource,
-        status: currentPerson.status
+        status: currentPerson.status,
       };
 
       if (roleLabel === "Representative" && currentPerson.district) {
@@ -95,11 +94,11 @@ async function saveCosponsorshipToLegislator({
       }
 
       if (roleLabel === "Representative") {
-        snapshotData.representativeData = currentPersonData.map(doc =>
+        snapshotData.representativeData = currentPersonData.map((doc) =>
           doc.toObject()
         );
       } else if (roleLabel === "Senator") {
-        snapshotData.senatorData = currentPersonData.map(doc =>
+        snapshotData.senatorData = currentPersonData.map((doc) =>
           doc.toObject()
         );
       }
@@ -108,21 +107,18 @@ async function saveCosponsorshipToLegislator({
         oldData: snapshotData,
         timestamp: new Date().toISOString(),
         actionType: "update",
-        _id: new mongoose.Types.ObjectId()
+        _id: new mongoose.Types.ObjectId(),
       };
 
       // Save snapshot in history (limit to last 50)
-      await personModel.findByIdAndUpdate(
-        localPerson._id,
-        {
-          $push: {
-            history: {
-              $each: [snapshot],
-              $slice: -50
-            }
-          }
-        }
-      );
+      await personModel.findByIdAndUpdate(localPerson._id, {
+        $push: {
+          history: {
+            $each: [snapshot],
+            $slice: -50,
+          },
+        },
+      });
     }
   }
 
@@ -138,7 +134,7 @@ async function saveCosponsorshipToLegislator({
     field: "activitiesScore",
     name: `${title}`,
     fromQuorum: true,
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
   };
 
   const normalizedTitle = title
@@ -152,8 +148,8 @@ async function saveCosponsorshipToLegislator({
       $push: {
         editedFields: {
           $each: [editedFieldEntry],
-          $slice: -20
-        }
+          $slice: -20,
+        },
       },
       $set: {
         updatedAt: new Date(),
@@ -162,9 +158,9 @@ async function saveCosponsorshipToLegislator({
         [`fieldEditors.${fieldKey}`]: {
           editorId: editorInfo?.editorId || "system-auto",
           editorName: editorInfo?.editorName || "System Auto-Update",
-          editedAt: editorInfo?.editedAt || new Date().toISOString()
-        }
-      }
+          editedAt: editorInfo?.editedAt || new Date().toISOString(),
+        },
+      },
     }
   );
 
@@ -226,7 +222,7 @@ async function saveCosponsorshipToLegislator({
 //     });
 
 //     if (currentRep && currentRepData.length > 0) {
-        
+
 //       // Build snapshot object
 //       const snapshot = {
 //         oldData: {
@@ -298,7 +294,6 @@ async function saveCosponsorshipToLegislator({
 //   );
 // }
 
-
 //   return true;
 // }
 
@@ -335,11 +330,15 @@ class activityController {
           date,
           congress,
           termId,
-          trackActivities,
           status: "draft",
         });
 
-        await newActivity.save();
+        if (trackActivities) {
+          newActivity.trackActivities = trackActivities;
+        }
+
+        const newActivityData = new Activity(newActivity);
+        await newActivityData.save();
 
         res.status(201).json({
           message: "Activity created successfully",
