@@ -37,9 +37,9 @@ class senatorDataController {
           mongoose.model("terms").findById(termObjectId),
           currentTerm
             ? SenatorData.findOne({
-                senateId: senateObjectId,
-                currentTerm: true,
-              })
+              senateId: senateObjectId,
+              currentTerm: true,
+            })
             : null,
           SenatorData.findOne({
             senateId: senateObjectId,
@@ -299,9 +299,14 @@ class senatorDataController {
         return res.status(404).json({ message: "Senator data not found" });
       }
 
+      const orderedData = senatorData.sort((a, b) => {
+        if (a.currentTerm && !b.currentTerm) return -1;
+        if (!a.currentTerm && b.currentTerm) return 1;
+        return 0; // keep original order otherwise
+      });
       res.status(200).json({
         message: "Retrieve successfully",
-        info: senatorData,
+        info: orderedData,
       });
     } catch (error) {
       res.status(500).json({
