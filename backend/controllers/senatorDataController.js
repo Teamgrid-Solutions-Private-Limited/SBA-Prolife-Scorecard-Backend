@@ -463,10 +463,9 @@ class senatorDataController {
       const latestHistory = senatorDocument.history?.slice(-1)[0];
       const hasHistoricalData = latestHistory?.oldData?.senatorData?.length > 0;
 
-      // Clean votes/activities
-      const cleanVoteOrActivity = (doc) => {
-        if (!doc) return null;
-        return {
+      // ---- Helpers ----
+      const cleanVoteOrActivity = (doc) =>
+        doc && {
           _id: doc._id,
           title: doc.title || null,
           shortDesc: doc.shortDesc || null,
@@ -474,24 +473,6 @@ class senatorDataController {
           roll: doc.roll || null,
           readMore: doc.readMore || null,
         };
-      };
-
-      // Format term data helper
-      const formatTermData = (term) => ({
-        _id: term._id,
-        termId: term.termId,
-        currentTerm: term.currentTerm,
-        summary: term.summary,
-        rating: term.rating,
-        votesScore: (term.votesScore || []).map((v) => ({
-          score: v.score,
-          voteId: cleanVoteOrActivity(v.voteId),
-        })),
-        activitiesScore: (term.activitiesScore || []).map((a) => ({
-          score: a.score,
-          activityId: cleanVoteOrActivity(a.activityId),
-        })),
-      });
 
       const getSenatorDetails = (sourceData, isHistorical = false) => ({
         _id: senatorDocument._id,
@@ -510,50 +491,66 @@ class senatorDataController {
           : senatorDocument.updatedAt,
       });
 
+      // ---- Main Logic ----
       let finalCurrentTerm = null;
       let finalPastTerms = [];
       let senatorDetails = null;
 
       if (hasHistoricalData) {
-        // ✅ HISTORICAL DATA
+        // ------------------ HISTORICAL DATA ------------------
         senatorDetails = getSenatorDetails(latestHistory.oldData, true);
-
         const historicalTerms = latestHistory.oldData.senatorData;
 
-        const populatedTerms = await Promise.all(
-          historicalTerms.map(async (term) => {
-            const termDoc = await Term.findById(term.termId).lean();
-
-            const votes = await Promise.all(
-              (term.votesScore || []).map(async (vote) => {
-                const v = await Vote.findById(vote.voteId).lean();
-                return { score: vote.score, voteId: cleanVoteOrActivity(v) };
-              })
-            );
-
-            const activities = await Promise.all(
-              (term.activitiesScore || []).map(async (act) => {
-                const a = await Activity.findById(act.activityId).lean();
-                return { score: act.score, activityId: cleanVoteOrActivity(a) };
-              })
-            );
-
-            return {
-              ...formatTermData(term),
-              termId: termDoc,
-              votesScore: votes,
-              activitiesScore: activities,
-            };
-          })
+        // Collect all IDs we’ll need
+        const allTermIds = historicalTerms.map((t) => t.termId);
+        const allVoteIds = historicalTerms.flatMap((t) =>
+          (t.votesScore || []).map((v) => v.voteId)
         );
+        const allActivityIds = historicalTerms.flatMap((t) =>
+          (t.activitiesScore || []).map((a) => a.activityId)
+        );
+
+        // Fetch in bulk
+        const [termDocs, voteDocs, activityDocs] = await Promise.all([
+          Term.find({ _id: { $in: allTermIds } }).lean(),
+          Vote.find({ _id: { $in: allVoteIds } }).lean(),
+          Activity.find({ _id: { $in: allActivityIds } }).lean(),
+        ]);
+
+        // Map by id for quick lookup
+        const termMap = Object.fromEntries(
+          termDocs.map((d) => [String(d._id), d])
+        );
+        const voteMap = Object.fromEntries(
+          voteDocs.map((d) => [String(d._id), cleanVoteOrActivity(d)])
+        );
+        const activityMap = Object.fromEntries(
+          activityDocs.map((d) => [String(d._id), cleanVoteOrActivity(d)])
+        );
+
+        const populatedTerms = historicalTerms.map((term) => ({
+          _id: term._id,
+          termId: termMap[String(term.termId)] || null,
+          currentTerm: term.currentTerm,
+          summary: term.summary,
+          rating: term.rating,
+          votesScore: (term.votesScore || []).map((v) => ({
+            score: v.score,
+            voteId: voteMap[String(v.voteId)] || null,
+          })),
+          activitiesScore: (term.activitiesScore || []).map((a) => ({
+            score: a.score,
+            activityId: activityMap[String(a.activityId)] || null,
+          })),
+        }));
 
         finalCurrentTerm = populatedTerms.find((t) => t.currentTerm) || null;
         finalPastTerms = populatedTerms.filter((t) => !t.currentTerm);
       } else {
-        // ✅ CURRENT DATA
+        // ------------------ CURRENT DATA ------------------
         const [currentTerm, pastTerms] = await Promise.all([
           SenatorData.findOne({ senateId, currentTerm: true })
-            .populate("termId")
+            .populate("termId", "_id name startYear endYear congresses")
             .populate(
               "votesScore.voteId",
               "_id title shortDesc longDesc roll readMore"
@@ -564,7 +561,7 @@ class senatorDataController {
             )
             .lean(),
           SenatorData.find({ senateId, currentTerm: { $ne: true } })
-            .populate("termId")
+            .populate("termId", "_id name startYear endYear congresses")
             .populate(
               "votesScore.voteId",
               "_id title shortDesc longDesc roll readMore"
@@ -579,10 +576,27 @@ class senatorDataController {
 
         senatorDetails = getSenatorDetails(senatorDocument, false);
 
+        const formatTermData = (term) => ({
+          _id: term._id,
+          termId: term.termId,
+          currentTerm: term.currentTerm,
+          summary: term.summary,
+          rating: term.rating,
+          votesScore: (term.votesScore || []).map((v) => ({
+            score: v.score,
+            voteId: cleanVoteOrActivity(v.voteId),
+          })),
+          activitiesScore: (term.activitiesScore || []).map((a) => ({
+            score: a.score,
+            activityId: cleanVoteOrActivity(a.activityId),
+          })),
+        });
+
         if (currentTerm) finalCurrentTerm = formatTermData(currentTerm);
         finalPastTerms = pastTerms.map(formatTermData);
       }
 
+      // ------------------ RESPONSE ------------------
       res.status(200).json({
         message: "Retrieved successfully",
         senator: senatorDetails,
