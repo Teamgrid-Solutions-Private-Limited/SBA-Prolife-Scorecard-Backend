@@ -619,20 +619,31 @@ class activityController {
   static async getActivityById(req, res) {
     try {
       const activity = await Activity.findById(req.params.id)
-        .populate("termId")
+        .populate("termId", "_id name startYear endYear congresses") // cleaned termId
         .lean();
 
       if (!activity) {
         return res.status(404).json({ message: "Activity not found" });
       }
 
-      let supportData = { yea: [], nay: [], other: [] };
+      let supportData;
 
       if (activity.activityquorumId) {
+        // Try to find a matching Vote
         const vote = await Vote.findOne({
           quorumId: activity.activityquorumId,
         }).lean();
-        supportData = await buildSupportData(vote);
+
+        if (vote) {
+          // Found a vote → build vote-style supportData
+          supportData = await buildSupportData(vote, false);
+        } else {
+          // No vote found → build activity-style supportData
+          supportData = await buildSupportData(activity, true);
+        }
+      } else {
+        // Fallback → activity-style supportData
+        supportData = await buildSupportData(activity, true);
       }
 
       res.status(200).json({
@@ -640,9 +651,12 @@ class activityController {
         supportData,
       });
     } catch (error) {
-      res.status(500).json({ message: "Error retrieving activity", error });
+      res
+        .status(500)
+        .json({ message: "Error retrieving activity", error: error.message });
     }
   }
+
   // Update activity with file and optional discard logic
   static async updateActivity(req, res) {
     upload.single("readMore")(req, res, async (err) => {
