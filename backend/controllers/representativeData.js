@@ -575,7 +575,7 @@ class houseDataController {
           title: doc.title || null,
           shortDesc: doc.shortDesc || null,
           longDesc: doc.longDesc || null,
-          roll: doc.roll || null,
+          rollCall: doc.rollCall || null,
           readMore: doc.readMore || null,
         };
 
@@ -654,22 +654,22 @@ class houseDataController {
             .populate("termId", "_id name startYear endYear congresses")
             .populate(
               "votesScore.voteId",
-              "_id title shortDesc longDesc roll readMore"
+              "_id title shortDesc longDesc rollCall readMore"
             )
             .populate(
               "activitiesScore.activityId",
-              "_id title shortDesc longDesc roll readMore"
+              "_id title shortDesc longDesc rollCall readMore"
             )
             .lean(),
           HouseData.find({ houseId, currentTerm: { $ne: true } })
             .populate("termId", "_id name startYear endYear congresses")
             .populate(
               "votesScore.voteId",
-              "_id title shortDesc longDesc roll readMore"
+              "_id title shortDesc longDesc rollCall readMore"
             )
             .populate(
               "activitiesScore.activityId",
-              "_id title shortDesc longDesc roll readMore"
+              "_id title shortDesc longDesc rollCall readMore"
             )
             .sort({ "termId.startYear": -1, createdAt: -1 })
             .lean(),
