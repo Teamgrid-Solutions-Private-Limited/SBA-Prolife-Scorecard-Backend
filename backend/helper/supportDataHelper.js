@@ -11,7 +11,7 @@
 //     // Handle both "senate" and "senate_bill" types
 //     if (vote.type?.toLowerCase().includes("senate")) {
 //       console.log("Processing Senate vote:", vote._id);
-      
+
 //       const senatorVotes = await SenatorData.find({
 //         "votesScore.voteId": vote._id,
 //       })
@@ -24,7 +24,7 @@
 //         const scoreEntry = senData.votesScore.find(
 //           (v) => v.voteId && v.voteId.toString() === vote._id.toString()
 //         );
-        
+
 //         if (scoreEntry && senData.senateId) {
 //           const info = {
 //             name: senData.senateId.name,
@@ -32,7 +32,7 @@
 //             state: senData.senateId.state,
 //             photo: senData.senateId.photo,
 //           };
-          
+
 //           const score = scoreEntry.score?.toLowerCase();
 //           if (score === "yea") {
 //             supportData.yea.push(info);
@@ -47,7 +47,7 @@
 //     // Handle both "house" and "house_bill" types
 //     else if (vote.type?.toLowerCase().includes("house")) {
 //       console.log("Processing House vote:", vote._id);
-      
+
 //       const repVotes = await RepresentativeData.find({
 //         "votesScore.voteId": vote._id,
 //       })
@@ -60,7 +60,7 @@
 //         const scoreEntry = repData.votesScore.find(
 //           (v) => v.voteId && v.voteId.toString() === vote._id.toString()
 //         );
-        
+
 //         if (scoreEntry && repData.repId) {
 //           const info = {
 //             name: repData.repId.name,
@@ -68,7 +68,7 @@
 //             state: repData.repId.state,
 //             photo: repData.repId.photo,
 //           };
-          
+
 //           const score = scoreEntry.score?.toLowerCase();
 //           if (score === "yea") {
 //             supportData.yea.push(info);
@@ -96,8 +96,6 @@
 
 // module.exports = { buildSupportData };
 
-
-
 // helpers/voteSupportHelper.js
 const SenatorData = require("../models/senatorDataSchema");
 const RepresentativeData = require("../models/representativeDataSchema");
@@ -114,16 +112,20 @@ async function buildSupportData(doc, isActivity = false) {
     // Handle Senate types
     if (doc.type?.toLowerCase().includes("senate")) {
       const senatorDocs = await SenatorData.find({
-        [isActivity ? "activitiesScore.activityId" : "votesScore.voteId"]: doc._id,
+        [isActivity ? "activitiesScore.activityId" : "votesScore.voteId"]:
+          doc._id,
       })
-        .populate("senateId", "name party state photo")
+        .populate("senateId", "name party district state photo")
         .lean();
 
       senatorDocs.forEach((senData) => {
-        const scoreEntry = (isActivity ? senData.activitiesScore : senData.votesScore).find(
+        const scoreEntry = (
+          isActivity ? senData.activitiesScore : senData.votesScore
+        ).find(
           (s) =>
             s[isActivity ? "activityId" : "voteId"] &&
-            s[isActivity ? "activityId" : "voteId"].toString() === doc._id.toString()
+            s[isActivity ? "activityId" : "voteId"].toString() ===
+              doc._id.toString()
         );
 
         if (scoreEntry && senData.senateId) {
@@ -150,23 +152,27 @@ async function buildSupportData(doc, isActivity = false) {
     // Handle House types
     else if (doc.type?.toLowerCase().includes("house")) {
       const repDocs = await RepresentativeData.find({
-        [isActivity ? "activitiesScore.activityId" : "votesScore.voteId"]: doc._id,
+        [isActivity ? "activitiesScore.activityId" : "votesScore.voteId"]:
+          doc._id,
       })
-        .populate("houseId", "name party state photo")
+        .populate("houseId", "name party district photo")
         .lean();
 
       repDocs.forEach((repData) => {
-        const scoreEntry = (isActivity ? repData.activitiesScore : repData.votesScore).find(
+        const scoreEntry = (
+          isActivity ? repData.activitiesScore : repData.votesScore
+        ).find(
           (s) =>
             s[isActivity ? "activityId" : "voteId"] &&
-            s[isActivity ? "activityId" : "voteId"].toString() === doc._id.toString()
+            s[isActivity ? "activityId" : "voteId"].toString() ===
+              doc._id.toString()
         );
 
         if (scoreEntry && repData.houseId) {
           const info = {
             name: repData.houseId.name,
             party: repData.houseId.party,
-            state: repData.houseId.state,
+            state: repData.houseId.district,
             photo: repData.houseId.photo,
           };
 
