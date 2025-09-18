@@ -1,6 +1,8 @@
 const HouseData = require("../models/representativeDataSchema");
 const House = require("../models/representativeSchema");
 const Term = require("../models/termSchema");
+const Vote = require("../models/voteSchema");
+const Activity = require("../models/activitySchema");
 const { getCongresses, isValidTerm } = require("../helper/termUtils");
 
 const mongoose = require("mongoose");
@@ -433,37 +435,150 @@ class houseDataController {
     }
   }
 
+  // static async HouseDataByHouseId(req, res) {
+  //   try {
+  //     const houseId = req.params.repId;
+
+  //     // Get the main house document with history populated
+  //     const houseDocument = await House.findById(houseId).lean();
+
+  //     if (!houseDocument) {
+  //       return res.status(404).json({ message: "House data not found" });
+  //     }
+
+  //     // Check for historical data - get the latest history entry
+  //     const latestHistory = houseDocument.history?.slice(-1)[0];
+  //     const hasHistoricalData =
+  //       latestHistory?.oldData?.representativeData?.length > 0;
+
+  //     // Common function to format term data
+  //     const formatTermData = (term) => ({
+  //       _id: term._id,
+  //       termId: term.termId,
+  //       currentTerm: term.currentTerm,
+  //       summary: term.summary,
+  //       rating: term.rating,
+  //       votesScore: term.votesScore || [],
+  //       activitiesScore: term.activitiesScore || [],
+  //       createdAt: term.createdAt,
+  //       updatedAt: term.updatedAt,
+  //       __v: term.__v,
+  //     });
+
+  //     // Common function to get house details
+  //     const getHouseDetails = (sourceData, isHistorical = false) => ({
+  //       _id: houseDocument._id,
+  //       name: sourceData.name || houseDocument.name,
+  //       repId: sourceData.repId || houseDocument.repId,
+  //       district: sourceData.district || houseDocument.district,
+  //       party: sourceData.party || houseDocument.party,
+  //       photo: sourceData.photo || houseDocument.photo,
+  //       status: sourceData.status || houseDocument.status,
+  //       publishStatus: isHistorical ? "published" : houseDocument.publishStatus,
+  //       editedFields: sourceData.editedFields || [],
+  //       fieldEditors: sourceData.fieldEditors || {},
+  //       modifiedBy: sourceData.modifiedBy,
+  //       modifiedAt: sourceData.modifiedAt,
+  //       snapshotSource: sourceData.snapshotSource,
+  //       createdAt: houseDocument.createdAt,
+  //       updatedAt: isHistorical
+  //         ? latestHistory.timestamp
+  //         : houseDocument.updatedAt,
+  //     });
+
+  //     let finalCurrentTerm = null;
+  //     let finalPastTerms = [];
+  //     let houseDetails = null;
+
+  //     if (hasHistoricalData) {
+  //       // ✅ USE ONLY HISTORICAL DATA
+  //       console.log(
+  //         "Using historical data with",
+  //         latestHistory.oldData.representativeData.length,
+  //         "term entries"
+  //       );
+
+  //       houseDetails = getHouseDetails(latestHistory.oldData, true);
+
+  //       // Process all representativeData from history
+  //       const historicalTerms = latestHistory.oldData.representativeData;
+
+  //       // Find current term (if exists in historical data)
+  //       const currentHistoricalTerm = historicalTerms.find(
+  //         (term) => term.currentTerm
+  //       );
+  //       if (currentHistoricalTerm) {
+  //         finalCurrentTerm = formatTermData(currentHistoricalTerm);
+  //       }
+
+  //       // Get all past terms from historical data
+  //       finalPastTerms = historicalTerms
+  //         .filter((term) => !term.currentTerm)
+  //         .map(formatTermData);
+  //     } else {
+  //       // ✅ USE CURRENT DATA (only if no historical data available)
+  //       const allTerms = await HouseData.find({ houseId })
+  //         .populate("termId")
+  //         .populate("votesScore.voteId")
+  //         .populate("activitiesScore.activityId")
+  //         .sort({ "termId.startYear": -1, createdAt: -1 })
+  //         .lean();
+
+  //       houseDetails = getHouseDetails(houseDocument, false);
+
+  //       // Find current term and format past terms
+  //       const currentTerm = allTerms.find((term) => term.currentTerm);
+  //       if (currentTerm) {
+  //         finalCurrentTerm = formatTermData(currentTerm);
+  //       }
+
+  //       finalPastTerms = allTerms
+  //         .filter((term) => !term.currentTerm)
+  //         .map(formatTermData);
+  //     }
+
+  //     res.status(200).json({
+  //       message: "Retrieved successfully",
+  //       house: houseDetails,
+  //       currentTerm: finalCurrentTerm,
+  //       pastTerms: finalPastTerms,
+  //       dataSource: hasHistoricalData ? "historical" : "current",
+  //       hasHistoricalData,
+  //     });
+  //   } catch (error) {
+  //     console.error("Error retrieving house data:", error);
+  //     res.status(500).json({
+  //       message: "Error retrieving house data",
+  //       error: error.message,
+  //     });
+  //   }
+  // }
+
   static async HouseDataByHouseId(req, res) {
     try {
       const houseId = req.params.repId;
 
-      // Get the main house document with history populated
+      // Get the main house document
       const houseDocument = await House.findById(houseId).lean();
-
       if (!houseDocument) {
         return res.status(404).json({ message: "House data not found" });
       }
 
-      // Check for historical data - get the latest history entry
       const latestHistory = houseDocument.history?.slice(-1)[0];
       const hasHistoricalData =
         latestHistory?.oldData?.representativeData?.length > 0;
 
-      // Common function to format term data
-      const formatTermData = (term) => ({
-        _id: term._id,
-        termId: term.termId,
-        currentTerm: term.currentTerm,
-        summary: term.summary,
-        rating: term.rating,
-        votesScore: term.votesScore || [],
-        activitiesScore: term.activitiesScore || [],
-        createdAt: term.createdAt,
-        updatedAt: term.updatedAt,
-        __v: term.__v,
-      });
+      // --- Helpers ---
+      const cleanVoteOrActivity = (doc) =>
+        doc && {
+          _id: doc._id,
+          title: doc.title || null,
+          shortDesc: doc.shortDesc || null,
+          longDesc: doc.longDesc || null,
+          rollCall: doc.rollCall || null,
+          readMore: doc.readMore || null,
+        };
 
-      // Common function to get house details
       const getHouseDetails = (sourceData, isHistorical = false) => ({
         _id: houseDocument._id,
         name: sourceData.name || houseDocument.name,
@@ -473,14 +588,9 @@ class houseDataController {
         photo: sourceData.photo || houseDocument.photo,
         status: sourceData.status || houseDocument.status,
         publishStatus: isHistorical ? "published" : houseDocument.publishStatus,
-        editedFields: sourceData.editedFields || [],
-        fieldEditors: sourceData.fieldEditors || {},
-        modifiedBy: sourceData.modifiedBy,
-        modifiedAt: sourceData.modifiedAt,
-        snapshotSource: sourceData.snapshotSource,
         createdAt: houseDocument.createdAt,
         updatedAt: isHistorical
-          ? latestHistory.timestamp
+          ? latestHistory?.timestamp
           : houseDocument.updatedAt,
       });
 
@@ -489,50 +599,102 @@ class houseDataController {
       let houseDetails = null;
 
       if (hasHistoricalData) {
-        // ✅ USE ONLY HISTORICAL DATA
-        console.log(
-          "Using historical data with",
-          latestHistory.oldData.representativeData.length,
-          "term entries"
-        );
-
+        // ------------------ HISTORICAL DATA ------------------
         houseDetails = getHouseDetails(latestHistory.oldData, true);
-
-        // Process all representativeData from history
         const historicalTerms = latestHistory.oldData.representativeData;
 
-        // Find current term (if exists in historical data)
-        const currentHistoricalTerm = historicalTerms.find(
-          (term) => term.currentTerm
+        // Collect all IDs we’ll need
+        const allTermIds = historicalTerms.map((t) => t.termId);
+        const allVoteIds = historicalTerms.flatMap((t) =>
+          (t.votesScore || []).map((v) => v.voteId)
         );
-        if (currentHistoricalTerm) {
-          finalCurrentTerm = formatTermData(currentHistoricalTerm);
-        }
+        const allActivityIds = historicalTerms.flatMap((t) =>
+          (t.activitiesScore || []).map((a) => a.activityId)
+        );
 
-        // Get all past terms from historical data
-        finalPastTerms = historicalTerms
-          .filter((term) => !term.currentTerm)
-          .map(formatTermData);
+        // Fetch in bulk
+        const [termDocs, voteDocs, activityDocs] = await Promise.all([
+          Term.find({ _id: { $in: allTermIds } }).lean(),
+          Vote.find({ _id: { $in: allVoteIds } }).lean(),
+          Activity.find({ _id: { $in: allActivityIds } }).lean(),
+        ]);
+
+        const termMap = Object.fromEntries(
+          termDocs.map((d) => [String(d._id), d])
+        );
+        const voteMap = Object.fromEntries(
+          voteDocs.map((d) => [String(d._id), cleanVoteOrActivity(d)])
+        );
+        const activityMap = Object.fromEntries(
+          activityDocs.map((d) => [String(d._id), cleanVoteOrActivity(d)])
+        );
+
+        const populatedTerms = historicalTerms.map((term) => ({
+          _id: term._id,
+          termId: termMap[String(term.termId)] || null,
+          currentTerm: term.currentTerm,
+          summary: term.summary,
+          rating: term.rating,
+          votesScore: (term.votesScore || []).map((v) => ({
+            score: v.score,
+            voteId: voteMap[String(v.voteId)] || null,
+          })),
+          activitiesScore: (term.activitiesScore || []).map((a) => ({
+            score: a.score,
+            activityId: activityMap[String(a.activityId)] || null,
+          })),
+        }));
+
+        finalCurrentTerm = populatedTerms.find((t) => t.currentTerm) || null;
+        finalPastTerms = populatedTerms.filter((t) => !t.currentTerm);
       } else {
-        // ✅ USE CURRENT DATA (only if no historical data available)
-        const allTerms = await HouseData.find({ houseId })
-          .populate("termId")
-          .populate("votesScore.voteId")
-          .populate("activitiesScore.activityId")
-          .sort({ "termId.startYear": -1, createdAt: -1 })
-          .lean();
+        // ------------------ CURRENT DATA ------------------
+        const [currentTerm, pastTerms] = await Promise.all([
+          HouseData.findOne({ houseId, currentTerm: true })
+            .populate("termId", "_id name startYear endYear congresses")
+            .populate(
+              "votesScore.voteId",
+              "_id title shortDesc longDesc rollCall readMore"
+            )
+            .populate(
+              "activitiesScore.activityId",
+              "_id title shortDesc longDesc rollCall readMore"
+            )
+            .lean(),
+          HouseData.find({ houseId, currentTerm: { $ne: true } })
+            .populate("termId", "_id name startYear endYear congresses")
+            .populate(
+              "votesScore.voteId",
+              "_id title shortDesc longDesc rollCall readMore"
+            )
+            .populate(
+              "activitiesScore.activityId",
+              "_id title shortDesc longDesc rollCall readMore"
+            )
+            .sort({ "termId.startYear": -1, createdAt: -1 })
+            .lean(),
+        ]);
 
         houseDetails = getHouseDetails(houseDocument, false);
 
-        // Find current term and format past terms
-        const currentTerm = allTerms.find((term) => term.currentTerm);
-        if (currentTerm) {
-          finalCurrentTerm = formatTermData(currentTerm);
-        }
+        const formatTermData = (term) => ({
+          _id: term._id,
+          termId: term.termId,
+          currentTerm: term.currentTerm,
+          summary: term.summary,
+          rating: term.rating,
+          votesScore: (term.votesScore || []).map((v) => ({
+            score: v.score,
+            voteId: cleanVoteOrActivity(v.voteId),
+          })),
+          activitiesScore: (term.activitiesScore || []).map((a) => ({
+            score: a.score,
+            activityId: cleanVoteOrActivity(a.activityId),
+          })),
+        });
 
-        finalPastTerms = allTerms
-          .filter((term) => !term.currentTerm)
-          .map(formatTermData);
+        if (currentTerm) finalCurrentTerm = formatTermData(currentTerm);
+        finalPastTerms = pastTerms.map(formatTermData);
       }
 
       res.status(200).json({

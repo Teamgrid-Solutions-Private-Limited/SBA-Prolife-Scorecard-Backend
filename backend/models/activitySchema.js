@@ -14,7 +14,6 @@ const activitySchema = new mongoose.Schema(
     trackActivities: {
       type: String,
       enum: ["completed", "pending", "failed"],
-      default: "completed",
     },
     status: {
       type: String,

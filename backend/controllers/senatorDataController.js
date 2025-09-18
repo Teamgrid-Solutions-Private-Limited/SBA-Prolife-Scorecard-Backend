@@ -2,6 +2,8 @@ const mongoose = require("mongoose");
 const SenatorData = require("../models/senatorDataSchema");
 const Senator = require("../models/senatorSchema");
 const Vote = require("../models/voteSchema");
+const Term = require("../models/termSchema");
+const Activity = require("../models/activitySchema");
 class senatorDataController {
   // Create a new senator data
   static async createSenatorData(req, res) {
@@ -37,9 +39,9 @@ class senatorDataController {
           mongoose.model("terms").findById(termObjectId),
           currentTerm
             ? SenatorData.findOne({
-              senateId: senateObjectId,
-              currentTerm: true,
-            })
+                senateId: senateObjectId,
+                currentTerm: true,
+              })
             : null,
           SenatorData.findOne({
             senateId: senateObjectId,
@@ -317,125 +319,161 @@ class senatorDataController {
   }
 
   //frontend ui display
+
+  // static async SenatorDataBySenatorId(req, res) {
+  //   try {
+  //     const senateId = req.params.senatorId;
+
+  //     // Get senator doc
+  //     const senatorDocument = await Senator.findById(senateId).lean();
+  //     if (!senatorDocument) {
+  //       return res.status(404).json({ message: "Senator data not found" });
+  //     }
+
+  //     const latestHistory = senatorDocument.history?.slice(-1)[0];
+  //     const hasHistoricalData = latestHistory?.oldData?.senatorData?.length > 0;
+
+  //     // Format term data helper
+  //     const formatTermData = (term) => ({
+  //       _id: term._id,
+  //       termId: term.termId,
+  //       currentTerm: term.currentTerm,
+  //       summary: term.summary,
+  //       rating: term.rating,
+  //       votesScore: term.votesScore || [],
+  //       activitiesScore: term.activitiesScore || [],
+  //       createdAt: term.createdAt,
+  //       updatedAt: term.updatedAt,
+  //       __v: term.__v,
+  //     });
+
+  //     const getSenatorDetails = (sourceData, isHistorical = false) => ({
+  //       _id: senatorDocument._id,
+  //       name: sourceData.name || senatorDocument.name,
+  //       state: sourceData.state || senatorDocument.state,
+  //       party: sourceData.party || senatorDocument.party,
+  //       photo: sourceData.photo || senatorDocument.photo,
+  //       status: sourceData.status || senatorDocument.status,
+  //       senatorId: sourceData.senatorId || senatorDocument.senatorId,
+  //       publishStatus: isHistorical
+  //         ? "published"
+  //         : senatorDocument.publishStatus,
+  //       editedFields:
+  //         sourceData.editedFields || senatorDocument.editedFields || [],
+  //       fieldEditors:
+  //         sourceData.fieldEditors || senatorDocument.fieldEditors || {},
+  //       snapshotSource:
+  //         sourceData.snapshotSource || senatorDocument.snapshotSource,
+  //       createdAt: senatorDocument.createdAt,
+  //       updatedAt: isHistorical
+  //         ? latestHistory?.timestamp
+  //         : senatorDocument.updatedAt,
+  //     });
+
+  //     let finalCurrentTerm = null;
+  //     let finalPastTerms = [];
+  //     let senatorDetails = null;
+
+  //     if (hasHistoricalData) {
+  //       // ✅ HISTORICAL DATA → make it look same as current
+  //       senatorDetails = getSenatorDetails(latestHistory.oldData, true);
+
+  //       const historicalTerms = latestHistory.oldData.senatorData;
+
+  //       // manually "populate" termId, votesScore.voteId, activitiesScore.activityId
+  //       const populatedTerms = await Promise.all(
+  //         historicalTerms.map(async (term) => {
+  //           const termDoc = await Term.findById(term.termId).lean();
+
+  //           const votes = await Promise.all(
+  //             (term.votesScore || []).map(async (vote) => {
+  //               const v = await Vote.findById(vote.voteId).lean();
+  //               return { ...vote, voteId: v };
+  //             })
+  //           );
+
+  //           const activities = await Promise.all(
+  //             (term.activitiesScore || []).map(async (act) => {
+  //               const a = await Activity.findById(act.activityId).lean();
+  //               return { ...act, activityId: a };
+  //             })
+  //           );
+
+  //           return {
+  //             ...formatTermData(term),
+  //             termId: termDoc,
+  //             votesScore: votes,
+  //             activitiesScore: activities,
+  //           };
+  //         })
+  //       );
+
+  //       // same split as current
+  //       finalCurrentTerm = populatedTerms.find((t) => t.currentTerm) || null;
+  //       finalPastTerms = populatedTerms.filter((t) => !t.currentTerm);
+  //     } else {
+  //       // ✅ CURRENT DATA
+  //       const [currentTerm, pastTerms] = await Promise.all([
+  //         SenatorData.findOne({ senateId, currentTerm: true })
+  //           .populate("termId")
+  //           .populate("votesScore.voteId")
+  //           .populate("activitiesScore.activityId")
+  //           .lean(),
+  //         SenatorData.find({ senateId, currentTerm: { $ne: true } })
+  //           .populate("termId")
+  //           .populate("votesScore.voteId")
+  //           .populate("activitiesScore.activityId")
+  //           .sort({ "termId.startYear": -1, createdAt: -1 })
+  //           .lean(),
+  //       ]);
+
+  //       senatorDetails = getSenatorDetails(senatorDocument, false);
+
+  //       if (currentTerm) finalCurrentTerm = formatTermData(currentTerm);
+  //       finalPastTerms = pastTerms.map(formatTermData);
+  //     }
+
+  //     res.status(200).json({
+  //       message: "Retrieved successfully",
+  //       senator: senatorDetails,
+  //       currentTerm: finalCurrentTerm,
+  //       pastTerms: finalPastTerms,
+  //       dataSource: hasHistoricalData ? "historical" : "current",
+  //       hasHistoricalData,
+  //     });
+  //   } catch (error) {
+  //     console.error("Error retrieving senator data:", error);
+  //     res.status(500).json({
+  //       message: "Error retrieving senator data",
+  //       error: error.message,
+  //     });
+  //   }
+  // }
+
   static async SenatorDataBySenatorId(req, res) {
     try {
       const senateId = req.params.senatorId;
 
-      // Fetch all terms for this senator
-      const senatorData = await SenatorData.find({ senateId })
-        .populate("termId")
-        .populate("senateId")
-        .populate("votesScore.voteId")
-        .populate("activitiesScore.activityId");
-
-      if (!senatorData.length) {
-        return res.status(404).json({ message: "Senator data not found" });
-      }
-
-      // Sort: currentTerm first, then latest by createdAt
-      const sortedData = senatorData.sort((a, b) => {
-        if (a.currentTerm && !b.currentTerm) return -1;
-        if (!a.currentTerm && b.currentTerm) return 1;
-        return new Date(b.createdAt) - new Date(a.createdAt);
-      });
-
-      // Senator details from the latest record (first after sorting)
-      const latestSenatorDetails = sortedData[0].senateId;
-
-      // Remove senateId from term records
-      const termData = sortedData.map((term) => {
-        const { senateId, ...rest } = term.toObject();
-        return rest;
-      });
-
-      res.status(200).json({
-        message: "Retrieved successfully",
-        senator: latestSenatorDetails,
-        terms: termData,
-      });
-    } catch (error) {
-      res.status(500).json({
-        message: "Error retrieving senator data",
-        error: error.message,
-      });
-    }
-  }
-  static async SenatorDataBySenatorId(req, res) {
-    try {
-      const senateId = req.params.senatorId; // Note: param is senatorId but schema uses senateId
-
-      // Run queries in parallel
-      const [currentTerm, pastTerms] = await Promise.all([
-        // Get currentTerm (only one, enforced by index)
-        SenatorData.findOne({ senateId, currentTerm: true })
-          .populate("termId")
-          .populate("senateId")
-          .populate("votesScore.voteId")
-          .populate("activitiesScore.activityId")
-          .lean(),
-
-        // Get past terms, sorted by startYear (or createdAt fallback)
-        SenatorData.find({ senateId, currentTerm: { $ne: true } })
-          .populate("termId")
-          .populate("votesScore.voteId")
-          .populate("activitiesScore.activityId")
-          .sort({ "termId.startYear": -1, createdAt: -1 })
-          .lean(),
-      ]);
-
-      if (!currentTerm && !pastTerms.length) {
-        return res.status(404).json({ message: "Senator data not found" });
-      }
-
-      // Senator details from either currentTerm or first pastTerm
-      const senatorDetails = currentTerm?.senateId || pastTerms[0]?.senateId;
-
-      res.status(200).json({
-        message: "Retrieved successfully",
-        senator: senatorDetails,
-        currentTerm: currentTerm
-          ? { ...currentTerm, senateId: undefined }
-          : null,
-        pastTerms: pastTerms.map(({ senateId, ...rest }) => rest),
-      });
-    } catch (error) {
-      res.status(500).json({
-        message: "Error retrieving senator data",
-        error: error.message,
-      });
-    }
-  }
-
-  static async SenatorDataBySenatorId(req, res) {
-    try {
-      const senateId = req.params.senatorId;
-
-      // Get the main senator document - removed modifiedBy population since it doesn't exist
+      // Get senator doc
       const senatorDocument = await Senator.findById(senateId).lean();
-
       if (!senatorDocument) {
         return res.status(404).json({ message: "Senator data not found" });
       }
 
-      // Check for historical data - get the latest history entry
       const latestHistory = senatorDocument.history?.slice(-1)[0];
       const hasHistoricalData = latestHistory?.oldData?.senatorData?.length > 0;
 
-      // Common function to format term data
-      const formatTermData = (term) => ({
-        _id: term._id,
-        termId: term.termId,
-        currentTerm: term.currentTerm,
-        summary: term.summary,
-        rating: term.rating,
-        votesScore: term.votesScore || [],
-        activitiesScore: term.activitiesScore || [],
-        createdAt: term.createdAt,
-        updatedAt: term.updatedAt,
-        __v: term.__v,
-      });
+      // ---- Helpers ----
+      const cleanVoteOrActivity = (doc) =>
+        doc && {
+          _id: doc._id,
+          title: doc.title || null,
+          shortDesc: doc.shortDesc || null,
+          longDesc: doc.longDesc || null,
+          rollCall: doc.rollCall || null,
+          readMore: doc.readMore || null,
+        };
 
-      // Common function to get senator details - updated for your schema
       const getSenatorDetails = (sourceData, isHistorical = false) => ({
         _id: senatorDocument._id,
         name: sourceData.name || senatorDocument.name,
@@ -447,79 +485,118 @@ class senatorDataController {
         publishStatus: isHistorical
           ? "published"
           : senatorDocument.publishStatus,
-        editedFields:
-          sourceData.editedFields || senatorDocument.editedFields || [],
-        fieldEditors:
-          sourceData.fieldEditors || senatorDocument.fieldEditors || {},
-        // modifiedBy field doesn't exist in your schema, using fieldEditors instead
-        snapshotSource:
-          sourceData.snapshotSource || senatorDocument.snapshotSource,
         createdAt: senatorDocument.createdAt,
         updatedAt: isHistorical
           ? latestHistory?.timestamp
           : senatorDocument.updatedAt,
       });
 
+      // ---- Main Logic ----
       let finalCurrentTerm = null;
       let finalPastTerms = [];
       let senatorDetails = null;
 
       if (hasHistoricalData) {
-        // ✅ USE ONLY HISTORICAL DATA
-        console.log(
-          "Using historical data with",
-          latestHistory.oldData.senatorData.length,
-          "term entries"
-        );
-
+        // ------------------ HISTORICAL DATA ------------------
         senatorDetails = getSenatorDetails(latestHistory.oldData, true);
-
-        // Process all senatorData from history
         const historicalTerms = latestHistory.oldData.senatorData;
 
-        // Find current term (if exists in historical data)
-        const currentHistoricalTerm = historicalTerms.find(
-          (term) => term.currentTerm
+        // Collect all IDs we’ll need
+        const allTermIds = historicalTerms.map((t) => t.termId);
+        const allVoteIds = historicalTerms.flatMap((t) =>
+          (t.votesScore || []).map((v) => v.voteId)
         );
-        if (currentHistoricalTerm) {
-          finalCurrentTerm = formatTermData(currentHistoricalTerm);
-        }
+        const allActivityIds = historicalTerms.flatMap((t) =>
+          (t.activitiesScore || []).map((a) => a.activityId)
+        );
 
-        // Get all past terms from historical data
-        finalPastTerms = historicalTerms
-          .filter((term) => !term.currentTerm)
-          .map(formatTermData);
+        // Fetch in bulk
+        const [termDocs, voteDocs, activityDocs] = await Promise.all([
+          Term.find({ _id: { $in: allTermIds } }).lean(),
+          Vote.find({ _id: { $in: allVoteIds } }).lean(),
+          Activity.find({ _id: { $in: allActivityIds } }).lean(),
+        ]);
+
+        // Map by id for quick lookup
+        const termMap = Object.fromEntries(
+          termDocs.map((d) => [String(d._id), d])
+        );
+        const voteMap = Object.fromEntries(
+          voteDocs.map((d) => [String(d._id), cleanVoteOrActivity(d)])
+        );
+        const activityMap = Object.fromEntries(
+          activityDocs.map((d) => [String(d._id), cleanVoteOrActivity(d)])
+        );
+
+        const populatedTerms = historicalTerms.map((term) => ({
+          _id: term._id,
+          termId: termMap[String(term.termId)] || null,
+          currentTerm: term.currentTerm,
+          summary: term.summary,
+          rating: term.rating,
+          votesScore: (term.votesScore || []).map((v) => ({
+            score: v.score,
+            voteId: voteMap[String(v.voteId)] || null,
+          })),
+          activitiesScore: (term.activitiesScore || []).map((a) => ({
+            score: a.score,
+            activityId: activityMap[String(a.activityId)] || null,
+          })),
+        }));
+
+        finalCurrentTerm = populatedTerms.find((t) => t.currentTerm) || null;
+        finalPastTerms = populatedTerms.filter((t) => !t.currentTerm);
       } else {
-        // ✅ USE CURRENT DATA (only if no historical data available)
-        // Run queries in parallel for better performance
+        // ------------------ CURRENT DATA ------------------
         const [currentTerm, pastTerms] = await Promise.all([
-          // Get current term
           SenatorData.findOne({ senateId, currentTerm: true })
-            .populate("termId")
-            .populate("votesScore.voteId")
-            .populate("activitiesScore.activityId")
+            .populate("termId", "_id name startYear endYear congresses")
+            .populate(
+              "votesScore.voteId",
+              "_id title shortDesc longDesc rollCall readMore"
+            )
+            .populate(
+              "activitiesScore.activityId",
+              "_id title shortDesc longDesc rollCall readMore"
+            )
             .lean(),
-
-          // Get past terms, sorted by startYear (or createdAt fallback)
           SenatorData.find({ senateId, currentTerm: { $ne: true } })
-            .populate("termId")
-            .populate("votesScore.voteId")
-            .populate("activitiesScore.activityId")
+            .populate("termId", "_id name startYear endYear congresses")
+            .populate(
+              "votesScore.voteId",
+              "_id title shortDesc longDesc rollCall readMore"
+            )
+            .populate(
+              "activitiesScore.activityId",
+              "_id title shortDesc longDesc rollCall readMore"
+            )
             .sort({ "termId.startYear": -1, createdAt: -1 })
             .lean(),
         ]);
 
         senatorDetails = getSenatorDetails(senatorDocument, false);
 
-        // Use current term data
-        if (currentTerm) {
-          finalCurrentTerm = formatTermData(currentTerm);
-        }
+        const formatTermData = (term) => ({
+          _id: term._id,
+          termId: term.termId,
+          currentTerm: term.currentTerm,
+          summary: term.summary,
+          rating: term.rating,
+          votesScore: (term.votesScore || []).map((v) => ({
+            score: v.score,
+            voteId: cleanVoteOrActivity(v.voteId),
+          })),
+          activitiesScore: (term.activitiesScore || []).map((a) => ({
+            score: a.score,
+            activityId: cleanVoteOrActivity(a.activityId),
+          })),
+        });
 
-        // Use past terms data
+        if (currentTerm) finalCurrentTerm = formatTermData(currentTerm);
         finalPastTerms = pastTerms.map(formatTermData);
       }
 
+      // ------------------ RESPONSE ------------------
       res.status(200).json({
         message: "Retrieved successfully",
         senator: senatorDetails,
