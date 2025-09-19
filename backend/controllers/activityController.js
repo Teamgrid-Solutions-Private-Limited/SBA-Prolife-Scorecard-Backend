@@ -27,26 +27,67 @@ async function saveCosponsorshipToLegislator({
   score = "yes",
   editorInfo,
   title,
+  activityType
 }) {
+ 
+
   personId = String(personId); // Force string match
 
-  let localPerson = await Senator.findOne({ senatorId: personId });
-  let dataModel = SenatorData;
-  let personField = "senateId";
-  let personModel = Senator;
-  let roleLabel = "Senator";
+   // First check if this person exists in either chamber
+  const [senator, representative] = await Promise.all([
+    Senator.findOne({ senatorId: personId }),
+    Representative.findOne({ repId: personId })
+  ]);
 
-  if (!localPerson) {
-    localPerson = await Representative.findOne({ repId: personId });
-    if (!localPerson) {
-      return false;
-    }
+ 
+
+  let localPerson, dataModel, personField, personModel, roleLabel;
+
+  // Determine which chamber this legislator belongs to
+  // Determine which chamber this legislator belongs to
+if (senator && representative) {
+  
+  if (activityType === 'senate') {
+    localPerson = senator;
+    dataModel = SenatorData;
+    personField = "senateId";
+    personModel = Senator;
+    roleLabel = "Senator";
+  } else if (activityType === 'house') {
+    localPerson = representative;
     dataModel = RepresentativeData;
     personField = "houseId";
     personModel = Representative;
     roleLabel = "Representative";
+  } else {
+    return false;
   }
+} else if (senator) {
+  // 🆕 Restrict senator updates if activity is house
+  if (activityType === "house") {
+    return false;
+  }
+  localPerson = senator;
+  dataModel = SenatorData;
+  personField = "senateId";
+  personModel = Senator;
+  roleLabel = "Senator";
+} else if (representative) {
+  // 🆕 Restrict representative updates if activity is senate
+  if (activityType === "senate") {
+    return false;
+  }
+  localPerson = representative;
+  dataModel = RepresentativeData;
+  personField = "houseId";
+  personModel = Representative;
+  roleLabel = "Representative";
+} else {
+  return false;
+}
 
+ 
+  // Rest of your function remains the same...
   const filter = { [personField]: localPerson._id };
   const existing = await dataModel.findOne(filter);
 
@@ -55,6 +96,7 @@ async function saveCosponsorshipToLegislator({
   );
 
   if (alreadyLinked) {
+    console.log("ℹ️  Already linked, skipping");
     return false;
   }
 
@@ -1285,14 +1327,7 @@ class activityController {
     congress,
     editorInfo
   ) {
-    console.log(`Starting cosponsorship fetch for billId: ${billId}`);
-    console.log("Editor Info in create:", editorInfo);
-    console.log("🚧 Cosponsorship input check:", {
-      billId,
-      title,
-      introduced,
-      congress,
-    });
+   
 
     if (!billId || !title || !introduced || !congress) {
       console.warn(" Missing required bill data");
@@ -1310,17 +1345,14 @@ class activityController {
     try {
       const billRes = await axios.get(billUrl, { params: queryParams });
       const bill = billRes.data;
-
-      // ✅ Step 1: Determine activity type
+    
       let activityType = bill.type || null;
-
-      // ✅ Step 2: Fallback to bill_type if type not found
       if (!activityType && bill.bill_type) {
         const fallbackType = bill.bill_type.toLowerCase();
         if (fallbackType.includes("senate")) activityType = "senate";
+        
         else if (fallbackType.includes("house")) activityType = "house";
       }
-
       if (!activityType) {
         console.warn(` Unable to determine activity type for bill ${billId}`);
         return 0;
@@ -1363,6 +1395,8 @@ class activityController {
 
       for (const sponsorUri of bill.sponsors) {
         const sponsorId = sponsorUri.split("/").filter(Boolean).pop();
+           
+
 
         try {
           const sponsorRes = await axios.get(
@@ -1372,6 +1406,7 @@ class activityController {
           const sponsor = sponsorRes.data;
 
           const personId = sponsor.person?.split("/").filter(Boolean).pop();
+
 
           if (!personId) {
             console.warn(
@@ -1384,7 +1419,7 @@ class activityController {
             Senator.findOne({ senatorId: personId }),
             Representative.findOne({ repId: personId }),
           ]);
-
+ 
           if (!senator && !rep) {
             console.warn(
               ` No matching local legislator found for personId ${personId}`
@@ -1398,6 +1433,7 @@ class activityController {
             score: "yes",
             title: bill.title,
             editorInfo,
+            activityType 
           });
 
           if (linked) savedCount++;
@@ -1406,7 +1442,6 @@ class activityController {
         }
       }
 
-      //console.log(`🎉 Finished processing cosponsors. Linked: ${savedCount}`);
       return savedCount;
     } catch (err) {
       console.error(
