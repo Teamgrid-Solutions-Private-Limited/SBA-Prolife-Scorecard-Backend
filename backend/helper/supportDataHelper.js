@@ -115,7 +115,7 @@ async function buildSupportData(doc, isActivity = false) {
         [isActivity ? "activitiesScore.activityId" : "votesScore.voteId"]:
           doc._id,
       })
-        .populate("senateId", "name party district state photo")
+        .populate("senateId", "_id name party district state photo")
         .lean();
 
       senatorDocs.forEach((senData) => {
@@ -130,6 +130,7 @@ async function buildSupportData(doc, isActivity = false) {
 
         if (scoreEntry && senData.senateId) {
           const info = {
+            _id: senData.senateId._id,
             name: senData.senateId.name,
             party: senData.senateId.party,
             state: senData.senateId.state,
@@ -155,7 +156,7 @@ async function buildSupportData(doc, isActivity = false) {
         [isActivity ? "activitiesScore.activityId" : "votesScore.voteId"]:
           doc._id,
       })
-        .populate("houseId", "name party district photo")
+        .populate("houseId", "_id name party district photo")
         .lean();
 
       repDocs.forEach((repData) => {
@@ -170,6 +171,7 @@ async function buildSupportData(doc, isActivity = false) {
 
         if (scoreEntry && repData.houseId) {
           const info = {
+            _id: repData.houseId._id,
             name: repData.houseId.name,
             party: repData.houseId.party,
             state: repData.houseId.district,
