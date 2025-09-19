@@ -29,7 +29,6 @@ class CircuitBreaker {
       if (this.successCount >= this.successThreshold) {
         this.successCount = 0;
         this.state = "CLOSED";
-        console.log(`Circuit to ${this.host} is now CLOSED`);
       }
     }
   }
@@ -39,7 +38,6 @@ class CircuitBreaker {
     this.failureCount++;
     if (this.state === "CLOSED" && this.failureCount >= this.failureThreshold) {
       this.state = "OPEN";
-      console.log(`Circuit to ${this.host} is now OPEN`);
     }
   }
 
@@ -53,7 +51,6 @@ class CircuitBreaker {
       if (now - this.lastFailureTime >= this.resetTimeout) {
         this.state = "HALF-OPEN";
         this.successCount = 0;
-        console.log(`Circuit to ${this.host} is now HALF-OPEN`);
         return true;
       }
       return false;
@@ -126,9 +123,6 @@ apiClient.interceptors.response.use(null, async (error) => {
   config.__retryCount += 1;
   const delay = config.__retryCount * 1000; // 1s, 2s
 
-  console.log(
-    `Retrying request to ${config.url} (attempt ${config.__retryCount})`
-  );
   await new Promise((resolve) => setTimeout(resolve, delay));
 
   return apiClient(config);
@@ -217,7 +211,6 @@ class QuorumDataController {
     // Check circuit breaker state
     const circuitBreaker = this._circuitBreakers.quorum;
     if (!circuitBreaker.canRequest()) {
-      console.log(`Circuit is OPEN for ${url}, using cache or empty result`);
       // Return cached data if available even if expired
       if (cacheKey && this._dataCache[cacheKey]?.data) {
         return this._dataCache[cacheKey].data;
@@ -251,7 +244,6 @@ class QuorumDataController {
       console.error(`API fetch error for ${url}:`, error.message);
       // Return cached data if available even if expired
       if (cacheKey && this._dataCache[cacheKey]?.data) {
-        console.log(`Using expired cache for ${cacheKey}`);
         return this._dataCache[cacheKey].data;
       }
       return [];
@@ -305,23 +297,17 @@ class QuorumDataController {
       now - cache.timestamp <
       (this._CACHE_TTL[type] || cacheConfig.CACHE_TTL.DEFAULT)
     ) {
-      console.log(
-        `Using valid cache for ${cacheKey}, items: ${cache.data.length}`
-      );
+     
       return cache.data;
     }
 
     // Check circuit breaker state
     const circuitBreaker = this._circuitBreakers.quorum;
     if (!circuitBreaker.canRequest()) {
-      console.log(
-        `Circuit is OPEN for ${type} data, using cache or empty result`
-      );
+      
       // Return cached data if available even if expired
       if (cache?.data) {
-        console.log(
-          `Using expired cache for ${cacheKey}, items: ${cache.data.length}`
-        );
+       
         return cache.data;
       }
       return [];
@@ -345,7 +331,6 @@ class QuorumDataController {
       }[type] || 1000;
 
     try {
-      console.log(`Fetching ${type} data from API...`);
       const firstParams = {
         api_key: process.env.QUORUM_API_KEY,
         username: process.env.QUORUM_USERNAME,
@@ -370,16 +355,11 @@ class QuorumDataController {
       circuitBreaker.success();
 
       if (!response.data?.objects?.length) return [];
-
-      console.log(
-        `Received initial ${type} data, count: ${response.data.objects.length}`
-      );
       allData.push(...response.data.objects);
 
       // For pagination handling
       if (response.data.meta?.next && type !== "bills") {
         const totalCount = response.data.meta.total_count;
-        console.log(`Total ${type} count from API: ${totalCount}`);
 
         // Only do parallel requests for senators and representatives
         const totalPages = Math.min(
@@ -387,18 +367,11 @@ class QuorumDataController {
           Math.ceil(maxRecords / limit) - 1
         );
 
-        console.log(`Will fetch ${totalPages} additional pages for ${type}`);
-
         // Limit parallel requests
         const maxParallelRequests = cacheConfig.MAX_PARALLEL_PAGES || 3;
 
         for (let page = 1; page <= totalPages; page += maxParallelRequests) {
-          console.log(
-            `Fetching ${type} pages ${page} to ${Math.min(
-              page + maxParallelRequests - 1,
-              totalPages
-            )}`
-          );
+         
           const pagePromises = [];
 
           // Create a batch of page requests
@@ -417,10 +390,7 @@ class QuorumDataController {
                   params: pageParams,
                 })
                 .then((res) => {
-                  console.log(
-                    `Received page ${page + i} for ${type}, items: ${res.data?.objects?.length || 0
-                    }`
-                  );
+                 
                   return res.data?.objects || [];
                 })
                 .catch((err) => {
@@ -441,9 +411,7 @@ class QuorumDataController {
 
           // Early trimming if we already have enough data
           if (allData.length >= maxRecords) {
-            console.log(
-              `Reached max records (${maxRecords}) for ${type}, stopping pagination`
-            );
+           
             break;
           }
 
@@ -460,21 +428,17 @@ class QuorumDataController {
               data: trimmedIntermediateData,
               timestamp: now,
             };
-            console.log(
-              `Updated cache for ${cacheKey} with ${trimmedIntermediateData.length} items`
-            );
+            
           }
         }
       }
 
-      console.log(`Total ${type} items fetched: ${allData.length}`);
 
       // Memory optimization: only keep needed data
       const trimmedData = this.trimDataForMemory(
         allData.slice(0, maxRecords),
         type
       );
-      console.log(`Trimmed ${type} data to ${trimmedData.length} items`);
 
       // Store in cache
       this._dataCache[cacheKey] = {
@@ -491,9 +455,7 @@ class QuorumDataController {
 
       // Return cached data if available even if expired
       if (cache?.data) {
-        console.log(
-          `Using expired cache for ${cacheKey} after error, items: ${cache.data.length}`
-        );
+       
         return cache.data;
       }
 
@@ -506,10 +468,7 @@ class QuorumDataController {
     if (!data || !data.length) return data;
 
     const startTime = Date.now();
-    console.log(
-      `Trimming ${data.length} ${type} items for memory optimization...`
-    );
-
+   
     // Define fields to keep for each type
     const keepFields = {
       senator: [
@@ -571,20 +530,13 @@ class QuorumDataController {
     const memoryReduction =
       (JSON.stringify(data).length - JSON.stringify(trimmed).length) / 1024;
     const endTime = Date.now();
-    console.log(
-      `Trimmed ${type} data: saved ~${memoryReduction.toFixed(
-        2
-      )} KB of memory, took ${endTime - startTime}ms`
-    );
-
+  
     return trimmed;
   }
 
   async filterData(type, data) {
-    console.log(`Filtering ${data.length} ${type} items...`);
 
     if (!data || data.length === 0) {
-      console.log(`No ${type} data to filter`);
       return [];
     }
 
@@ -596,10 +548,6 @@ class QuorumDataController {
       this.fetchDistrictData(),
     ]);
 
-    console.log(
-      `Loaded state map (${Object.keys(stateMap).length
-      } states) and district map (${Object.keys(districtMap).length} districts)`
-    );
 
     const mappings = {
       senator: (item) =>
@@ -647,16 +595,10 @@ class QuorumDataController {
 
       // Log progress for large datasets
       if (data.length > 500 && i % 500 === 0) {
-        console.log(
-          `Filtered ${i + batch.length}/${data.length
-          } ${type} items so far, valid: ${filtered.length}`
-        );
+      
       }
     }
 
-    console.log(
-      `Filtered ${data.length} ${type} items, ${filtered.length} valid items found`
-    );
     return filtered;
   }
 
@@ -692,9 +634,6 @@ class QuorumDataController {
 
       if (isCacheValid && cache.data.length > 0) {
         // We have valid cached data - fast path
-        console.log(
-          `Using cached ${cacheKey} data (${cache.data.length} items) for immediate response`
-        );
 
         // Return early response with cached data
         const filtered = await this.filterData(type, cache.data);
@@ -707,7 +646,6 @@ class QuorumDataController {
         responseHandled = true;
 
         // Still update in background to ensure fresh data
-        console.log(`Starting background refresh of ${type} data...`);
       } else {
         // Set a response timeout for slower path
         timeoutId = setTimeout(() => {
@@ -734,7 +672,6 @@ class QuorumDataController {
             if (!responseHandled) {
               return res.status(400).json({ error: `No valid ${type} data` });
             }
-            console.log(`No valid ${type} data found in background process`);
             return;
           }
 
@@ -745,7 +682,6 @@ class QuorumDataController {
                 .status(400)
                 .json({ error: `Filtered ${type} data is empty` });
             }
-            console.log(`Filtered ${type} data is empty in background process`);
             return;
           }
 
@@ -757,9 +693,7 @@ class QuorumDataController {
                 data: filtered,
               });
             }
-            console.log(
-              `Bills fetched in background process, count: ${filtered.length}`
-            );
+           
             return;
           }
 
@@ -769,19 +703,11 @@ class QuorumDataController {
           const BATCH_SIZE = cacheConfig.BATCH_SIZES.DATABASE_OPERATIONS;
           const totalBatches = Math.ceil(filtered.length / BATCH_SIZE);
 
-          console.log(
-            `Saving ${filtered.length} ${type} records in ${totalBatches} batches`
-          );
 
           let savedCount = 0;
           for (let i = 0; i < filtered.length; i += BATCH_SIZE) {
             const batch = filtered.slice(i, i + BATCH_SIZE);
             const batchNum = Math.floor(i / BATCH_SIZE) + 1;
-
-            console.log(
-              `Saving ${type} batch ${batchNum}/${totalBatches} (${batch.length} items)`
-            );
-
             const result = await model.bulkWrite(
               batch.map((item) => ({
                 updateOne: {
@@ -793,9 +719,7 @@ class QuorumDataController {
             );
 
             savedCount += result.upsertedCount + result.modifiedCount;
-            console.log(
-              `Batch ${batchNum} complete: ${result.upsertedCount} inserted, ${result.modifiedCount} updated`
-            );
+           
           }
 
           if (!responseHandled) {
@@ -805,9 +729,7 @@ class QuorumDataController {
               savedCount: savedCount,
             });
           } else {
-            console.log(
-              `${type} data saved successfully in background process, count: ${filtered.length}, saved: ${savedCount}`
-            );
+         
           }
         })
         .catch((err) => {
@@ -834,146 +756,6 @@ class QuorumDataController {
     }
   }
 
-  // async saveBills(req, res) {
-  //     try {
-  //         const { bills } = req.body;
-  //         if (!Array.isArray(bills) || !bills.length) return res.status(400).json({ error: "Invalid bills" });
-
-  //         const { model, idField } = QuorumDataController.MODELS.bills;
-
-  //         // Save bills (upsert) - do this in parallel for better performance
-  //         const savedPromises = bills.map(bill =>
-  //             model.updateOne({ [idField]: bill[idField] }, { $set: bill }, { upsert: true })
-  //                 .then(() => model.findOne({ [idField]: bill[idField] }))
-  //         );
-
-  //         const saved = await Promise.all(savedPromises);
-
-  //         // Respond immediately
-  //         res.json({ message: "Bills saved. Summary and vote score updates running in background.", data: saved });
-
-  //         // Background: update summaries and vote scores (no await)
-  //         (async () => {
-  //             try {
-  //                 await this.updateBillShortDesc(saved);
-
-  //                 // Process vote scores in chunks to avoid overwhelming the API
-  //                 const CHUNK_SIZE = cacheConfig.BATCH_SIZES.VOTE_UPDATES;
-  //                 for (let i = 0; i < saved.length; i += CHUNK_SIZE) {
-  //                     const chunk = saved.slice(i, i + CHUNK_SIZE);
-  //                     await Promise.all(chunk.map(bill => this.updateVoteScore(bill.quorumId)));
-  //                 }
-  //             } catch (err) {
-  //                 console.error("Background update error:", err);
-  //             }
-  //         })();
-
-  //     } catch (err) {
-  //         console.error("Save bills error:", err);
-  //         res.status(500).json({ error: "Failed to store bills" });
-  //     }
-  // }
-
-  // async saveBills(req, res) {
-  //   try {
-  //     const { bills } = req.body;
-  //     if (!Array.isArray(bills) || bills.length === 0) {
-  //       return res.status(400).json({ error: "Invalid bills" });
-  //     }
-
-  //     const { model, idField } = QuorumDataController.MODELS.bills;
-
-  //     // Save bills (upsert)
-  //     const savedPromises = bills.map((bill) =>
-  //       model
-  //         .updateOne(
-  //           { [idField]: bill[idField] },
-  //           { $set: bill },
-  //           { upsert: true }
-  //         )
-  //         .then(() => model.findOne({ [idField]: bill[idField] }))
-  //     );
-
-  //     const saved = await Promise.all(savedPromises);
-
-  //     // Respond immediately
-  //     res.json({
-  //       message:
-  //         "Bills saved. Cosponsorship & vote updates running in background.",
-  //       data: saved,
-  //     });
-
-  //     // Background processing
-  //     (async () => {
-  //       try {
-  //         await this.updateBillShortDesc(saved);
-
-  //         // Vote updates in chunks
-  //         const CHUNK_SIZE = cacheConfig.BATCH_SIZES.VOTE_UPDATES;
-  //         for (let i = 0; i < saved.length; i += CHUNK_SIZE) {
-  //           const chunk = saved.slice(i, i + CHUNK_SIZE);
-  //           await Promise.all(
-  //             chunk.map((bill) => this.updateVoteScore(bill.quorumId))
-  //           );
-  //         }
-
-  //         // Cosponsorship fetch loop
-  //         for (const bill of saved) {
-  //           try {
-  //             console.log(
-  //               `→ Fetching cosponsors for bill ${bill.quorumId} (${bill.title})...`
-  //             );
-
-  //             const introducedDate = bill.date
-  //               ? new Date(bill.date)
-  //               : new Date();
-  //             const introduced = introducedDate.toISOString();
-
-  //             // Correct Congress number calculation
-  //             const year = introducedDate.getUTCFullYear();
-  //             const congress = String(Math.floor((year - 1789) / 2) + 1);
-
-  //             //  Check for existing activities
-  //             const existing = await activitySchema.find({
-  //               quorumId: bill.quorumId,
-  //               congress,
-  //             });
-  //             if (existing.length > 0) {
-  //               console.log(
-  //                 ` Skipping bill ${bill.quorumId} — already has ${existing.length} activity(ies).`
-  //               );
-  //               continue;
-  //             }
-
-  //             console.log(" Cosponsorship input check:", {
-  //               billId: String(bill.quorumId),
-  //               title: String(bill.title || "Untitled Bill"),
-  //               introduced,
-  //               congress,
-  //             });
-
-  //             await ActivityController.fetchAndCreateFromCosponsorships(
-  //               String(bill.quorumId),
-  //               String(bill.title || "Untitled Bill"),
-  //               introduced,
-  //               congress
-  //             );
-  //           } catch (err) {
-  //             console.warn(
-  //               ` Cosponsorship fetch failed for ${bill.quorumId}:`,
-  //               err.message
-  //             );
-  //           }
-  //         }
-  //       } catch (err) {
-  //         console.error("Background update error:", err);
-  //       }
-  //     })();
-  //   } catch (err) {
-  //     console.error("Save bills error:", err);
-  //     res.status(500).json({ error: "Failed to store bills" });
-  //   }
-  // }
 
   async saveBills(req, res) {
     try {
@@ -1031,10 +813,7 @@ class QuorumDataController {
 
           for (const bill of saved) {
             try {
-              console.log(
-                ` Fetching cosponsors for bill ${bill.quorumId} (${bill.title})...`
-              );
-
+             
               const introduced = bill.date
                 ? new Date(bill.date).toISOString()
                 : new Date().toISOString();
@@ -1229,15 +1008,13 @@ class QuorumDataController {
 
                   // Only create history if the person is currently published
                   if (currentPerson && currentPerson.publishStatus === "published") {
-                    // 🆕 Extra check: skip if history already exists
+                    // Extra check: skip if history already exists
                     if (Array.isArray(currentPerson.history) && currentPerson.history.length > 0) {
-                      console.log(`⏭️ Skipping history creation for ${currentPerson.name}, history already exists`);
                     } else {
                       const currentPersonData = await dataModel.find({
                         [idField]: update.personData._id
                       });
-                      // console.log("Taking snapshot for:", currentPerson.name);
-                      // console.log("Current person data count:", currentPersonData);
+                  
                       const snapshotData = {
                         [refField]: currentPerson[refField],
                         name: currentPerson.name,

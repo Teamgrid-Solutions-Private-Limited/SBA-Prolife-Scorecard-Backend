@@ -96,13 +96,12 @@ const storage = multer.diskStorage({
     // Generate unique filename to avoid overwriting
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const ext = path.extname(file.originalname);
-    cb(null, `${uniqueSuffix}${ext}`); // Example: 1708234567890-12345678.png
+    cb(null, `${uniqueSuffix}${ext}`); 
   }
 });
 
 // File filter function
 const fileFilter = (req, file, cb) => {
-  console.log('Uploading File Type:', file.mimetype); // Debugging
 
   const allowedImageTypes = ['image/jpeg', 'image/png', 'image/jpg' ];
   const allowedDocumentTypes = [

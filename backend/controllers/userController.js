@@ -123,7 +123,6 @@ class userController {
     // Assign or update user role — Admin only
   static async assignUserRole(req, res) {
     try {
-      console.log("req.body:-", req.body);
       const { userId, newRole } = req.body;
 
 

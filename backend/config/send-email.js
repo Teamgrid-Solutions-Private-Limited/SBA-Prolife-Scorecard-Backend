@@ -29,7 +29,6 @@ const sendEmail = async (options) => {
     config.env === 'development' &&
     (!config.email.username || !config.email.password)
   ) {
-    console.log('[DEV MODE] Email config not provided, skipping actual send.');
     return;
   }
 
@@ -50,7 +49,6 @@ const sendEmail = async (options) => {
   try {
     await transporter.verify();
     const info = await transporter.sendMail(message);
-    console.log('✅ Email sent:', info.messageId);
   } catch (error) {
     console.error('❌ Error sending email:', error);
 
