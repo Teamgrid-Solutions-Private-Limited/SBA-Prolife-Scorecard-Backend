@@ -19,7 +19,6 @@ class houseDataController {
         votesScore,
         activitiesScore,
       } = req.body;
-      console.log("termId:", termId);
 
       let totalDeleted = 0;
 

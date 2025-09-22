@@ -5,37 +5,27 @@ const RepresentativeData = require("../backend/models/representativeDataSchema")
 
 async function removeGarbageVoteRefs() {
   try {
-    console.log("🧹 Starting cleanup of invalid vote references...");
 
     // 1. Get all valid vote IDs
     const validVoteIds = await Vote.find({}, { _id: 1 }).lean();
     const validIdsSet = validVoteIds.map((doc) => doc._id);
 
-    console.log(`✅ Found ${validIdsSet.length} valid votes.`);
 
     // 2. Remove invalid references from SenatorData
     const senatorResult = await SenatorData.updateMany(
       {},
       { $pull: { votesScore: { voteId: { $nin: validIdsSet } } } }
     );
-    console.log(
-      `🗑 Removed invalid refs from SenatorData:`,
-      senatorResult.modifiedCount
-    );
+    
 
     // 3. Remove invalid references from RepresentativeData
     const repResult = await RepresentativeData.updateMany(
       {},
       { $pull: { votesScore: { voteId: { $nin: validIdsSet } } } }
     );
-    console.log(
-      `🗑 Removed invalid refs from RepresentativeData:`,
-      repResult.modifiedCount
-    );
+   
 
-    console.log("🎯 Cleanup completed successfully.");
   } catch (err) {
-    console.error("❌ Error during cleanup:", err);
   } finally {
     mongoose.connection.close();
   }
@@ -53,11 +43,11 @@ if (require.main === module) {
       }
     )
     .then(() => {
-      console.log("📡 Connected to MongoDB.");
+      console.log(" Connected to MongoDB.");
       removeGarbageVoteRefs();
     })
     .catch((err) => {
-      console.error("❌ MongoDB connection error:", err);
+      console.error(" MongoDB connection error:", err);
     });
 }
 

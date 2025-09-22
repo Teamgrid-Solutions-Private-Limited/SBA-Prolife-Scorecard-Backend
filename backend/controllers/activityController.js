@@ -39,14 +39,9 @@ async function saveCosponsorshipToLegislator({
     Representative.findOne({ repId: personId })
   ]);
 
- 
-
   let localPerson, dataModel, personField, personModel, roleLabel;
-
-  // Determine which chamber this legislator belongs to
   // Determine which chamber this legislator belongs to
 if (senator && representative) {
-  
   if (activityType === 'senate') {
     localPerson = senator;
     dataModel = SenatorData;
@@ -63,7 +58,7 @@ if (senator && representative) {
     return false;
   }
 } else if (senator) {
-  // 🆕 Restrict senator updates if activity is house
+  //  Restrict senator updates if activity is house
   if (activityType === "house") {
     return false;
   }
@@ -73,7 +68,7 @@ if (senator && representative) {
   personModel = Senator;
   roleLabel = "Senator";
 } else if (representative) {
-  // 🆕 Restrict representative updates if activity is senate
+  //  Restrict representative updates if activity is senate
   if (activityType === "senate") {
     return false;
   }
@@ -96,7 +91,6 @@ if (senator && representative) {
   );
 
   if (alreadyLinked) {
-    console.log("ℹ️  Already linked, skipping");
     return false;
   }
 
@@ -110,7 +104,7 @@ if (senator && representative) {
     if (
       currentPerson &&
       currentPersonData.length > 0 &&
-      (!currentPerson.history || currentPerson.history.length === 0) // 🆕 Extra condition
+      (!currentPerson.history || currentPerson.history.length === 0) //  Extra condition
     ) {
       // Build snapshot object
       const snapshotData = {
@@ -209,135 +203,6 @@ if (senator && representative) {
   return true;
 }
 
-// async function saveCosponsorshipToLegislator({
-//   personId,
-//   activityId,
-//   score = "yes",
-//   editorInfo,
-//   title
-// }) {
-//   personId = String(personId); // Force string match
-//   // console.log("editorInfo in save:", editorInfo);
-//   // console.log("title in save:", title);
-
-//   let localPerson = await Senator.findOne({ senatorId: personId });
-//   let dataModel = SenatorData;
-//   let personField = "senateId";
-//   let roleLabel = "Senator";
-
-//   if (!localPerson) {
-//     localPerson = await Representative.findOne({ repId: personId });
-//     if (!localPerson) {
-//       // console.warn(` No local legislator found for Quorum personId ${personId}`);
-//       return false;
-//     }
-//     dataModel = RepresentativeData;
-//     personField = "houseId";
-//     roleLabel = "Representative";
-//   }
-
-//   const filter = { [personField]: localPerson._id };
-//   const existing = await dataModel.findOne(filter);
-
-//   const alreadyLinked = existing?.activitiesScore?.some(
-//     (entry) => String(entry.activityId) === String(activityId)
-//   );
-
-//   if (alreadyLinked) {
-//     return false;
-//   }
-
-//   await dataModel.findOneAndUpdate(
-//     filter,
-//     {
-//       $push: { activitiesScore: { activityId, score } },
-//     },
-//     { upsert: true, new: true }
-//   );
-//    // Only update Representative document
-//  if (roleLabel === "Representative") {
-//   //  Check if rep is published before updating
-//   if (localPerson.publishStatus === "published") {
-//     const currentRep = await Representative.findById(localPerson._id);
-//     const currentRepData = await RepresentativeData.find({
-//       houseId: localPerson._id
-//     });
-
-//     if (currentRep && currentRepData.length > 0) {
-
-//       // Build snapshot object
-//       const snapshot = {
-//         oldData: {
-//           repId: currentRep.repId,
-//           district: currentRep.district,
-//           name: currentRep.name,
-//           party: currentRep.party,
-//           photo: currentRep.photo,
-//           editedFields: currentRep.editedFields || [],
-//           fieldEditors: currentRep.fieldEditors || {},
-//           modifiedAt: currentRep.modifiedAt,
-//           modifiedBy: currentRep.modifiedBy,
-//           publishStatus: currentRep.publishStatus,
-//           snapshotSource: currentRep.snapshotSource,
-//           status: currentRep.status,
-//           representativeData: currentRepData.map(doc => doc.toObject())
-//         },
-//         timestamp: new Date().toISOString(),
-//         actionType: "update",
-//         _id: new mongoose.Types.ObjectId()
-//       };
-
-//       // Save snapshot in history (limit to last 50)
-//       await Representative.findByIdAndUpdate(
-//         localPerson._id,
-//         {
-//           $push: {
-//             history: {
-//               $each: [snapshot],
-//               $slice: -50
-//             }
-//           }
-//         }
-//       );
-//     }
-//   }
-
-//   //  Proceed with your normal editedFields/fieldEditors update
-//   const editedFieldEntry = {
-//     field: "activitiesScore",
-//     name: `${title}`,
-//     fromQuorum: true,
-//     updatedAt: new Date().toISOString()
-//   };
-
-//   const normalizedTitle = title
-//     .replace(/[^a-zA-Z0-9]+/g, "_")
-//     .replace(/^_+|_+$/g, "");
-//   const fieldKey = `activitiesScore_${normalizedTitle}`;
-
-//   await Representative.updateOne(
-//     { _id: localPerson._id },
-//     {
-//       $push: {
-//         editedFields: {
-//           $each: [editedFieldEntry],
-//           $slice: -20
-//         }
-//       },
-//       $set: {
-//         updatedAt: new Date(),
-//         publishStatus: "under review",
-//         [`fieldEditors.${fieldKey}`]: {
-//           editorName: editorInfo?.editorName || "System Auto-Update",
-//           editedAt: new Date().toISOString()
-//         }
-//       }
-//     }
-//   );
-// }
-
-//   return true;
-// }
 
 class activityController {
   // Create a new activity with file upload for readMore
@@ -408,157 +273,6 @@ class activityController {
       });
     }
   }
-
-  // Get all activities
-  // static async AllActivity(req, res) {
-  //   try {
-  //     let filter = {};
-
-  //     // Apply common filters
-  //     filter = applyCommonFilters(req, filter);
-
-  //     // Apply congress filter
-  //     filter = applyCongressFilter(req, filter);
-
-  //     // Apply simplified term filter for activities
-  //     if (req.query.term) {
-  //       const termQuery = req.query.term.trim();
-  //       const congressMatch = termQuery.match(/^(\d+)(st|nd|rd|th)/i);
-  //       if (congressMatch) {
-  //         filter.congress = congressMatch[1];
-  //       }
-
-  //       if (!filter.congress) {
-  //         const anyNumberMatch = termQuery.match(/\d+/);
-  //         if (anyNumberMatch) {
-  //           filter.congress = anyNumberMatch[0];
-  //         }
-  //       }
-  //     }
-
-  //     // Apply chamber filter (for activities)
-  //     filter = applyChamberFilter(req, filter, false);
-
-  //     const activities = await Activity.find(filter)
-  //     .select(ACTIVITY_PUBLIC_FIELDS)
-  //       .sort({ date: -1, createdAt: -1 })
-  //       .lean();
-
-  //     res.status(200).json(activities);
-  //   } catch (error) {
-  //     console.error("Error retrieving activities:", error);
-  //     res.status(500).json({
-  //       message: "Error retrieving activity",
-  //       error: error.message,
-  //     });
-  //   }
-  // }
-
-  // static async AllActivity(req, res) {
-  //   try {
-  //     let filter = {};
-
-  //     // Apply congress filter
-  //     filter = applyCongressFilter(req, filter);
-
-  //     // Apply simplified term filter for activities
-  //     if (req.query.term) {
-  //       const termQuery = req.query.term.trim();
-  //       const congressMatch = termQuery.match(/^(\d+)(st|nd|rd|th)/i);
-  //       if (congressMatch) {
-  //         filter.congress = congressMatch[1];
-  //       }
-
-  //       if (!filter.congress) {
-  //         const anyNumberMatch = termQuery.match(/\d+/);
-  //         if (anyNumberMatch) {
-  //           filter.congress = anyNumberMatch[0];
-  //         }
-  //       }
-  //     }
-
-  //     // Apply chamber filter (for activities)
-  //     filter = applyChamberFilter(req, filter, false);
-
-  //     const { _id, ...ACTIVITY_FIELDS_NO_ID } = ACTIVITY_PUBLIC_FIELDS;
-
-  //     const activities = await Activity.aggregate([
-  //       {
-  //         $match: {
-  //           $or: [
-  //             { status: "published" },
-  //             { status: "under review", "history.oldData.status": "published" },
-  //           ],
-  //           ...filter,
-  //         },
-  //       },
-
-  //       { $unwind: { path: "$history", preserveNullAndEmptyArrays: true } },
-
-  //       {
-  //         $addFields: {
-  //           effectiveDoc: {
-  //             $cond: [
-  //               {
-  //                 $and: [
-  //                   { $eq: ["$status", "under review"] },
-  //                   { $eq: ["$history.oldData.status", "published"] },
-  //                 ],
-  //               },
-  //               {
-  //                 $mergeObjects: [
-  //                   {
-  //                     _id: "$_id",
-  //                     quorumId: "$quorumId",
-  //                     createdAt: "$createdAt",
-  //                   },
-  //                   "$history.oldData",
-  //                 ],
-  //               },
-  //               {
-  //                 $cond: [
-  //                   { $eq: ["$status", "published"] },
-  //                   "$$ROOT",
-  //                   "$$REMOVE",
-  //                 ],
-  //               },
-  //             ],
-  //           },
-  //         },
-  //       },
-
-  //       { $match: { effectiveDoc: { $ne: null } } },
-  //       { $replaceRoot: { newRoot: "$effectiveDoc" } },
-
-  //       { $sort: { date: -1, createdAt: -1 } },
-
-  //       {
-  //         $group: {
-  //           _id: "$quorumId",
-  //           latest: { $first: "$$ROOT" },
-  //         },
-  //       },
-  //       { $replaceRoot: { newRoot: "$latest" } },
-
-  //       { $sort: { date: -1, createdAt: -1 } },
-
-  //       {
-  //         $project: {
-  //           _id: 1, // ✅ always first
-  //           ...ACTIVITY_FIELDS_NO_ID,
-  //         },
-  //       },
-  //     ]);
-
-  //     res.status(200).json(activities);
-  //   } catch (error) {
-  //     console.error("Error retrieving activities:", error);
-  //     res.status(500).json({
-  //       message: "Error retrieving activity",
-  //       error: error.message,
-  //     });
-  //   }
-  // }
 
   static async AllActivity(req, res) {
     try {
@@ -844,7 +558,6 @@ class activityController {
       if (!activity) {
         return res.status(404).json({ message: "Activity not found" });
       }
-      console.log("🗑️ Deleting activity:", id, "| Title:", activity.title);
 
       const Senator = require("../models/senatorSchema");
       const Representative = require("../models/representativeSchema");
@@ -889,34 +602,23 @@ class activityController {
         }
       }
 
-      // ---------------------------------------
-      // 1. Remove activity from senatorData / repData
-      // ---------------------------------------
       const senatorDataResult = await SenatorData.updateMany(
         { "activitiesScore.activityId": id },
         { $pull: { activitiesScore: { activityId: id } } }
       );
-      console.log("📌 SenatorData update result:", senatorDataResult);
 
       const repDataResult = await RepresentativeData.updateMany(
         { "activitiesScore.activityId": id },
         { $pull: { activitiesScore: { activityId: id } } }
       );
-      console.log("📌 RepresentativeData update result:", repDataResult);
 
       const senators = await Senator.find({
         "editedFields.name": activity.title,
         "editedFields.field": "activitiesScore",
       });
-      console.log(
-        `👥 Found ${senators.length} senators with editedFields containing: ${activity.title} in activitiesScore`
-      );
-
+    
       for (const senator of senators) {
-        console.log(
-          `➡️ Cleaning senator: ${senator.name} (${senator.senatorId})`
-        );
-
+      
         // Remove matching editedFields (both name AND field must match)
         const beforeCount = senator.editedFields.length;
         senator.editedFields = senator.editedFields.filter(
@@ -930,11 +632,9 @@ class activityController {
         const afterCount = senator.editedFields.length;
         const removedCount = beforeCount - afterCount;
         if (removedCount > 0) {
-          console.log(`   🗑️ Removed ${removedCount} editedFields entries`);
         }
 
         const editorKey = makeActivityEditorKey(activity.title);
-        console.log(`   🔍 Looking for fieldEditor key: ${editorKey}`);
 
         // Convert fieldEditors to plain object
         let fieldEditorsPlain = {};
@@ -954,15 +654,11 @@ class activityController {
         }
 
         const actualKeys = Object.keys(fieldEditorsPlain);
-        console.log(
-          `   📋 Available fieldEditor keys: ${actualKeys.join(", ")}`
-        );
-
+       
         let fieldEditorDeleted = false;
 
         // 1. First try exact match
         if (fieldEditorsPlain[editorKey]) {
-          console.log(`   🗑️ Deleting fieldEditor key: ${editorKey}`);
           delete fieldEditorsPlain[editorKey];
           fieldEditorDeleted = true;
         }
@@ -972,9 +668,7 @@ class activityController {
             (key) => key.toLowerCase() === editorKey.toLowerCase()
           );
           if (foundKey) {
-            console.log(
-              `   🔍 Found case-insensitive match: ${foundKey}, deleting it`
-            );
+         
             delete fieldEditorsPlain[foundKey];
             fieldEditorDeleted = true;
           }
@@ -987,9 +681,7 @@ class activityController {
             });
 
             if (foundPatternKey) {
-              console.log(
-                `   🔍 Found pattern match: ${foundPatternKey}, deleting it`
-              );
+             
               delete fieldEditorsPlain[foundPatternKey];
               fieldEditorDeleted = true;
             }
@@ -1003,13 +695,10 @@ class activityController {
               });
 
               if (partialMatch) {
-                console.log(
-                  `   🔍 Found partial match: ${partialMatch}, deleting it`
-                );
+                
                 delete fieldEditorsPlain[partialMatch];
                 fieldEditorDeleted = true;
               } else {
-                console.log(`   ℹ️ FieldEditor key not found: ${editorKey}`);
               }
             }
           }
@@ -1018,36 +707,26 @@ class activityController {
         if (fieldEditorDeleted) {
           senator.fieldEditors = fieldEditorsPlain;
         }
-
-        // If no editedFields left → restore publishStatus from history
-        // If no editedFields left → restore publishStatus from history
         if (senator.editedFields.length === 0) {
           if (Array.isArray(senator.history) && senator.history.length > 0) {
             const lastHistory = senator.history[senator.history.length - 1];
             const restoredStatus =
               lastHistory.oldData?.publishStatus || lastHistory.publishStatus;
             if (restoredStatus) {
-              console.log(
-                `   🔄 Restoring publishStatus to: ${restoredStatus}`
-              );
+             
               senator.publishStatus = restoredStatus;
 
-              // 🆕 Clear history if it's only a published snapshot
+              //  Clear history if it's only a published snapshot
               if (
                 senator.history.length === 1 &&
                 (lastHistory.oldData?.publishStatus === "published" ||
                   lastHistory.publishStatus === "published")
               ) {
-                console.log(
-                  "   🧹 Clearing history (only contained published snapshot)"
-                );
+               
                 senator.history = [];
               }
             }
           } else {
-            console.log(
-              "   ⚠️ No history found, setting publishStatus to draft"
-            );
             senator.publishStatus = "draft";
           }
         }
@@ -1062,25 +741,17 @@ class activityController {
           updateData.history = [];
         if (Object.keys(updateData).length > 0) {
           await Senator.updateOne({ _id: senator._id }, { $set: updateData });
-          console.log("   ✅ Senator updated successfully");
         } else {
-          console.log("   ℹ️ No changes needed for senator");
         }
       }
 
-      // ---------------------------------------
-      // 3. Clean up representative editedFields + fieldEditors
-      // ---------------------------------------
       const representatives = await Representative.find({
         "editedFields.name": activity.title,
         "editedFields.field": "activitiesScore",
       });
-      console.log(
-        `👥 Found ${representatives.length} reps with editedFields containing: ${activity.title} in activitiesScore`
-      );
+   
 
       for (const rep of representatives) {
-        console.log(`➡️ Cleaning representative: ${rep.name} (${rep.repId})`);
 
         let removedCount = 0;
         // Remove matching editedFields if they exist
@@ -1096,12 +767,10 @@ class activityController {
           );
           removedCount = beforeCount - rep.editedFields.length;
           if (removedCount > 0) {
-            console.log(`   🗑️ Removed ${removedCount} editedFields entries`);
           }
         }
 
         const editorKey = makeActivityEditorKey(activity.title);
-        console.log(`   🔍 Looking for fieldEditor key: ${editorKey}`);
 
         // Convert fieldEditors to plain object
         let repFieldEditorsPlain = {};
@@ -1119,15 +788,11 @@ class activityController {
         }
 
         const repActualKeys = Object.keys(repFieldEditorsPlain);
-        console.log(
-          `   📋 Available fieldEditor keys: ${repActualKeys.join(", ")}`
-        );
-
+      
         let fieldEditorDeleted = false;
 
         // 1. First try exact match
         if (repFieldEditorsPlain[editorKey]) {
-          console.log(`   🗑️ Deleting fieldEditor key: ${editorKey}`);
           delete repFieldEditorsPlain[editorKey];
           fieldEditorDeleted = true;
         }
@@ -1137,9 +802,7 @@ class activityController {
             (key) => key.toLowerCase() === editorKey.toLowerCase()
           );
           if (foundKey) {
-            console.log(
-              `   🔍 Found case-insensitive match: ${foundKey}, deleting it`
-            );
+           
             delete repFieldEditorsPlain[foundKey];
             fieldEditorDeleted = true;
           }
@@ -1152,9 +815,7 @@ class activityController {
             });
 
             if (foundPatternKey) {
-              console.log(
-                `   🔍 Found pattern match: ${foundPatternKey}, deleting it`
-              );
+            
               delete repFieldEditorsPlain[foundPatternKey];
               fieldEditorDeleted = true;
             }
@@ -1167,13 +828,10 @@ class activityController {
               });
 
               if (partialMatch) {
-                console.log(
-                  `   🔍 Found partial match: ${partialMatch}, deleting it`
-                );
+               
                 delete repFieldEditorsPlain[partialMatch];
                 fieldEditorDeleted = true;
               } else {
-                console.log(`   ℹ️ FieldEditor key not found: ${editorKey}`);
               }
             }
           }
@@ -1190,9 +848,7 @@ class activityController {
             const restoredStatus =
               lastHistory.oldData?.publishStatus || lastHistory.publishStatus;
             if (restoredStatus) {
-              console.log(
-                `   🔄 Restoring publishStatus to: ${restoredStatus}`
-              );
+             
               rep.publishStatus = restoredStatus;
 
               // 🆕 Clear history if it's only a published snapshot
@@ -1201,16 +857,12 @@ class activityController {
                 (lastHistory.oldData?.publishStatus === "published" ||
                   lastHistory.publishStatus === "published")
               ) {
-                console.log(
-                  "   🧹 Clearing history (only contained published snapshot)"
-                );
+               
                 rep.history = [];
               }
             }
           } else {
-            console.log(
-              "   ⚠️ No history found, setting publishStatus to draft"
-            );
+           
             rep.publishStatus = "draft";
           }
         }
@@ -1228,9 +880,7 @@ class activityController {
             { _id: rep._id },
             { $set: updateData }
           );
-          console.log("   ✅ Representative updated successfully");
         } else {
-          console.log("   ℹ️ No changes needed for representative");
         }
       }
 
@@ -1238,7 +888,6 @@ class activityController {
       // 4. Delete the activity itself
       // ---------------------------------------
       await Activity.findByIdAndDelete(id);
-      console.log("🗑️ Activity deleted:", id);
 
       res.status(200).json({
         message: "Activity and its references deleted successfully",
@@ -1359,7 +1008,6 @@ class activityController {
       }
 
       if (!bill.sponsors || bill.sponsors.length === 0) {
-        console.log(`ℹ️ No cosponsors found for bill ${billId}`);
         return 0;
       }
 
@@ -1388,7 +1036,6 @@ class activityController {
           activityquorumId: billId,
         });
         await activity.save();
-        console.log(` Created new cosponsorship activity for bill ${billId}`);
       }
 
       let savedCount = 0;
