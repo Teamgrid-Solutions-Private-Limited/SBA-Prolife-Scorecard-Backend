@@ -297,17 +297,17 @@ class QuorumDataController {
       now - cache.timestamp <
       (this._CACHE_TTL[type] || cacheConfig.CACHE_TTL.DEFAULT)
     ) {
-     
+
       return cache.data;
     }
 
     // Check circuit breaker state
     const circuitBreaker = this._circuitBreakers.quorum;
     if (!circuitBreaker.canRequest()) {
-      
+
       // Return cached data if available even if expired
       if (cache?.data) {
-       
+
         return cache.data;
       }
       return [];
@@ -371,7 +371,7 @@ class QuorumDataController {
         const maxParallelRequests = cacheConfig.MAX_PARALLEL_PAGES || 3;
 
         for (let page = 1; page <= totalPages; page += maxParallelRequests) {
-         
+
           const pagePromises = [];
 
           // Create a batch of page requests
@@ -390,7 +390,7 @@ class QuorumDataController {
                   params: pageParams,
                 })
                 .then((res) => {
-                 
+
                   return res.data?.objects || [];
                 })
                 .catch((err) => {
@@ -411,7 +411,7 @@ class QuorumDataController {
 
           // Early trimming if we already have enough data
           if (allData.length >= maxRecords) {
-           
+
             break;
           }
 
@@ -428,7 +428,7 @@ class QuorumDataController {
               data: trimmedIntermediateData,
               timestamp: now,
             };
-            
+
           }
         }
       }
@@ -455,7 +455,7 @@ class QuorumDataController {
 
       // Return cached data if available even if expired
       if (cache?.data) {
-       
+
         return cache.data;
       }
 
@@ -468,7 +468,7 @@ class QuorumDataController {
     if (!data || !data.length) return data;
 
     const startTime = Date.now();
-   
+
     // Define fields to keep for each type
     const keepFields = {
       senator: [
@@ -530,7 +530,7 @@ class QuorumDataController {
     const memoryReduction =
       (JSON.stringify(data).length - JSON.stringify(trimmed).length) / 1024;
     const endTime = Date.now();
-  
+
     return trimmed;
   }
 
@@ -595,7 +595,7 @@ class QuorumDataController {
 
       // Log progress for large datasets
       if (data.length > 500 && i % 500 === 0) {
-      
+
       }
     }
 
@@ -693,7 +693,7 @@ class QuorumDataController {
                 data: filtered,
               });
             }
-           
+
             return;
           }
 
@@ -719,7 +719,7 @@ class QuorumDataController {
             );
 
             savedCount += result.upsertedCount + result.modifiedCount;
-           
+
           }
 
           if (!responseHandled) {
@@ -729,7 +729,7 @@ class QuorumDataController {
               savedCount: savedCount,
             });
           } else {
-         
+
           }
         })
         .catch((err) => {
@@ -813,7 +813,7 @@ class QuorumDataController {
 
           for (const bill of saved) {
             try {
-             
+
               const introduced = bill.date
                 ? new Date(bill.date).toISOString()
                 : new Date().toISOString();
@@ -911,7 +911,6 @@ class QuorumDataController {
 
       const vote = await Bill.findOne({ quorumId });
       if (!vote) return;
-
       const billInfo = {
         quorumId: vote.quorumId,
         title: vote.title,
@@ -919,31 +918,26 @@ class QuorumDataController {
         termId: vote.termId,
         type: vote.type
       };
-
       const { bill_type } = data.related_bill || {};
-      const voteTypes = {
-        senate_bill: {
+      // Define both vote configurations
+      const voteConfigs = [
+        {
           personModel: Senator,
           dataModel: SenatorData,
           idField: "senateId",
           refField: "senatorId",
           type: "Senator"
         },
-        house_bill: {
+        {
           personModel: Representative,
           dataModel: RepresentativeData,
           idField: "houseId",
           refField: "repId",
           type: "Representative"
-        },
-      };
+        }
+      ];
 
-      const voteConfig = voteTypes[bill_type];
-      if (!voteConfig) return;
-
-      const { personModel, dataModel, idField, refField, type } = voteConfig;
       const votes = ["yea", "nay", "present", "other"];
-
       const voteUris = votes.flatMap((score) => data[`${score}_votes`] || []);
       const personIds = voteUris
         .map((uri) => uri?.replace(/\/$/, "").split("/").pop())
@@ -951,232 +945,236 @@ class QuorumDataController {
 
       if (!personIds.length) return;
 
-      const persons = await personModel.find({
-        [refField]: { $in: personIds },
-      });
+      // Process for both Senator and Representative models
+      for (const voteConfig of voteConfigs) {
+        const { personModel, dataModel, idField, refField, type } = voteConfig;
 
-      const personMap = Object.fromEntries(persons.map((p) => [p[refField], p]));
+        const persons = await personModel.find({
+          [refField]: { $in: personIds },
+        });
+        if (!persons.length) continue; // Skip if no persons found for this type
 
-      const updates = [];
-      for (const score of votes) {
-        const uris = data[`${score}_votes`] || [];
-        for (const uri of uris) {
-          const personId = uri?.replace(/\/$/, "").split("/").pop();
-          const person = personMap[personId];
-          if (!person) continue;
+        const personMap = Object.fromEntries(persons.map((p) => [p[refField], p]));
 
-          updates.push({
-            filter: {
-              [idField]: person._id,
-              "votesScore.voteId": { $ne: vote._id },
-            },
-            update: {
-              $push: {
-                votesScore: {
-                  voteId: vote._id,
-                  score,
-                  billInfo: {
-                    quorumId: billInfo.quorumId,
-                    title: billInfo.title,
-                    congress: billInfo.congress,
-                    termId: billInfo.termId,
-                    type: billInfo.type,
-                    voteDate: new Date().toISOString()
-                  }
-                }
-              }
-            },
-            personData: person,
-            voteScore: score,
-            billInfo: billInfo
-          });
-        }
-      }
+        const updates = [];
+        for (const score of votes) {
+          const uris = data[`${score}_votes`] || [];
+          for (const uri of uris) {
+            const personId = uri?.replace(/\/$/, "").split("/").pop();
+            const person = personMap[personId];
+            if (!person) continue;
 
-      const BATCH_SIZE = 50;
-      for (let i = 0; i < updates.length; i += BATCH_SIZE) {
-        const batch = updates.slice(i, i + BATCH_SIZE);
-
-        await Promise.allSettled(
-          batch.map(async (update) => {
-            try {
-              // Check if person is published before proceeding
-              // Check if person is published before proceeding
-              if (update.personData.publishStatus === "published") {
-                try {
-                  const currentPerson = await personModel.findById(update.personData._id);
-
-                  // Only create history if the person is currently published
-                  if (currentPerson && currentPerson.publishStatus === "published") {
-                    // Extra check: skip if history already exists
-                    if (Array.isArray(currentPerson.history) && currentPerson.history.length > 0) {
-                    } else {
-                      const currentPersonData = await dataModel.find({
-                        [idField]: update.personData._id
-                      });
-                  
-                      const snapshotData = {
-                        [refField]: currentPerson[refField],
-                        name: currentPerson.name,
-                        party: currentPerson.party,
-                        photo: currentPerson.photo,
-                        editedFields: currentPerson.editedFields || [],
-                        fieldEditors: currentPerson.fieldEditors || {},
-                        modifiedAt: currentPerson.modifiedAt,
-                        modifiedBy: currentPerson.modifiedBy,
-                        publishStatus: currentPerson.publishStatus,
-                        snapshotSource: currentPerson.snapshotSource,
-                        status: currentPerson.status
-                      };
-
-                      // Add district field only for Representatives
-                      if (type === "Representative" && currentPerson.district) {
-                        snapshotData.district = currentPerson.district;
-                      }
-
-                      // Add the appropriate data reference
-                      if (type === "Representative") {
-                        snapshotData.representativeData = currentPersonData.map(doc => doc.toObject());
-                      } else if (type === "Senator") {
-                        snapshotData.senatorData = currentPersonData.map(doc => doc.toObject());
-                      }
-
-                      const snapshot = {
-                        oldData: snapshotData,
-                        timestamp: new Date().toISOString(),
-                        actionType: "update",
-                        _id: new mongoose.Types.ObjectId()
-                      };
-
-                      // Create history snapshot in a single operation
-                      await personModel.findByIdAndUpdate(
-                        update.personData._id,
-                        {
-                          $push: {
-                            history: {
-                              $each: [snapshot],
-                              $slice: -50
-                            }
-                          }
-                        },
-                        { new: true }
-                      );
+            updates.push({
+              filter: {
+                [idField]: person._id,
+                "votesScore.voteId": { $ne: vote._id },
+              },
+              update: {
+                $push: {
+                  votesScore: {
+                    voteId: vote._id,
+                    score,
+                    billInfo: {
+                      quorumId: billInfo.quorumId,
+                      title: billInfo.title,
+                      congress: billInfo.congress,
+                      termId: billInfo.termId,
+                      type: billInfo.type,
+                      voteDate: new Date().toISOString()
                     }
                   }
-                } catch (snapshotError) {
-                  console.error(` Failed to take snapshot for ${update.personData.name}:`, snapshotError.message);
                 }
-              }
+              },
+              personData: person,
+              voteScore: score,
+              billInfo: billInfo
+            });
+          }
+        }
 
-              // Update the data model (votesScore)
-              await dataModel.updateOne(update.filter, update.update, { upsert: true });
+        const BATCH_SIZE = 50;
+        for (let i = 0; i < updates.length; i += BATCH_SIZE) {
+          const batch = updates.slice(i, i + BATCH_SIZE);
 
-              // Update person document for both Senators and Representatives
-              if (type === "Senator" || type === "Representative") {
-                const editedFieldEntry = {
-                  field: "votesScore",
-                  name: `${update.billInfo.title}`,
-                  fromQuorum: true,
-                  updatedAt: new Date().toISOString()
-                };
+          await Promise.allSettled(
+            batch.map(async (update) => {
+              try {
+                // Check if person is published before proceeding
+                if (update.personData.publishStatus === "published") {
+                  try {
+                    const currentPerson = await personModel.findById(update.personData._id);
 
-                const normalizedTitle = update.billInfo.title
-                  .replace(/[^a-zA-Z0-9]+/g, "_")
-                  .replace(/^_+|_+$/g, "");
+                    // Only create history if the person is currently published
+                    if (currentPerson && currentPerson.publishStatus === "published") {
+                      // Extra check: skip if history already exists
+                      if (Array.isArray(currentPerson.history) && currentPerson.history.length > 0) {
+                      } else {
+                        const currentPersonData = await dataModel.find({
+                          [idField]: update.personData._id
+                        });
 
-                const fieldKey = `votesScore_${normalizedTitle}`;
+                        const snapshotData = {
+                          [refField]: currentPerson[refField],
+                          name: currentPerson.name,
+                          party: currentPerson.party,
+                          photo: currentPerson.photo,
+                          editedFields: currentPerson.editedFields || [],
+                          fieldEditors: currentPerson.fieldEditors || {},
+                          modifiedAt: currentPerson.modifiedAt,
+                          modifiedBy: currentPerson.modifiedBy,
+                          publishStatus: currentPerson.publishStatus,
+                          snapshotSource: currentPerson.snapshotSource,
+                          status: currentPerson.status
+                        };
 
-                const personUpdatePayload = {
-                  $push: {
-                    editedFields: {
-                      $each: [editedFieldEntry],
-                      $slice: -20,
-                    },
-                  },
-                  $set: {
-                    updatedAt: new Date(),
-                    modifiedAt: new Date(),
-                    publishStatus: "under review",
-                    snapshotSource: "edited",
-                    [`fieldEditors.${fieldKey}`]: {
-                      editorId: editorData.editorId,
-                      editorName: editorData.editorName,
-                      editedAt: editorData.editedAt,
-                    },
-                  },
-                };
+                        // Add district field only for Representatives
+                        if (type === "Representative" && currentPerson.district) {
+                          snapshotData.district = currentPerson.district;
+                        }
 
-                // Update person WITHOUT triggering additional history creation
-                // Use findByIdAndUpdate to avoid triggering pre-save hooks if possible
-                await personModel.findByIdAndUpdate(
-                  update.personData._id,
-                  personUpdatePayload,
-                  {
-                    new: true,
-                  
+                        // Add the appropriate data reference
+                        if (type === "Representative") {
+                          snapshotData.representativeData = currentPersonData.map(doc => doc.toObject());
+                        } else if (type === "Senator") {
+                          snapshotData.senatorData = currentPersonData.map(doc => doc.toObject());
+                        }
+
+                        const snapshot = {
+                          oldData: snapshotData,
+                          timestamp: new Date().toISOString(),
+                          actionType: "update",
+                          _id: new mongoose.Types.ObjectId()
+                        };
+
+                        // Create history snapshot in a single operation
+                        await personModel.findByIdAndUpdate(
+                          update.personData._id,
+                          {
+                            $push: {
+                              history: {
+                                $each: [snapshot],
+                                $slice: -50
+                              }
+                            }
+                          },
+                          { new: true }
+                        );
+                      }
+                    }
+                  } catch (snapshotError) {
+                    console.error(` Failed to take snapshot for ${update.personData.name}:`, snapshotError.message);
                   }
-                );
+                }
+
+                // Update the data model (votesScore)
+                await dataModel.updateOne(update.filter, update.update, { upsert: true });
+
+                // Update person document for both Senators and Representatives
+                if (type === "Senator" || type === "Representative") {
+                  const editedFieldEntry = {
+                    field: "votesScore",
+                    name: `${update.billInfo.title}`,
+                    fromQuorum: true,
+                    updatedAt: new Date().toISOString()
+                  };
+
+                  const normalizedTitle = update.billInfo.title
+                    .replace(/[^a-zA-Z0-9]+/g, "_")
+                    .replace(/^_+|_+$/g, "");
+
+                  const fieldKey = `votesScore_${normalizedTitle}`;
+
+                  const personUpdatePayload = {
+                    $push: {
+                      editedFields: {
+                        $each: [editedFieldEntry],
+                        $slice: -20,
+                      },
+                    },
+                    $set: {
+                      updatedAt: new Date(),
+                      modifiedAt: new Date(),
+                      publishStatus: "under review",
+                      snapshotSource: "edited",
+                      [`fieldEditors.${fieldKey}`]: {
+                        editorId: editorData.editorId,
+                        editorName: editorData.editorName,
+                        editedAt: editorData.editedAt,
+                      },
+                    },
+                  };
+
+                  // Use findByIdAndUpdate to avoid triggering pre-save hooks if possible
+                  await personModel.findByIdAndUpdate(
+                    update.personData._id,
+                    personUpdatePayload,
+                    {
+                      new: true,
+
+                    }
+                  );
+                }
+              } catch (error) {
+                console.error(` Failed to update ${type} ${update.personData.name}:`, error.message);
               }
-            } catch (error) {
-              console.error(` Failed to update ${type} ${update.personData.name}:`, error.message);
-            }
-          })
-        );
+            })
+          );
+        }
       }
-    } catch (err) {
-      console.error(` Vote score update failed for bill ${quorumId}:`, err.message);
-      console.error("Error stack:", err.stack);
+      } catch (err) {
+        console.error(` Vote score update failed for bill ${quorumId}:`, err.message);
+        console.error("Error stack:", err.stack);
+      }
     }
-  }
 
   // Method to check data status
   async getDataStatus(req, res) {
-    try {
-      const { type } = req.params;
+      try {
+        const { type } = req.params;
 
-      if (!type || !QuorumDataController.MODELS[type]) {
-        return res.status(400).json({ error: "Invalid data type" });
+        if (!type || !QuorumDataController.MODELS[type]) {
+          return res.status(400).json({ error: "Invalid data type" });
+        }
+
+        // Check cache status
+        const cache = this._dataCache[type];
+        const now = Date.now();
+        const cacheAge = now - (cache?.timestamp || 0);
+        const ttl = this._CACHE_TTL[type] || cacheConfig.CACHE_TTL.DEFAULT;
+        const isCacheValid = cache?.data && cacheAge < ttl;
+
+        // Check circuit breaker status
+        const circuitBreaker = this._circuitBreakers.quorum;
+        const circuitStatus = circuitBreaker.state;
+
+        // Count existing records
+        const { model } = QuorumDataController.MODELS[type];
+        const count = await model.countDocuments();
+
+        return res.json({
+          type,
+          cache: {
+            available: !!cache?.data,
+            valid: isCacheValid,
+            itemCount: cache?.data?.length || 0,
+            age: cacheAge ? Math.round(cacheAge / 1000) + " seconds" : "N/A",
+            ttl: Math.round(ttl / 1000) + " seconds",
+          },
+          database: {
+            recordCount: count,
+          },
+          apiService: {
+            circuitStatus,
+            available: circuitBreaker.canRequest(),
+          },
+        });
+      } catch (err) {
+        console.error("Data status error:", err);
+        res
+          .status(500)
+          .json({ error: "Failed to get data status", message: err.message });
       }
-
-      // Check cache status
-      const cache = this._dataCache[type];
-      const now = Date.now();
-      const cacheAge = now - (cache?.timestamp || 0);
-      const ttl = this._CACHE_TTL[type] || cacheConfig.CACHE_TTL.DEFAULT;
-      const isCacheValid = cache?.data && cacheAge < ttl;
-
-      // Check circuit breaker status
-      const circuitBreaker = this._circuitBreakers.quorum;
-      const circuitStatus = circuitBreaker.state;
-
-      // Count existing records
-      const { model } = QuorumDataController.MODELS[type];
-      const count = await model.countDocuments();
-
-      return res.json({
-        type,
-        cache: {
-          available: !!cache?.data,
-          valid: isCacheValid,
-          itemCount: cache?.data?.length || 0,
-          age: cacheAge ? Math.round(cacheAge / 1000) + " seconds" : "N/A",
-          ttl: Math.round(ttl / 1000) + " seconds",
-        },
-        database: {
-          recordCount: count,
-        },
-        apiService: {
-          circuitStatus,
-          available: circuitBreaker.canRequest(),
-        },
-      });
-    } catch (err) {
-      console.error("Data status error:", err);
-      res
-        .status(500)
-        .json({ error: "Failed to get data status", message: err.message });
     }
   }
-}
 
 module.exports = new QuorumDataController();
