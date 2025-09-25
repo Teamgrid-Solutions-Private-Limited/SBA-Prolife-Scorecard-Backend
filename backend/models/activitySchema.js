@@ -36,7 +36,6 @@ const activitySchema = new mongoose.Schema(
       ),
       default: {},
     },
-    // Replace previousState with history array
     history: [
       {
         oldData: Object,
@@ -52,11 +51,9 @@ const activitySchema = new mongoose.Schema(
       },
     ],
     snapshotSource: {
-      type: String, // 'deleted' | 'edited'
+      type: String, 
       enum: ["deleted_pending_update", "edited"],
     },
-    modifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
-    modifiedAt: Date,
   },
   { timestamps: true }
 );

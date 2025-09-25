@@ -1,5 +1,3 @@
-// utils/termUtils.js
-
 function validateTermYears(startYear, endYear) {
   if (startYear == null || endYear == null) {
     return { isValid: false, message: "Start year and End year are required" };

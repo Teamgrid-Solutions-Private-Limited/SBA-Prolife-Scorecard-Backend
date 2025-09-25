@@ -6,13 +6,6 @@ const SenatorDataSchema = new mongoose.Schema(
     termId: { type: mongoose.Schema.Types.ObjectId, ref: "terms" },
     currentTerm: Boolean,
     summary: String,
-    // summaries: [
-    //   {
-    //     congress: { type: Number } ,
-    //     content: { type: String },
-    //   },
-    // ],
-
     rating: String,
     votesScore: [
       {
@@ -35,12 +28,9 @@ const SenatorDataSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-
-//  define indexes BEFORE exporting
 SenatorDataSchema.index(
   { senateId: 1 },
   { unique: true, partialFilterExpression: { currentTerm: true } }
 );
-
 
 module.exports = mongoose.model("senator_datas", SenatorDataSchema);

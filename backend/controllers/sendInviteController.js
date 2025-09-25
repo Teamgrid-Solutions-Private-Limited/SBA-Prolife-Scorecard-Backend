@@ -2,7 +2,6 @@ const bcrypt = require('bcryptjs');
 const User = require('../models/userSchema');
 const sendEmail = require('../config/send-email');
 
-
 const sendInvite = async (req, res) => {
   try {
     const { email, role, password, fullName, nickName } = req.body;
@@ -12,17 +11,11 @@ const sendInvite = async (req, res) => {
         message: 'Email, role, password, and fullName are required' 
       });
     }
-
-    // Check if user already exists
     const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) {
       return res.status(400).json({ message: 'User already exists with this email.' });
     }
-
-    // Hash the password
     const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Create the user directly
     const newUser = await User.create({
       email: email.toLowerCase(),
       role,
@@ -30,15 +23,11 @@ const sendInvite = async (req, res) => {
       fullName,
       nickName: nickName || null
     });
-
-    // Define base URL based on environment
     const baseUrl = process.env.NODE_ENV === 'production' 
-      ? 'https://demos.godigitalalchemy.com/scorecard/admin'  // Replace with your actual production domain
+      ? 'https://demos.godigitalalchemy.com/scorecard/admin'  
       : 'http://localhost:3001/scorecard/admin';
 
     const loginUrl = `${baseUrl}/login`;
-
-    // Create email content based on role
     const emailContent = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #2c3e50;">Welcome to SBA Scorecard Admin</h2>

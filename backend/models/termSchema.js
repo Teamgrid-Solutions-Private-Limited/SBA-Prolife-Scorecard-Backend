@@ -1,5 +1,4 @@
 const mongoose = require('mongoose');
-// Add this helper function
 function getCongresses(startYear, endYear) {
   if (startYear < 1789 || endYear < 1789) {
     throw new Error("Congress calculation starts from 1789");
@@ -13,15 +12,12 @@ for (let year = startYear; year < endYear; year++) {
     congresses.push(congressNumber);
   }
 }
- 
-// Rule: If (endYear - startYear) === 2 → should only have 1 congress
-if (endYear - startYear === 2 && congresses.length > 1) {
-  congresses.splice(1); // keep only the first congress
+ if (endYear - startYear === 2 && congresses.length > 1) {
+  congresses.splice(1); 
 }
  
   return congresses;
 }
- 
  
 const TermSchema = new mongoose.Schema({
   name: {
@@ -41,15 +37,11 @@ const TermSchema = new mongoose.Schema({
     type: Number,
   }],
 }, { timestamps: true });
- 
-// Add pre-save middleware to automatically calculate congresses
-TermSchema.pre('save', function(next) {
+ TermSchema.pre('save', function(next) {
   this.congresses = getCongresses(this.startYear, this.endYear);
   next();
 });
- 
-// Add instance method to get congresses anytime
-TermSchema.methods.getCongressesList = function() {
+ TermSchema.methods.getCongressesList = function() {
   return getCongresses(this.startYear, this.endYear);
 };
 module.exports = mongoose.model('terms', TermSchema);

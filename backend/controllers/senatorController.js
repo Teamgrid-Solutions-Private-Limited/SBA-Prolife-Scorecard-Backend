@@ -164,8 +164,8 @@ class senatorController {
       res.status(200).json({
         message: "Retrieved successfully",
         info: senatorsWithRatings,
-        totalCount, // Total documents matching the filter
-        fetchedCount, // Number of documents actually returned in this request
+        totalCount, 
+        fetchedCount, 
         page: pageNum,
         totalPages,
         hasNextPage: pageNum < totalPages,
@@ -188,13 +188,9 @@ class senatorController {
       });
     }
   }
-
-  // Get a senator by ID for frontend display
   static async SenatorById(req, res) {
     try {
       const senatorId = req.params.id;
-
-      // Fetch senator and current term data in parallel using Promise.all
       const [senator, currentTermData] = await Promise.all([
         Senator.findById(senatorId),
         SenatorData.findOne({
@@ -206,10 +202,7 @@ class senatorController {
       if (!senator) {
         return res.status(404).json({ message: "Senator not found" });
       }
-
       let ratingData = currentTermData;
-
-      // If current term not found, fetch latest by termId
       if (!ratingData) {
         ratingData = await SenatorData.findOne({
           senateId: senatorId,
@@ -217,8 +210,6 @@ class senatorController {
           .sort({ termId: -1 })
           .select("rating currentTerm");
       }
-
-      // Combine result
       const result = {
         ...senator.toObject(),
         rating: ratingData?.rating ?? null,
@@ -232,8 +223,6 @@ class senatorController {
         .json({ message: "Error retrieving senator", error: error.message });
     }
   }
-
-  //   // Update a senator by ID
   static async updateSenator(req, res) {
     try {
       const senatorId = req.params.id;
@@ -242,11 +231,7 @@ class senatorController {
       if (!existingSenator) {
         return res.status(404).json({ message: "Senator not found" });
       }
-
-      // Safe check for req.user
       const userId = req.user?._id || null;
-
-      // Base update structure
       const updateData = {
         $set: {
           ...req.body,
@@ -254,29 +239,22 @@ class senatorController {
           modifiedAt: new Date(),
         },
       };
-
-      // Handle file upload
       if (req.file) {
         updateData.$set.photo = req.file.filename;
       }
-
-      // Parse fields if needed
       if (typeof updateData.$set.editedFields === "string") {
         updateData.$set.editedFields = JSON.parse(updateData.$set.editedFields);
       }
       if (typeof updateData.$set.fieldEditors === "string") {
         updateData.$set.fieldEditors = JSON.parse(updateData.$set.fieldEditors);
       }
-
-      // Clear fields if publishing
       if (updateData.$set.publishStatus === "published") {
         updateData.$set.editedFields = [];
         updateData.$set.fieldEditors = {};
-        updateData.$set.history = []; // clear history completely on publish
+        updateData.$set.history = []; 
       }
 
-      // Determine if we should take a snapshot
-      const canTakeSnapshot =
+    const canTakeSnapshot =
         !existingSenator.history ||
         existingSenator.history.length === 0 ||
         existingSenator.snapshotSource === "edited";
@@ -290,8 +268,6 @@ class senatorController {
           senateId: senatorId,
         }).lean();
         const currentState = existingSenator.toObject();
-
-        // Clean up state
         delete currentState._id;
         delete currentState.createdAt;
         delete currentState.updatedAt;
@@ -339,14 +315,9 @@ class senatorController {
   static async discardSenatorChanges(req, res) {
     try {
       const { discardChanges } = require("../helper/discardHelper");
-
-      // Custom restore logic for senator data
       const additionalRestoreLogic = async (originalState, senatorId) => {
         if (originalState.senatorData) {
-          // Delete all current senator data
           await SenatorData.deleteMany({ senateId: senatorId });
-
-          // Recreate from original state
           const recreatePromises = originalState.senatorData.map((data) => {
             const { _id, __v, updatedAt, ...cleanData } = data;
             return SenatorData.create({
@@ -417,8 +388,6 @@ class senatorController {
       res.status(500).json({ message: "Error updating publish status", error });
     }
   }
-  //bulk update senators' publish status
-  // PATCH /api/senators/publish-all
   static async bulkTogglePublishStatus(req, res) {
     try {
       const { published } = req.body;
@@ -439,8 +408,6 @@ class senatorController {
       res.status(500).json({ message: "Error updating all senators", error });
     }
   }
-
-  //update published status of senator
 
   static async updateSenatorStatus(req, res) {
     try {

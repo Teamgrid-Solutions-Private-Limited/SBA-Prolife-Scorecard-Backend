@@ -46,7 +46,6 @@ app.use('/api/v1',houseDataRoute);
 app.use('/fetch-quorum',getquorumRoute);
 app.use('/dummy-data',dummyDataRoute);
 
-
 app.get("/", (req, res) => {
     res.send("Welcome to the homepage!");
   });

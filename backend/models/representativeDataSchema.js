@@ -19,7 +19,6 @@ const RepresentativeDataSchema = new mongoose.Schema({
         }
     ]
 },{timestamps: true});
-//  Ensure only ONE currentTerm per houseId (representative)
 RepresentativeDataSchema.index(
   { houseId: 1,  currentTerm: 1 },
   { unique: true, partialFilterExpression: { currentTerm: true } }
