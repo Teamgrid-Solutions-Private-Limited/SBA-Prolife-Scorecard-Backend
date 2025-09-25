@@ -13,7 +13,6 @@ const {
   applyActivityTermFilter,
 } = require("../middlewares/filter");
 const { buildSupportData } = require("../helper/supportDataHelper");
-
 const mongoose = require("mongoose");
 
 const axios = require("axios");
@@ -29,18 +28,13 @@ async function saveCosponsorshipToLegislator({
   title,
   activityType
 }) {
- 
-
-  personId = String(personId); // Force string match
-
-   // First check if this person exists in either chamber
+  personId = String(personId); 
   const [senator, representative] = await Promise.all([
     Senator.findOne({ senatorId: personId }),
     Representative.findOne({ repId: personId })
   ]);
 
   let localPerson, dataModel, personField, personModel, roleLabel;
-  // Determine which chamber this legislator belongs to
 if (senator && representative) {
   if (activityType === 'senate') {
     localPerson = senator;
@@ -58,7 +52,6 @@ if (senator && representative) {
     return false;
   }
 } else if (senator) {
-  //  Restrict senator updates if activity is house
   if (activityType === "house") {
     return false;
   }
@@ -68,7 +61,6 @@ if (senator && representative) {
   personModel = Senator;
   roleLabel = "Senator";
 } else if (representative) {
-  //  Restrict representative updates if activity is senate
   if (activityType === "senate") {
     return false;
   }
@@ -80,9 +72,6 @@ if (senator && representative) {
 } else {
   return false;
 }
-
- 
-  // Rest of your function remains the same...
   const filter = { [personField]: localPerson._id };
   const existing = await dataModel.findOne(filter);
 
@@ -94,7 +83,6 @@ if (senator && representative) {
     return false;
   }
 
-  // Only update person document if they are published
   if (localPerson.publishStatus === "published") {
     const currentPerson = await personModel.findById(localPerson._id);
     const currentPersonData = await dataModel.find({
@@ -104,9 +92,8 @@ if (senator && representative) {
     if (
       currentPerson &&
       currentPersonData.length > 0 &&
-      (!currentPerson.history || currentPerson.history.length === 0) //  Extra condition
+      (!currentPerson.history || currentPerson.history.length === 0)
     ) {
-      // Build snapshot object
       const snapshotData = {
         [personField === "senateId" ? "senatorId" : "repId"]:
           currentPerson[personField === "senateId" ? "senatorId" : "repId"],
@@ -145,8 +132,6 @@ if (senator && representative) {
         actionType: "update",
         _id: new mongoose.Types.ObjectId(),
       };
-
-      // Save snapshot in history (limit to last 50)
       await personModel.findByIdAndUpdate(localPerson._id, {
         $push: {
           history: {
@@ -165,7 +150,6 @@ if (senator && representative) {
     },
     { upsert: true, new: true }
   );
-  // Proceed with normal editedFields/fieldEditors update for both Senators and Representatives
   const editedFieldEntry = {
     field: "activitiesScore",
     name: `${title}`,
@@ -205,7 +189,6 @@ if (senator && representative) {
 
 
 class activityController {
-  // Create a new activity with file upload for readMore
   static async createActivity(req, res) {
     upload.single("readMore")(req, res, async (err) => {
       if (err) return res.status(400).json({ message: err.message });
@@ -278,16 +261,12 @@ class activityController {
     try {
       let filter = {};
 
-      // Common filters (status published / all)
       filter = applyCommonFilters(req, filter);
 
-      // Congress filter
       filter = applyCongressFilter(req, filter);
 
-      // Term filter
       filter = applyActivityTermFilter(req, filter);
 
-      // Chamber filter
       filter = applyChamberFilter(req, filter, false);
 
       const { _id, ...ACTIVITY_FIELDS_NO_ID } = ACTIVITY_PUBLIC_FIELDS;
@@ -298,7 +277,6 @@ class activityController {
       let pipeline = [];
 
       if (isFrontend) {
-        // Only published or published-in-history
         pipeline.push({
           $match: {
             $or: [
@@ -346,11 +324,8 @@ class activityController {
           { $replaceRoot: { newRoot: "$effectiveDoc" } }
         );
       } else {
-        // Default / admin → all activities
         pipeline.push({ $match: { ...filter } });
       }
-
-      // Sorting & projecting
       pipeline.push(
         { $sort: { date: -1, createdAt: -1 } },
         {
@@ -385,20 +360,16 @@ class activityController {
       let supportData;
 
       if (activity.activityquorumId) {
-        // Try to find a matching Vote
         const vote = await Vote.findOne({
           quorumId: activity.activityquorumId,
         }).lean();
 
         if (vote) {
-          // Found a vote → build vote-style supportData
           supportData = await buildSupportData(vote, false);
         } else {
-          // No vote found → build activity-style supportData
           supportData = await buildSupportData(activity, true);
         }
       } else {
-        // Fallback → activity-style supportData
         supportData = await buildSupportData(activity, true);
       }
 
@@ -412,8 +383,6 @@ class activityController {
         .json({ message: "Error retrieving activity", error: error.message });
     }
   }
-
-  // Update activity with file and optional discard logic
   static async updateActivity(req, res) {
     upload.single("readMore")(req, res, async (err) => {
       if (err) return res.status(400).json({ message: err.message });
@@ -421,8 +390,6 @@ class activityController {
       try {
         const activityID = req.params.id;
         let updateData = { ...req.body };
-
-        // Safe check for req.user
         const userId = req.user?._id || null;
         updateData.modifiedBy = userId;
         updateData.modifiedAt = new Date();
@@ -430,8 +397,6 @@ class activityController {
         if (req.file) {
           updateData.readMore = `/uploads/${req.file.filename}`;
         }
-
-        // Handle discard logic
         if (req.body.discardChanges === "true") {
           return activityController.discardActivityChanges(req, res);
         }
@@ -440,16 +405,12 @@ class activityController {
         if (!existingActivity) {
           return res.status(404).json({ message: "Activity not found" });
         }
-
-        // Parse fields if needed
         if (typeof updateData.editedFields === "string") {
           updateData.editedFields = JSON.parse(updateData.editedFields);
         }
         if (typeof updateData.fieldEditors === "string") {
           updateData.fieldEditors = JSON.parse(updateData.fieldEditors);
         }
-
-        // Initialize update operations
         const updateOperations = {
           $set: {
             ...updateData,
@@ -457,15 +418,11 @@ class activityController {
             modifiedAt: new Date(),
           },
         };
-
-        // Clear fields if publishing
         if (updateData.status === "published") {
           updateOperations.$set.editedFields = [];
           updateOperations.$set.fieldEditors = {};
           updateOperations.$set.history = [];
         }
-
-        // If not publishing, consider snapshot for history
         if (updateData.status !== "published") {
           const canTakeSnapshot =
             !existingActivity.history ||
@@ -475,22 +432,16 @@ class activityController {
             !existingActivity.history || existingActivity.history.length === 0;
           if (canTakeSnapshot && noHistory) {
             const currentState = existingActivity.toObject();
-
-            // Remove unnecessary properties
             delete currentState._id;
             delete currentState.createdAt;
             delete currentState.updatedAt;
             delete currentState.__v;
             delete currentState.history;
-
-            // Create history entry
             const historyEntry = {
               oldData: currentState,
               timestamp: new Date(),
               actionType: "update",
             };
-
-            // Add to update operations
             updateOperations.$push = { history: historyEntry };
             updateOperations.$set.snapshotSource = "edited";
           } else if (
@@ -502,7 +453,7 @@ class activityController {
 
         const updatedActivity = await Activity.findByIdAndUpdate(
           activityID,
-          updateOperations, // Use the structured operations
+          updateOperations,
           { new: true }
         ).populate("termId");
 
@@ -522,8 +473,6 @@ class activityController {
       }
     });
   }
-
-  // Discard changes (dedicated endpoint)
   static async discardActivityChanges(req, res) {
     try {
       const { discardChanges } = require("../helper/discardHelper");
@@ -547,13 +496,10 @@ class activityController {
     }
   }
 
-  // Delete an activity
-  // Delete activity and clean references
   static async deleteActivity(req, res) {
     try {
       const { id } = req.params;
 
-      // Check if activity exists
       const activity = await Activity.findById(id);
       if (!activity) {
         return res.status(404).json({ message: "Activity not found" });
@@ -564,31 +510,27 @@ class activityController {
       const SenatorData = require("../models/senatorDataSchema");
       const RepresentativeData = require("../models/representativeDataSchema");
 
-      // Function to create editorKey for activities
       function makeActivityEditorKey(title) {
-        // For patterns like "S. 4445: Right to IVF Act"
         if (title.includes("S.")) {
           return (
             "activitiesScore_" +
             title
-              .replace(/S\.\s*(\d+):/g, "S_$1_") // Convert "S. 4445:" to "S_4445_"
-              .replace(/'/g, "") // Remove apostrophes
-              .replace(/\s+/g, "_") // Replace spaces with underscores
+              .replace(/S\.\s*(\d+):/g, "S_$1_")
+              .replace(/'/g, "") 
+              .replace(/\s+/g, "_") 
               .replace(/[^a-zA-Z0-9_]/g, "")
-          ); // Remove any other special characters
+          ); 
         }
-        // For patterns like "H.R. 1234: Some Act"
         else if (title.includes("H.R.")) {
           return (
             "activitiesScore_" +
             title
-              .replace(/H\.R\.\s*(\d+):/g, "H_R_$1_") // Convert "H.R. 1234:" to "H_R_1234_"
-              .replace(/'/g, "") // Remove apostrophes
-              .replace(/\s+/g, "_") // Replace spaces with underscores
+              .replace(/H\.R\.\s*(\d+):/g, "H_R_$1_") 
+              .replace(/'/g, "") 
+              .replace(/\s+/g, "_") 
               .replace(/[^a-zA-Z0-9_]/g, "")
-          ); // Remove any other special characters
+          );
         }
-        // For other patterns
         else {
           return (
             "activitiesScore_" +
@@ -619,7 +561,6 @@ class activityController {
     
       for (const senator of senators) {
       
-        // Remove matching editedFields (both name AND field must match)
         const beforeCount = senator.editedFields.length;
         senator.editedFields = senator.editedFields.filter(
           (f) =>
@@ -636,7 +577,6 @@ class activityController {
 
         const editorKey = makeActivityEditorKey(activity.title);
 
-        // Convert fieldEditors to plain object
         let fieldEditorsPlain = {};
         if (senator.fieldEditors) {
           try {
@@ -657,12 +597,10 @@ class activityController {
        
         let fieldEditorDeleted = false;
 
-        // 1. First try exact match
         if (fieldEditorsPlain[editorKey]) {
           delete fieldEditorsPlain[editorKey];
           fieldEditorDeleted = true;
         }
-        // 2. Try case-insensitive match
         else {
           const foundKey = actualKeys.find(
             (key) => key.toLowerCase() === editorKey.toLowerCase()
@@ -672,7 +610,6 @@ class activityController {
             delete fieldEditorsPlain[foundKey];
             fieldEditorDeleted = true;
           }
-          // 3. Try pattern matching for S. vs S differences
           else {
             const normalizedEditorKey = editorKey.replace(/_/g, "");
             const foundPatternKey = actualKeys.find((key) => {
@@ -685,10 +622,8 @@ class activityController {
               delete fieldEditorsPlain[foundPatternKey];
               fieldEditorDeleted = true;
             }
-            // 4. Try partial match (for apostrophe differences etc)
             else {
               const partialMatch = actualKeys.find((key) => {
-                // Remove all non-alphanumeric characters and compare
                 const cleanKey = key.replace(/[^a-zA-Z0-9]/g, "");
                 const cleanEditorKey = editorKey.replace(/[^a-zA-Z0-9]/g, "");
                 return cleanKey === cleanEditorKey;
@@ -715,8 +650,6 @@ class activityController {
             if (restoredStatus) {
              
               senator.publishStatus = restoredStatus;
-
-              //  Clear history if it's only a published snapshot
               if (
                 senator.history.length === 1 &&
                 (lastHistory.oldData?.publishStatus === "published" ||
@@ -730,8 +663,6 @@ class activityController {
             senator.publishStatus = "draft";
           }
         }
-
-        // Use updateOne instead of save to avoid validation errors
         const updateData = {};
         if (removedCount > 0) updateData.editedFields = senator.editedFields;
         if (fieldEditorDeleted) updateData.fieldEditors = senator.fieldEditors;
@@ -754,7 +685,6 @@ class activityController {
       for (const rep of representatives) {
 
         let removedCount = 0;
-        // Remove matching editedFields if they exist
         if (rep.editedFields && rep.editedFields.length > 0) {
           const beforeCount = rep.editedFields.length;
           rep.editedFields = rep.editedFields.filter(
@@ -771,8 +701,6 @@ class activityController {
         }
 
         const editorKey = makeActivityEditorKey(activity.title);
-
-        // Convert fieldEditors to plain object
         let repFieldEditorsPlain = {};
         if (rep.fieldEditors) {
           try {
@@ -790,13 +718,10 @@ class activityController {
         const repActualKeys = Object.keys(repFieldEditorsPlain);
       
         let fieldEditorDeleted = false;
-
-        // 1. First try exact match
         if (repFieldEditorsPlain[editorKey]) {
           delete repFieldEditorsPlain[editorKey];
           fieldEditorDeleted = true;
         }
-        // 2. Try case-insensitive match
         else {
           const foundKey = repActualKeys.find(
             (key) => key.toLowerCase() === editorKey.toLowerCase()
@@ -806,7 +731,6 @@ class activityController {
             delete repFieldEditorsPlain[foundKey];
             fieldEditorDeleted = true;
           }
-          // 3. Try pattern matching
           else {
             const normalizedEditorKey = editorKey.replace(/_/g, "");
             const foundPatternKey = repActualKeys.find((key) => {
@@ -819,7 +743,6 @@ class activityController {
               delete repFieldEditorsPlain[foundPatternKey];
               fieldEditorDeleted = true;
             }
-            // 4. Try partial match
             else {
               const partialMatch = repActualKeys.find((key) => {
                 const cleanKey = key.replace(/[^a-zA-Z0-9]/g, "");
@@ -840,8 +763,6 @@ class activityController {
         if (fieldEditorDeleted) {
           rep.fieldEditors = repFieldEditorsPlain;
         }
-
-        // If no editedFields left → restore publishStatus
         if (rep.editedFields.length === 0) {
           if (Array.isArray(rep.history) && rep.history.length > 0) {
             const lastHistory = rep.history[rep.history.length - 1];
@@ -850,8 +771,6 @@ class activityController {
             if (restoredStatus) {
              
               rep.publishStatus = restoredStatus;
-
-              // 🆕 Clear history if it's only a published snapshot
               if (
                 rep.history.length === 1 &&
                 (lastHistory.oldData?.publishStatus === "published" ||
@@ -866,8 +785,6 @@ class activityController {
             rep.publishStatus = "draft";
           }
         }
-
-        // Only update if something changed
         const updateData = {};
         if (removedCount > 0) updateData.editedFields = rep.editedFields;
         if (fieldEditorDeleted) updateData.fieldEditors = rep.fieldEditors;
@@ -883,11 +800,7 @@ class activityController {
         } else {
         }
       }
-
-      // ---------------------------------------
-      // 4. Delete the activity itself
-      // ---------------------------------------
-      await Activity.findByIdAndDelete(id);
+-    await Activity.findByIdAndDelete(id);
 
       res.status(200).json({
         message: "Activity and its references deleted successfully",
@@ -901,8 +814,6 @@ class activityController {
       });
     }
   }
-
-  // Update activity status
   static async updateActivityStatus(req, res) {
     try {
       const { status } = req.body;
@@ -936,8 +847,6 @@ class activityController {
       });
     }
   }
-
-  // Bulk update trackActivities
   static async bulkUpdateTrackActivities(req, res) {
     try {
       const { ids, trackActivities } = req.body;
@@ -968,7 +877,6 @@ class activityController {
       });
     }
   }
-  // Fetch and create activities from cosponsorships
   static async fetchAndCreateFromCosponsorships(
     billId,
     title,
@@ -977,12 +885,10 @@ class activityController {
     editorInfo
   ) {
    
-
     if (!billId || !title || !introduced || !congress) {
       console.warn(" Missing required bill data");
       return 0;
     }
-
     const queryParams = {
       api_key: API_KEY,
       username: USERNAME,
@@ -1011,7 +917,6 @@ class activityController {
         return 0;
       }
 
-      //  Only create activity once outside the loop
       let activity = await Activity.findOne({
         activityquorumId: billId,
         date: introduced,
@@ -1043,8 +948,6 @@ class activityController {
       for (const sponsorUri of bill.sponsors) {
         const sponsorId = sponsorUri.split("/").filter(Boolean).pop();
            
-
-
         try {
           const sponsorRes = await axios.get(
             `${BASE}/api/newsponsor/${sponsorId}/`,
@@ -1098,7 +1001,6 @@ class activityController {
       return 0;
     }
   }
-  // Cleanup function to remove orphaned activity references
 }
 
 module.exports = activityController;

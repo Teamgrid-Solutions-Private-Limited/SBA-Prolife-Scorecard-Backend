@@ -9,16 +9,15 @@ const SenatorData = require("../models/senatorDataSchema");
 const RepresentativeData = require("../models/representativeDataSchema");
 const ActivityController = require("../controllers/activityController");
 const mongoose = require("mongoose");
-// Circuit breaker implementation
 class CircuitBreaker {
   constructor(host) {
     this.host = host;
-    this.state = "CLOSED"; // CLOSED, OPEN, HALF-OPEN
+    this.state = "CLOSED";
     this.failureCount = 0;
     this.successCount = 0;
     this.lastFailureTime = 0;
     this.failureThreshold = 3;
-    this.resetTimeout = 30000; // 30 seconds
+    this.resetTimeout = 30000; 
     this.successThreshold = 2;
   }
 
@@ -59,8 +58,6 @@ class CircuitBreaker {
     return this.state === "HALF-OPEN";
   }
 }
-
-// Request queue for managing concurrent requests
 class RequestQueue {
   constructor(concurrency = 3) {
     this.queue = [];
@@ -96,30 +93,20 @@ class RequestQueue {
       });
   }
 }
-
-// Create a throttled axios instance with timeout
 const apiClient = axios.create({
   timeout: cacheConfig.TIMEOUTS.API_REQUEST,
 });
-
-// Add a global request interceptor for retries
 apiClient.interceptors.response.use(null, async (error) => {
   const config = error.config;
-
-  // Only retry GET requests
   if (!config || !config.method || config.method.toLowerCase() !== "get") {
     return Promise.reject(error);
   }
-
-  // Don't retry if we've already retried or max retries is 0
   config.__retryCount = config.__retryCount || 0;
   const maxRetries = 2;
 
   if (config.__retryCount >= maxRetries) {
     return Promise.reject(error);
   }
-
-  // Retry with exponential backoff
   config.__retryCount += 1;
   const delay = config.__retryCount * 1000; // 1s, 2s
 
@@ -127,12 +114,8 @@ apiClient.interceptors.response.use(null, async (error) => {
 
   return apiClient(config);
 });
-
-// Helper to generate a cache key based on type and params
 function getCacheKey(type, params) {
-  // Only stringify params if present and not empty
   if (params && Object.keys(params).length > 0) {
-    // Sort keys for consistent cache keys
     const sorted = Object.keys(params)
       .sort()
       .reduce((acc, key) => {
@@ -154,8 +137,6 @@ class QuorumDataController {
     this.saveBills = this.saveBills.bind(this);
     this.updateVoteScore = this.updateVoteScore.bind(this);
     this.getDataStatus = this.getDataStatus.bind(this);
-
-    // Add caches
     this._dataCache = {
       senator: { data: null, timestamp: 0 },
       representative: { data: null, timestamp: 0 },
@@ -163,8 +144,6 @@ class QuorumDataController {
       state: { data: null, timestamp: 0 },
       district: { data: null, timestamp: 0 },
     };
-
-    // Get TTL values from config
     this._CACHE_TTL = {
       senator: cacheConfig.CACHE_TTL.SENATOR,
       representative: cacheConfig.CACHE_TTL.REPRESENTATIVE,
@@ -172,13 +151,9 @@ class QuorumDataController {
       state: cacheConfig.CACHE_TTL.STATE,
       district: cacheConfig.CACHE_TTL.DISTRICT,
     };
-
-    // Initialize circuit breakers for different API endpoints
     this._circuitBreakers = {
       quorum: new CircuitBreaker("quorum.us"),
     };
-
-    // Initialize request queue for limiting concurrent requests
     this._requestQueue = new RequestQueue(cacheConfig.CONCURRENT_REQUESTS || 5);
   }
 
@@ -195,10 +170,7 @@ class QuorumDataController {
     representative: { model: Representative, idField: "repId" },
     bills: { model: Bill, idField: "quorumId" },
   };
-
-  // Generic API Fetcher with caching, circuit breaker and queue
   async fetchFromApi(url, params, cacheKey) {
-    // Check cache first
     if (cacheKey) {
       const cache = this._dataCache[cacheKey];
       const now = Date.now();
@@ -207,28 +179,18 @@ class QuorumDataController {
         return cache.data;
       }
     }
-
-    // Check circuit breaker state
     const circuitBreaker = this._circuitBreakers.quorum;
     if (!circuitBreaker.canRequest()) {
-      // Return cached data if available even if expired
       if (cacheKey && this._dataCache[cacheKey]?.data) {
         return this._dataCache[cacheKey].data;
       }
       return [];
     }
-
-    // Queue the API request
     try {
       const fetchTask = () => apiClient.get(url, { params });
       const response = await this._requestQueue.add(fetchTask);
-
-      // Success, update circuit breaker
       circuitBreaker.success();
-
       if (!response.data || !Array.isArray(response.data.objects)) return [];
-
-      // Update cache
       if (cacheKey) {
         this._dataCache[cacheKey] = {
           data: response.data.objects,
@@ -238,11 +200,8 @@ class QuorumDataController {
 
       return response.data.objects;
     } catch (error) {
-      // Failure, update circuit breaker
       circuitBreaker.failure();
-
       console.error(`API fetch error for ${url}:`, error.message);
-      // Return cached data if available even if expired
       if (cacheKey && this._dataCache[cacheKey]?.data) {
         return this._dataCache[cacheKey].data;
       }
@@ -287,8 +246,6 @@ class QuorumDataController {
   async fetchData(type, additionalParams = {}) {
     if (!QuorumDataController.API_URLS[type])
       throw new Error(`Invalid API type: ${type}`);
-
-    // Use per-search cache key
     const cacheKey = getCacheKey(type, additionalParams);
     const cache = this._dataCache[cacheKey];
     const now = Date.now();
@@ -300,12 +257,8 @@ class QuorumDataController {
 
       return cache.data;
     }
-
-    // Check circuit breaker state
     const circuitBreaker = this._circuitBreakers.quorum;
     if (!circuitBreaker.canRequest()) {
-
-      // Return cached data if available even if expired
       if (cache?.data) {
 
         return cache.data;
@@ -314,19 +267,16 @@ class QuorumDataController {
     }
 
     const allData = [];
-    // Set optimized limits based on data type
     const limit =
       {
         senator: 100,
-        representative: 250, // Reduced batch size for representatives
+        representative: 250, 
         bills: 20,
       }[type] || 20;
-
-    // Adjust max records based on type
     const maxRecords =
       {
         senator: 120,
-        representative: 20000, // Increased max for representatives
+        representative: 20000, 
         bills: 20,
       }[type] || 1000;
 
@@ -343,38 +293,27 @@ class QuorumDataController {
             ? { current: true, most_recent_role_type: 2 }
             : {}),
       };
-
-      // Queue the initial API request
       const fetchTask = () =>
         apiClient.get(QuorumDataController.API_URLS[type], {
           params: firstParams,
         });
       const response = await this._requestQueue.add(fetchTask);
-
-      // Success, update circuit breaker
       circuitBreaker.success();
 
       if (!response.data?.objects?.length) return [];
       allData.push(...response.data.objects);
 
-      // For pagination handling
       if (response.data.meta?.next && type !== "bills") {
         const totalCount = response.data.meta.total_count;
-
-        // Only do parallel requests for senators and representatives
         const totalPages = Math.min(
           Math.ceil(totalCount / limit),
           Math.ceil(maxRecords / limit) - 1
         );
-
-        // Limit parallel requests
         const maxParallelRequests = cacheConfig.MAX_PARALLEL_PAGES || 3;
 
         for (let page = 1; page <= totalPages; page += maxParallelRequests) {
 
           const pagePromises = [];
-
-          // Create a batch of page requests
           for (
             let i = 0;
             i < maxParallelRequests && page + i <= totalPages;
@@ -382,8 +321,6 @@ class QuorumDataController {
           ) {
             const pageOffset = (page + i) * limit;
             const pageParams = { ...firstParams, offset: pageOffset };
-
-            // Queue each page request
             const pageTask = () =>
               apiClient
                 .get(QuorumDataController.API_URLS[type], {
@@ -400,30 +337,21 @@ class QuorumDataController {
 
             pagePromises.push(this._requestQueue.add(pageTask));
           }
-
-          // Get results for this batch
           const pageResults = await Promise.all(pagePromises);
           pageResults.forEach((pageData) => {
             if (pageData.length > 0) {
               allData.push(...pageData);
             }
           });
-
-          // Early trimming if we already have enough data
           if (allData.length >= maxRecords) {
 
             break;
           }
-
-          // Update cache as we go - this ensures partial data is available if process takes time
           if (page % 3 === 0 || page + maxParallelRequests > totalPages) {
-            // Trim data to save memory
             const trimmedIntermediateData = this.trimDataForMemory(
               allData.slice(0, maxRecords),
               type
             );
-
-            // Store in cache
             this._dataCache[cacheKey] = {
               data: trimmedIntermediateData,
               timestamp: now,
@@ -432,15 +360,10 @@ class QuorumDataController {
           }
         }
       }
-
-
-      // Memory optimization: only keep needed data
       const trimmedData = this.trimDataForMemory(
         allData.slice(0, maxRecords),
         type
       );
-
-      // Store in cache
       this._dataCache[cacheKey] = {
         data: trimmedData,
         timestamp: now,
@@ -448,28 +371,19 @@ class QuorumDataController {
 
       return trimmedData;
     } catch (error) {
-      // Failure, update circuit breaker
       circuitBreaker.failure();
-
       console.error(`Failed to fetch ${type} data:`, error.message);
-
-      // Return cached data if available even if expired
       if (cache?.data) {
-
         return cache.data;
       }
 
       return [];
     }
   }
-
-  // Trim unnecessary data to reduce memory usage
   trimDataForMemory(data, type) {
     if (!data || !data.length) return data;
 
     const startTime = Date.now();
-
-    // Define fields to keep for each type
     const keepFields = {
       senator: [
         "id",
@@ -495,27 +409,18 @@ class QuorumDataController {
         "image_url",
       ],
       bills: ["id", "title", "bill_type", "introduced_date"],
-      state: null, // keep all
-      district: null, // keep all
+      state: null, 
+      district: null, 
     };
-
-    // If no specific fields to keep, return original data
     if (!keepFields[type]) return data;
-
-    // Create a Set for faster lookups
     const fieldsToKeep = new Set(keepFields[type]);
-
-    // Process in batches for better memory management with large datasets
     const BATCH_SIZE = 500;
     const trimmed = [];
 
     for (let i = 0; i < data.length; i += BATCH_SIZE) {
       const batch = data.slice(i, i + BATCH_SIZE);
-
-      // Create trimmed copies with only necessary fields
       const batchResult = batch.map((item) => {
         const trimmedItem = {};
-        // Only iterate over fields we want to keep
         for (const field of fieldsToKeep) {
           if (item[field] !== undefined) {
             trimmedItem[field] = item[field];
@@ -541,8 +446,6 @@ class QuorumDataController {
     }
 
     const partyMap = { 1: "democrat", 2: "republican", 3: "independent" };
-
-    // Use Promise.all to fetch state and district data in parallel
     const [stateMap, districtMap] = await Promise.all([
       this.fetchStateData(),
       this.fetchDistrictData(),
@@ -583,8 +486,6 @@ class QuorumDataController {
         date: item.introduced_date || "Unknown",
       }),
     };
-
-    // Process in batches for better memory management with large datasets
     const BATCH_SIZE = 250;
     const filtered = [];
 
@@ -592,8 +493,6 @@ class QuorumDataController {
       const batch = data.slice(i, i + BATCH_SIZE);
       const batchResult = batch.map(mappings[type]).filter(Boolean);
       filtered.push(...batchResult);
-
-      // Log progress for large datasets
       if (data.length > 500 && i % 500 === 0) {
 
       }
@@ -608,8 +507,6 @@ class QuorumDataController {
       const modelConfig = QuorumDataController.MODELS[type];
       if (!modelConfig)
         return res.status(400).json({ error: "Invalid data type" });
-
-      // Check circuit breaker state
       const circuitBreaker = this._circuitBreakers.quorum;
       if (!circuitBreaker.canRequest()) {
         return res.status(503).json({
@@ -618,12 +515,8 @@ class QuorumDataController {
             "API service is currently unavailable, please try again later",
         });
       }
-
-      // Create a variable to track if headers were sent
       let responseHandled = false;
       let timeoutId = null;
-
-      // Use per-search cache key
       const cacheKey = getCacheKey(type, additionalParams);
       const cache = this._dataCache[cacheKey];
       const now = Date.now();
@@ -633,9 +526,6 @@ class QuorumDataController {
         (this._CACHE_TTL[type] || cacheConfig.CACHE_TTL.DEFAULT);
 
       if (isCacheValid && cache.data.length > 0) {
-        // We have valid cached data - fast path
-
-        // Return early response with cached data
         const filtered = await this.filterData(type, cache.data);
         res.status(200).json({
           message: `${type} data available from cache`,
@@ -644,10 +534,7 @@ class QuorumDataController {
           data: filtered,
         });
         responseHandled = true;
-
-        // Still update in background to ensure fresh data
       } else {
-        // Set a response timeout for slower path
         timeoutId = setTimeout(() => {
           responseHandled = true;
           return res.status(202).json({
@@ -657,11 +544,7 @@ class QuorumDataController {
           });
         }, cacheConfig.TIMEOUTS.SERVER_RESPONSE);
       }
-
-      // Start data fetch (always do this even if we returned cached data)
       const fetchPromise = this.fetchData(type, additionalParams);
-
-      // Execute processing of data
       fetchPromise
         .then(async (rawData) => {
           if (timeoutId) {
@@ -696,14 +579,9 @@ class QuorumDataController {
 
             return;
           }
-
           const { model, idField } = modelConfig;
-
-          // Use batch sizes from config
           const BATCH_SIZE = cacheConfig.BATCH_SIZES.DATABASE_OPERATIONS;
           const totalBatches = Math.ceil(filtered.length / BATCH_SIZE);
-
-
           let savedCount = 0;
           for (let i = 0; i < filtered.length; i += BATCH_SIZE) {
             const batch = filtered.slice(i, i + BATCH_SIZE);
@@ -717,11 +595,8 @@ class QuorumDataController {
                 },
               }))
             );
-
             savedCount += result.upsertedCount + result.modifiedCount;
-
           }
-
           if (!responseHandled) {
             res.json({
               message: `${type} data saved successfully`,
@@ -755,19 +630,14 @@ class QuorumDataController {
       });
     }
   }
-
-
   async saveBills(req, res) {
     try {
       const { bills, editorInfo } = req.body;
       if (!Array.isArray(bills) || bills.length === 0) {
         return res.status(400).json({ error: "Invalid bills" });
       }
-
       const { model, idField } = QuorumDataController.MODELS.bills;
-
       const savedPromises = bills.map(async (bill) => {
-        // Calculate congress & termId based on introduced_date
         const introducedDate = bill.date ? new Date(bill.date) : new Date();
         const year = introducedDate.getUTCFullYear();
 
@@ -775,18 +645,13 @@ class QuorumDataController {
         const congressStartYear = 1789 + (congress - 1) * 2;
         const congressEndYear = congressStartYear + 1;
         const termId = `${congressStartYear}-${congressEndYear}`;
-
-        // Attach computed fields
         bill.congress = String(congress);
         bill.termId = termId;
-
-        // Upsert
         await model.updateOne(
           { [idField]: bill[idField] },
-          { $setOnInsert: bill }, //  Only set congress/termId when inserting
+          { $setOnInsert: bill }, 
           { upsert: true }
         );
-
         return model.findOne({ [idField]: bill[idField] });
       });
 
@@ -797,8 +662,6 @@ class QuorumDataController {
           "Bills saved. Cosponsorship & vote updates running in background.",
         data: saved,
       });
-
-      // Background tasks...
       (async () => {
         try {
           await this.updateBillShortDesc(saved);
@@ -844,8 +707,6 @@ class QuorumDataController {
 
   async updateBillShortDesc(bills) {
     const { model, idField } = QuorumDataController.MODELS.bills;
-
-    // Process in smaller batches using config
     const BATCH_SIZE = cacheConfig.BATCH_SIZES.BILL_UPDATES;
     for (let i = 0; i < bills.length; i += BATCH_SIZE) {
       const batch = bills.slice(i, i + BATCH_SIZE);
@@ -853,7 +714,6 @@ class QuorumDataController {
       await Promise.all(
         batch.map(async (bill) => {
           try {
-            // Queue the API request
             const fetchTask = () =>
               apiClient.get(
                 `https://www.quorum.us/api/newbillsummary/${bill[idField]}/`,
@@ -919,7 +779,6 @@ class QuorumDataController {
         type: vote.type
       };
       const { bill_type } = data.related_bill || {};
-      // Define both vote configurations
       const voteConfigs = [
         {
           personModel: Senator,
@@ -944,18 +803,14 @@ class QuorumDataController {
         .filter(Boolean);
 
       if (!personIds.length) return;
-
-      // Process for both Senator and Representative models
       for (const voteConfig of voteConfigs) {
         const { personModel, dataModel, idField, refField, type } = voteConfig;
 
         const persons = await personModel.find({
           [refField]: { $in: personIds },
         });
-        if (!persons.length) continue; // Skip if no persons found for this type
-
+        if (!persons.length) continue; 
         const personMap = Object.fromEntries(persons.map((p) => [p[refField], p]));
-
         const updates = [];
         for (const score of votes) {
           const uris = data[`${score}_votes`] || [];
@@ -999,14 +854,10 @@ class QuorumDataController {
           await Promise.allSettled(
             batch.map(async (update) => {
               try {
-                // Check if person is published before proceeding
                 if (update.personData.publishStatus === "published") {
                   try {
                     const currentPerson = await personModel.findById(update.personData._id);
-
-                    // Only create history if the person is currently published
                     if (currentPerson && currentPerson.publishStatus === "published") {
-                      // Extra check: skip if history already exists
                       if (Array.isArray(currentPerson.history) && currentPerson.history.length > 0) {
                       } else {
                         const currentPersonData = await dataModel.find({
@@ -1026,13 +877,9 @@ class QuorumDataController {
                           snapshotSource: currentPerson.snapshotSource,
                           status: currentPerson.status
                         };
-
-                        // Add district field only for Representatives
                         if (type === "Representative" && currentPerson.district) {
                           snapshotData.district = currentPerson.district;
                         }
-
-                        // Add the appropriate data reference
                         if (type === "Representative") {
                           snapshotData.representativeData = currentPersonData.map(doc => doc.toObject());
                         } else if (type === "Senator") {
@@ -1045,8 +892,6 @@ class QuorumDataController {
                           actionType: "update",
                           _id: new mongoose.Types.ObjectId()
                         };
-
-                        // Create history snapshot in a single operation
                         await personModel.findByIdAndUpdate(
                           update.personData._id,
                           {
@@ -1065,11 +910,7 @@ class QuorumDataController {
                     console.error(` Failed to take snapshot for ${update.personData.name}:`, snapshotError.message);
                   }
                 }
-
-                // Update the data model (votesScore)
                 await dataModel.updateOne(update.filter, update.update, { upsert: true });
-
-                // Update person document for both Senators and Representatives
                 if (type === "Senator" || type === "Representative") {
                   const editedFieldEntry = {
                     field: "votesScore",
@@ -1077,13 +918,10 @@ class QuorumDataController {
                     fromQuorum: true,
                     updatedAt: new Date().toISOString()
                   };
-
                   const normalizedTitle = update.billInfo.title
                     .replace(/[^a-zA-Z0-9]+/g, "_")
                     .replace(/^_+|_+$/g, "");
-
                   const fieldKey = `votesScore_${normalizedTitle}`;
-
                   const personUpdatePayload = {
                     $push: {
                       editedFields: {
@@ -1103,8 +941,6 @@ class QuorumDataController {
                       },
                     },
                   };
-
-                  // Use findByIdAndUpdate to avoid triggering pre-save hooks if possible
                   await personModel.findByIdAndUpdate(
                     update.personData._id,
                     personUpdatePayload,
@@ -1126,8 +962,6 @@ class QuorumDataController {
         console.error("Error stack:", err.stack);
       }
     }
-
-  // Method to check data status
   async getDataStatus(req, res) {
       try {
         const { type } = req.params;
@@ -1135,22 +969,15 @@ class QuorumDataController {
         if (!type || !QuorumDataController.MODELS[type]) {
           return res.status(400).json({ error: "Invalid data type" });
         }
-
-        // Check cache status
         const cache = this._dataCache[type];
         const now = Date.now();
         const cacheAge = now - (cache?.timestamp || 0);
         const ttl = this._CACHE_TTL[type] || cacheConfig.CACHE_TTL.DEFAULT;
         const isCacheValid = cache?.data && cacheAge < ttl;
-
-        // Check circuit breaker status
         const circuitBreaker = this._circuitBreakers.quorum;
         const circuitStatus = circuitBreaker.state;
-
-        // Count existing records
         const { model } = QuorumDataController.MODELS[type];
         const count = await model.countDocuments();
-
         return res.json({
           type,
           cache: {

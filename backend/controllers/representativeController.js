@@ -3,20 +3,19 @@ const RepresentativeData = require("../models/representativeDataSchema");
 const upload = require("../middlewares/fileUploads");
 
 class representativeController {
-  // Create a new House with photo upload
   static createHouse = async (req, res) => {
     try {
       const { name, district, party, status } = req.body;
 
-      const photo = req.file ? req.file.filename : null; // If a file is uploaded, use its path, otherwise null
+      const photo = req.file ? req.file.filename : null; 
 
       const newHouse = new House({
         name,
         district,
         party,
-        photo, // Store the photo path in the database
+        photo,
         status,
-        publishStatus: "draft", // Default publish status
+        publishStatus: "draft",
       });
 
       await newHouse.save();
@@ -27,7 +26,6 @@ class representativeController {
         .json({ message: "Error creating house", error: error.message });
     }
   };
-  // Get all House for admin dashboard
   static async getAllHouse(req, res) {
     try {
       const house = await House.find()
@@ -42,8 +40,6 @@ class representativeController {
       });
     }
   }
-
-  // Get a  House by ID for admin dashboard
   static async getHouseById(req, res) {
     try {
       const house = await House.findById(req.params.id);
@@ -57,90 +53,18 @@ class representativeController {
         .json({ message: "Error retrieving  House", error: error.message });
     }
   }
-
-  // Get all House for frontend display
-  // static async AllHouse(req, res) {
-  //   try {
-  //      const { district, party, name } = req.query;
-
-  //           // Build filter object dynamically
-  //           const filter = {};
-  //           if (district) filter.district = new RegExp(`^${district}$`, "i"); // exact match, case-insensitive
-  //           if (party) filter.party = new RegExp(`^${party}$`, "i"); // exact match, case-insensitive
-  //           if (name) filter.name = new RegExp(name, "i"); // partial match in name
-
-  //           const houses = await House.find(filter).lean();
-
-  //     const housesWithRatings = await Promise.all(
-  //       houses.map(async (house) => {
-  //         // Try current term rating
-  //         let ratingData = await RepresentativeData.findOne({
-  //           houseId: house._id,
-  //           currentTerm: true,
-  //         })
-  //           .select("rating currentTerm summary")
-  //           .lean();
-
-  //         // If not found, fallback to most recent term
-  //         if (!ratingData) {
-  //           ratingData = await RepresentativeData.findOne({
-  //             houseId: house._id,
-  //           })
-  //             .sort({ termId: -1 })
-  //             .select("rating currentTerm summary")
-  //             .lean();
-  //         }
-  //         // Remove "Sen." or "Sen" from start of name
-  //         const cleanName = house.name.replace(/^Rep\.?\s+/i, "");
-  //         // Clean fast mapping
-  //         return {
-  //           id: house._id,
-  //           name: cleanName,
-  //           district: house.district,
-  //           party: house.party,
-  //           photo: house.photo,
-  //           status: house.status,
-  //           rating: ratingData?.rating || "N/A", // Default to "N/A" if no rating found
-  //           isCurrentTerm: ratingData?.currentTerm || false,
-  //           summary: ratingData?.summary || null,
-  //         };
-  //       })
-  //     );
-
-  //     res.status(200).json({
-  //       message: "Retrieved successfully",
-  //       info: housesWithRatings,
-  //     });
-  //   } catch (error) {
-  //     console.error("Error in getAllHouse:", error);
-  //     res.status(500).json({
-  //       message: "Error retrieving representatives",
-  //       error: error.message,
-  //       stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
-  //     });
-  //   }
-  // }
-
   static async AllHouse(req, res) {
     try {
       const { district, party, name } = req.query;
-
-      // Build filter object with optimized regex patterns
       const filter = {
         ...(district && { district: new RegExp(`^${district}$`, "i") }),
         ...(party && { party: new RegExp(`^${party}$`, "i") }),
         ...(name && { name: new RegExp(name, "i") }),
       };
-
-      // Get all houses with just the fields we need
       const houses = await House.find(filter)
         .select("_id name district party photo status")
         .lean();
-
-      // Get all house IDs for batch rating lookup
       const houseIds = houses.map((house) => house._id);
-
-      // Get all rating data in a single query with optimized sorting
       const allRatingData = await RepresentativeData.aggregate([
         {
           $match: {
@@ -150,8 +74,8 @@ class representativeController {
         {
           $sort: {
             houseId: 1,
-            currentTerm: -1, // current terms first
-            termId: -1, // then most recent terms
+            currentTerm: -1,
+            termId: -1,
           },
         },
         {
@@ -170,13 +94,9 @@ class representativeController {
           },
         },
       ]);
-
-      // Create a map for faster lookup
       const ratingMap = new Map(
         allRatingData.map((item) => [item.houseId.toString(), item])
       );
-
-      // Process houses in-memory (no async operations in map)
       const housesWithRatings = houses.map((house) => {
         const ratingInfo = ratingMap.get(house._id.toString()) || {};
         const cleanName = house.name.replace(/^Rep\.?\s+/i, "");
@@ -207,13 +127,9 @@ class representativeController {
       });
     }
   }
-
-  // Get a House by ID for frontend display
   static async HouseById(req, res) {
     try {
       const houseId = req.params.id;
-
-      // Fetch house and current term data in parallel using Promise.all
       const [house, currentTermData] = await Promise.all([
         House.findById(houseId),
         RepresentativeData.findOne({
@@ -221,14 +137,10 @@ class representativeController {
           currentTerm: true,
         }).select("rating currentTerm summary"),
       ]);
-
       if (!house) {
         return res.status(404).json({ message: "Representative not found" });
       }
-
       let ratingData = currentTermData;
-
-      // If current term not found, fetch latest by termId
       if (!ratingData) {
         ratingData = await RepresentativeData.findOne({
           houseId: houseId,
@@ -236,8 +148,6 @@ class representativeController {
           .sort({ termId: -1 })
           .select("rating currentTerm summary");
       }
-
-      // Combine result
       const result = {
         ...house.toObject(),
         rating: ratingData?.rating ?? null,
@@ -258,8 +168,6 @@ class representativeController {
       });
     }
   }
-
-  // Update a  House by ID
   static async updateHouse(req, res) {
     try {
       const houseId = req.params.id;
@@ -268,11 +176,7 @@ class representativeController {
       if (!existingHouse) {
         return res.status(404).json({ message: "House not found" });
       }
-
-      // Safe check for req.user
       const userId = req.user?._id || null;
-
-      // Base update structure
       const updateData = {
         $set: {
           ...req.body,
@@ -280,28 +184,20 @@ class representativeController {
           modifiedAt: new Date(),
         },
       };
-
-      // Handle file upload
       if (req.file) {
         updateData.$set.photo = req.file.filename;
       }
-
-      // Parse fields if needed
       if (typeof updateData.$set.editedFields === "string") {
         updateData.$set.editedFields = JSON.parse(updateData.$set.editedFields);
       }
       if (typeof updateData.$set.fieldEditors === "string") {
         updateData.$set.fieldEditors = JSON.parse(updateData.$set.fieldEditors);
       }
-
-      // Clear fields if publishing
       if (updateData.$set.publishStatus === "published") {
         updateData.$set.editedFields = [];
         updateData.$set.fieldEditors = {};
-        updateData.$set.history = []; // clear history completely on publish
+        updateData.$set.history = []; 
       }
-
-      // Determine if we should take a snapshot
       const canTakeSnapshot =
         !existingHouse.history ||
         existingHouse.history.length === 0 ||
@@ -317,8 +213,6 @@ class representativeController {
           houseId: houseId,
         }).lean();
         const currentState = existingHouse.toObject();
-
-        // Clean up state
         delete currentState._id;
         delete currentState.createdAt;
         delete currentState.updatedAt;
@@ -363,19 +257,12 @@ class representativeController {
       });
     }
   }
-
-  //discard changes to a House
   static async discardHouseChanges(req, res) {
     try {
       const { discardChanges } = require("../helper/discardHelper");
-
-      // Custom restore logic for representative data
       const additionalRestoreLogic = async (originalState, houseId) => {
         if (originalState.representativeData) {
-          // Delete all current representative data
           await RepresentativeData.deleteMany({ houseId: houseId });
-
-          // Recreate from original state
           const recreatePromises = originalState.representativeData.map(
             (data) => {
               const { _id, __v, updatedAt, ...cleanData } = data;
@@ -385,7 +272,6 @@ class representativeController {
               });
             }
           );
-
           await Promise.all(recreatePromises);
         }
       };
@@ -409,8 +295,6 @@ class representativeController {
       });
     }
   }
-
-  // Delete a  House by ID
   static async deleteHouse(req, res) {
     try {
       const deletedHouse = await House.findByIdAndDelete(req.params.id);
@@ -424,8 +308,6 @@ class representativeController {
         .json({ message: "Error deleting House", error: error.message });
     }
   }
-
-  //update published status of representative
 
   static async updateRepresentativeStatus(req, res) {
     try {

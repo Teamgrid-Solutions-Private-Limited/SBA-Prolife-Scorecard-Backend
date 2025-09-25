@@ -5,21 +5,13 @@ const RepresentativeData = require("../backend/models/representativeDataSchema")
 
 async function removeGarbageActivityRefs() {
   try {
-
-    // 1. Get all valid activity IDs
     const validActivityIds = await Activity.find({}, { _id: 1 }).lean();
     const validIdsSet = validActivityIds.map((doc) => doc._id);
-
-
-    // 2. Remove invalid references from SenatorData
     const senatorResult = await SenatorData.updateMany(
       {},
       { $pull: { activitiesScore: { activityId: { $nin: validIdsSet } } } }
     );
-    
-
-    // 3. Remove invalid references from RepresentativeData
-    const repResult = await RepresentativeData.updateMany(
+        const repResult = await RepresentativeData.updateMany(
       {},
       { $pull: { activitiesScore: { activityId: { $nin: validIdsSet } } } }
     );
@@ -30,8 +22,6 @@ async function removeGarbageActivityRefs() {
     mongoose.connection.close();
   }
 }
-
-// Run if executed directly
 if (require.main === module) {
   mongoose
     .connect(process.env.MONGO_URI || "mongodb+srv://sksarukali:KRet1aKFEBLDDiwU@cluster0.i4aiegf.mongodb.net/sbaProlife", {

@@ -6,8 +6,5 @@ const{auth,authorizeRoles} =require ("../middlewares/authentication")
 
 router.post('/store-data',auth,authorizeRoles("admin"),saveData); 
 router.post('/votes/save', saveBills);
-
-// New route for checking data status
 router.get('/status/:type', protectedKey, getDataStatus);
-
 module.exports = router;

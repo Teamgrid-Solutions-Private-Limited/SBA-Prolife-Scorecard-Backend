@@ -14,7 +14,7 @@ const RepresentativeSchema = new mongoose.Schema({
   editedFields: [{
     field: [String],
     name: String,
-        fromQuorum: { // Add this field to track if it came from Quorum
+        fromQuorum: {
       type: Boolean,
       default: false
     }
@@ -32,7 +32,6 @@ const RepresentativeSchema = new mongoose.Schema({
     ),
       default: {},
   },
-    // Replace previousState with history array
     history: [
       {
         oldData: Object,
@@ -49,7 +48,7 @@ const RepresentativeSchema = new mongoose.Schema({
     ],
   modifiedAt: Date,
   snapshotSource: {
-  type: String, // 'deleted' | 'edited'
+  type: String, 
   enum: ['deleted_pending_update', 'edited'],
 },
 },{timestamps: true});

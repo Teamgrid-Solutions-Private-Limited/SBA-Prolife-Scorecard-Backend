@@ -1,12 +1,12 @@
 const nodemailer = require('nodemailer');
-const config = require('../config/env'); // Make sure this loads your .env properly
+const config = require('../config/env'); 
 
 const createGmailTransport = () => {
   return nodemailer.createTransport({
     service: 'gmail',
     auth: {
       user: config.email.username,
-      pass: config.email.password // App password, not Gmail login
+      pass: config.email.password
     }
   });
 };
@@ -15,7 +15,7 @@ const createCustomTransport = () => {
   return nodemailer.createTransport({
     host: config.email.host,
     port: config.email.port,
-    secure: config.email.port === 465, // true for 465, false for 587
+    secure: config.email.port === 465, 
     auth: {
       user: config.email.username,
       pass: config.email.password
@@ -24,15 +24,12 @@ const createCustomTransport = () => {
 };
 
 const sendEmail = async (options) => {
-  // Exit early if email config is missing in development
   if (
     config.env === 'development' &&
     (!config.email.username || !config.email.password)
   ) {
     return;
   }
-
-  // Choose Gmail vs custom SMTP
   const transporter =
     config.email.host === 'smtp.gmail.com'
       ? createGmailTransport()
@@ -50,7 +47,7 @@ const sendEmail = async (options) => {
     await transporter.verify();
     const info = await transporter.sendMail(message);
   } catch (error) {
-    console.error('❌ Error sending email:', error);
+    console.error(' Error sending email:', error);
 
     if (
       config.env === 'development' &&

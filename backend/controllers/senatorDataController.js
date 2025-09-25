@@ -18,8 +18,6 @@ class senatorDataController {
         activitiesScore,
         pastVotesScore = [],
       } = req.body;
-
-      // Validate ObjectId format first (cheaper operation)
       if (
         !mongoose.Types.ObjectId.isValid(senateId) ||
         !mongoose.Types.ObjectId.isValid(termId)
@@ -28,12 +26,8 @@ class senatorDataController {
           message: "Invalid senateId or termId format",
         });
       }
-
-      // Convert to ObjectId once
       const senateObjectId = new mongoose.Types.ObjectId(senateId);
       const termObjectId = new mongoose.Types.ObjectId(termId);
-
-      // Parallelize database operations
       const [termDetails, existingCurrentTerm, existingData] =
         await Promise.all([
           mongoose.model("terms").findById(termObjectId),
@@ -48,15 +42,11 @@ class senatorDataController {
             termId: termObjectId,
           }),
         ]);
-
-      // Validate term exists
       if (!termDetails) {
         return res.status(400).json({
           message: "Invalid term ID provided",
         });
       }
-
-      // Check for duplicates
       if (existingData) {
         return res.status(409).json({
           message: "Duplicate senator data found",
@@ -65,33 +55,25 @@ class senatorDataController {
           existingData,
         });
       }
-
-      // Check for existing current term
       if (currentTerm && existingCurrentTerm) {
         return res.status(409).json({
           message: "Another term is already marked as current for this senator",
           existingCurrentTerm,
         });
       }
-
-      // Create new senator data
       const newSenatorData = new SenatorData({
         senateId: senateObjectId,
         termId: termObjectId,
         summary,
-        currentTerm: currentTerm || false, // Ensure boolean value
+        currentTerm: currentTerm || false,
         rating,
         votesScore,
         activitiesScore,
         pastVotesScore,
       });
-
-      // Use lean() for better performance if you don't need full Mongoose document
       const savedData = await newSenatorData.save();
-
-      // Populate references if needed for response
       const populatedData = await SenatorData.findById(savedData._id)
-        .populate("senateId", "name title") // Only include necessary fields
+        .populate("senateId", "name title") 
         .populate("termId", "name startYear endYear")
         .lean();
 
@@ -101,8 +83,6 @@ class senatorDataController {
       });
     } catch (error) {
       console.error("Error creating senator data:", error);
-
-      // Handle specific error types
       if (error.name === "ValidationError") {
         return res.status(400).json({
           message: "Validation failed",
@@ -111,23 +91,18 @@ class senatorDataController {
       }
 
       if (error.code === 11000) {
-        // MongoDB duplicate key error
         return res.status(409).json({
           message: "Duplicate entry detected",
           details:
             "A record with this senator and term combination already exists",
         });
       }
-
-      // Generic server error (hide details in production)
       res.status(500).json({
         message: "Error creating senator data",
         error: process.env.NODE_ENV === "production" ? {} : error.message,
       });
     }
   }
-
-  // Get all senator data with populated votesScore and activitiesScore
   static async getAllSenatorData(req, res) {
     try {
       const senatorData = await SenatorData.find()
@@ -139,8 +114,6 @@ class senatorDataController {
       res.status(500).json({ message: "Error retrieving senator data", error });
     }
   }
-
-  // Get senator data by ID with populated votesScore and activitiesScore
   static async getSenatorDataById(req, res) {
     try {
       const senatorData = await SenatorData.findById(req.params.id)
@@ -156,81 +129,53 @@ class senatorDataController {
       res.status(500).json({ message: "Error retrieving senator data", error });
     }
   }
-
-  // Update senator data by ID
   static async updateSenatorData(req, res) {
     try {
       const { termId, senateId } = req.body;
-
-      //  Manual check: If termId is missing or an empty string
       if (!termId || termId.toString().trim() === "") {
         return res.status(400).json({ message: "Term is required" });
       }
-
-      //  Optional manual check for senateId too
       if (!senateId || senateId.toString().trim() === "") {
         return res.status(400).json({ message: "Senate ID is required" });
       }
-
-      //  Load the document first so we can validate on save
       const existing = await SenatorData.findById(req.params.id);
-
       if (!existing) {
         return res.status(404).json({ message: "Senator data not found" });
       }
-
-      // Apply updates from the request
       Object.assign(existing, req.body);
-
-      //  Trigger Mongoose validation
       const updated = await existing.save();
-
       res.status(200).json(updated);
     } catch (error) {
-      //  Catch schema validation errors from Mongoose
       if (error.name === "ValidationError") {
         const messages = Object.values(error.errors).map((err) => err.message);
         return res.status(400).json({ message: messages.join(", ") });
       }
-
-      //  Catch unexpected errors
       res.status(500).json({
         message: error.message || "Error updating senator data",
         stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
       });
     }
   }
-
-  // Delete senator data by ID
   static async deleteSenatorData(req, res) {
     try {
-      // 1. Find the SenatorData to be deleted
       const senatorDataToDelete = await SenatorData.findById(req.params.id);
       if (!senatorDataToDelete) {
         return res.status(404).json({ message: "Senator data not found" });
       }
-
-      // 2. Find the parent senator
       const senatorId = senatorDataToDelete.senateId;
       const senator = await Senator.findById(senatorId);
       if (!senator) {
         return res.status(404).json({ message: "Senator not found" });
       }
-
-      // 3. Fetch all current SenatorData for this senator (before deletion)
       const senatorDataList = await SenatorData.find({
         senateId: senatorId,
       }).lean();
-
-      // 4. Prepare current state for history
       const { _id, createdAt, updatedAt, __v, history, ...currentState } =
         senator.toObject();
       const stateWithData = {
         ...currentState,
         senatorData: senatorDataList,
       };
-
-      // 5. Only create history entry if no history exists
       let updateOps = { $set: { snapshotSource: "deleted_pending_update" } };
 
       if (!senator.history || senator.history.length === 0) {
@@ -244,13 +189,10 @@ class senatorDataController {
 
         updateOps.$push = { history: historyEntry };
       }
-
-      // 6. Update senator (with or without history) and delete the data
       await Promise.all([
         Senator.findByIdAndUpdate(senatorId, updateOps),
         SenatorData.findByIdAndDelete(req.params.id),
       ]);
-
       res.status(200).json({
         message: "Senator data deleted successfully",
         data: senatorDataToDelete,
@@ -262,13 +204,12 @@ class senatorDataController {
       });
     }
   }
-
   static async getSenatorDataBySenatorId(req, res) {
     try {
       const senateId = req.params.id;
 
       const senatorData = await SenatorData.find({ senateId })
-        .select("-__v -createdAt -updatedAt") // Strip unnecessary fields
+        .select("-__v -createdAt -updatedAt")
         .sort({ createdAt: 1 })
         .populate("termId", "-__v -createdAt -updatedAt")
         .populate(
@@ -277,7 +218,7 @@ class senatorDataController {
         )
         .populate({
           path: "votesScore.voteId",
-          select: "title result date termId", // only useful fields
+          select: "title result date termId",
           populate: {
             path: "termId",
             select: "name start end",
@@ -304,7 +245,7 @@ class senatorDataController {
       const orderedData = senatorData.sort((a, b) => {
         if (a.currentTerm && !b.currentTerm) return -1;
         if (!a.currentTerm && b.currentTerm) return 1;
-        return 0; // keep original order otherwise
+        return 0;
       });
       res.status(200).json({
         message: "Retrieve successfully",
@@ -317,138 +258,6 @@ class senatorDataController {
       });
     }
   }
-
-  //frontend ui display
-
-  // static async SenatorDataBySenatorId(req, res) {
-  //   try {
-  //     const senateId = req.params.senatorId;
-
-  //     // Get senator doc
-  //     const senatorDocument = await Senator.findById(senateId).lean();
-  //     if (!senatorDocument) {
-  //       return res.status(404).json({ message: "Senator data not found" });
-  //     }
-
-  //     const latestHistory = senatorDocument.history?.slice(-1)[0];
-  //     const hasHistoricalData = latestHistory?.oldData?.senatorData?.length > 0;
-
-  //     // Format term data helper
-  //     const formatTermData = (term) => ({
-  //       _id: term._id,
-  //       termId: term.termId,
-  //       currentTerm: term.currentTerm,
-  //       summary: term.summary,
-  //       rating: term.rating,
-  //       votesScore: term.votesScore || [],
-  //       activitiesScore: term.activitiesScore || [],
-  //       createdAt: term.createdAt,
-  //       updatedAt: term.updatedAt,
-  //       __v: term.__v,
-  //     });
-
-  //     const getSenatorDetails = (sourceData, isHistorical = false) => ({
-  //       _id: senatorDocument._id,
-  //       name: sourceData.name || senatorDocument.name,
-  //       state: sourceData.state || senatorDocument.state,
-  //       party: sourceData.party || senatorDocument.party,
-  //       photo: sourceData.photo || senatorDocument.photo,
-  //       status: sourceData.status || senatorDocument.status,
-  //       senatorId: sourceData.senatorId || senatorDocument.senatorId,
-  //       publishStatus: isHistorical
-  //         ? "published"
-  //         : senatorDocument.publishStatus,
-  //       editedFields:
-  //         sourceData.editedFields || senatorDocument.editedFields || [],
-  //       fieldEditors:
-  //         sourceData.fieldEditors || senatorDocument.fieldEditors || {},
-  //       snapshotSource:
-  //         sourceData.snapshotSource || senatorDocument.snapshotSource,
-  //       createdAt: senatorDocument.createdAt,
-  //       updatedAt: isHistorical
-  //         ? latestHistory?.timestamp
-  //         : senatorDocument.updatedAt,
-  //     });
-
-  //     let finalCurrentTerm = null;
-  //     let finalPastTerms = [];
-  //     let senatorDetails = null;
-
-  //     if (hasHistoricalData) {
-  //       // ✅ HISTORICAL DATA → make it look same as current
-  //       senatorDetails = getSenatorDetails(latestHistory.oldData, true);
-
-  //       const historicalTerms = latestHistory.oldData.senatorData;
-
-  //       // manually "populate" termId, votesScore.voteId, activitiesScore.activityId
-  //       const populatedTerms = await Promise.all(
-  //         historicalTerms.map(async (term) => {
-  //           const termDoc = await Term.findById(term.termId).lean();
-
-  //           const votes = await Promise.all(
-  //             (term.votesScore || []).map(async (vote) => {
-  //               const v = await Vote.findById(vote.voteId).lean();
-  //               return { ...vote, voteId: v };
-  //             })
-  //           );
-
-  //           const activities = await Promise.all(
-  //             (term.activitiesScore || []).map(async (act) => {
-  //               const a = await Activity.findById(act.activityId).lean();
-  //               return { ...act, activityId: a };
-  //             })
-  //           );
-
-  //           return {
-  //             ...formatTermData(term),
-  //             termId: termDoc,
-  //             votesScore: votes,
-  //             activitiesScore: activities,
-  //           };
-  //         })
-  //       );
-
-  //       // same split as current
-  //       finalCurrentTerm = populatedTerms.find((t) => t.currentTerm) || null;
-  //       finalPastTerms = populatedTerms.filter((t) => !t.currentTerm);
-  //     } else {
-  //       // ✅ CURRENT DATA
-  //       const [currentTerm, pastTerms] = await Promise.all([
-  //         SenatorData.findOne({ senateId, currentTerm: true })
-  //           .populate("termId")
-  //           .populate("votesScore.voteId")
-  //           .populate("activitiesScore.activityId")
-  //           .lean(),
-  //         SenatorData.find({ senateId, currentTerm: { $ne: true } })
-  //           .populate("termId")
-  //           .populate("votesScore.voteId")
-  //           .populate("activitiesScore.activityId")
-  //           .sort({ "termId.startYear": -1, createdAt: -1 })
-  //           .lean(),
-  //       ]);
-
-  //       senatorDetails = getSenatorDetails(senatorDocument, false);
-
-  //       if (currentTerm) finalCurrentTerm = formatTermData(currentTerm);
-  //       finalPastTerms = pastTerms.map(formatTermData);
-  //     }
-
-  //     res.status(200).json({
-  //       message: "Retrieved successfully",
-  //       senator: senatorDetails,
-  //       currentTerm: finalCurrentTerm,
-  //       pastTerms: finalPastTerms,
-  //       dataSource: hasHistoricalData ? "historical" : "current",
-  //       hasHistoricalData,
-  //     });
-  //   } catch (error) {
-  //     console.error("Error retrieving senator data:", error);
-  //     res.status(500).json({
-  //       message: "Error retrieving senator data",
-  //       error: error.message,
-  //     });
-  //   }
-  // }
 
   static async SenatorDataBySenatorId(req, res) {
     try {
@@ -491,17 +300,13 @@ class senatorDataController {
           : senatorDocument.updatedAt,
       });
 
-      // ---- Main Logic ----
       let finalCurrentTerm = null;
       let finalPastTerms = [];
       let senatorDetails = null;
 
       if (hasHistoricalData) {
-        // ------------------ HISTORICAL DATA ------------------
         senatorDetails = getSenatorDetails(latestHistory.oldData, true);
         const historicalTerms = latestHistory.oldData.senatorData;
-
-        // Collect all IDs we’ll need
         const allTermIds = historicalTerms.map((t) => t.termId);
         const allVoteIds = historicalTerms.flatMap((t) =>
           (t.votesScore || []).map((v) => v.voteId)
@@ -509,15 +314,11 @@ class senatorDataController {
         const allActivityIds = historicalTerms.flatMap((t) =>
           (t.activitiesScore || []).map((a) => a.activityId)
         );
-
-        // Fetch in bulk
         const [termDocs, voteDocs, activityDocs] = await Promise.all([
           Term.find({ _id: { $in: allTermIds } }).lean(),
           Vote.find({ _id: { $in: allVoteIds } }).lean(),
           Activity.find({ _id: { $in: allActivityIds } }).lean(),
         ]);
-
-        // Map by id for quick lookup
         const termMap = Object.fromEntries(
           termDocs.map((d) => [String(d._id), d])
         );
@@ -547,7 +348,6 @@ class senatorDataController {
         finalCurrentTerm = populatedTerms.find((t) => t.currentTerm) || null;
         finalPastTerms = populatedTerms.filter((t) => !t.currentTerm);
       } else {
-        // ------------------ CURRENT DATA ------------------
         const [currentTerm, pastTerms] = await Promise.all([
           SenatorData.findOne({ senateId, currentTerm: true })
             .populate("termId", "_id name startYear endYear congresses")
@@ -595,8 +395,6 @@ class senatorDataController {
         if (currentTerm) finalCurrentTerm = formatTermData(currentTerm);
         finalPastTerms = pastTerms.map(formatTermData);
       }
-
-      // ------------------ RESPONSE ------------------
       res.status(200).json({
         message: "Retrieved successfully",
         senator: senatorDetails,
@@ -613,13 +411,9 @@ class senatorDataController {
       });
     }
   }
-
-  // Fetch all past votes with details by senate ID
   static async getPastVotesWithDetails(req, res) {
     try {
       const { senateId } = req.params;
-
-      // Validate senateId
       if (!mongoose.Types.ObjectId.isValid(senateId)) {
         return res.status(400).json({
           success: false,

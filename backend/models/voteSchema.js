@@ -19,7 +19,6 @@ const VoteSchema = new mongoose.Schema(
     },
     date: Date,
     congress: { type: String },
-    //termName: { type: String },
     termId: { type: String },
     sbaPosition: { type: String, enum: ["yes", "no"], default: "no" },
     status: {
@@ -43,8 +42,6 @@ const VoteSchema = new mongoose.Schema(
       ),
       default: {},
     },
-    // New fields for discard functionality
-    // Replaced previousState with history array
     history: [
       {
         oldData: Object,
@@ -60,11 +57,9 @@ const VoteSchema = new mongoose.Schema(
       },
     ],
     snapshotSource: {
-      type: String, // 'deleted' | 'edited'
+      type: String, 
       enum: ["deleted_pending_update", "edited"],
     },
-    modifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: "users" }, // Who made the changes
-    modifiedAt: Date, // When changes were made
   },
   { timestamps: true }
 );

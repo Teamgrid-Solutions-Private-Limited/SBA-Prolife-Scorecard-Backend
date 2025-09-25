@@ -32,7 +32,6 @@ const SenatorSchema = new mongoose.Schema({
       ),
       default: {},
   },
-  // Replace previousState with history array
     history: [
       {
         oldData: Object,
@@ -49,7 +48,7 @@ const SenatorSchema = new mongoose.Schema({
       },
     ],
   snapshotSource: {
-  type: String, // 'deleted' | 'edited'
+  type: String, 
   enum: ['deleted_pending_update', 'edited'],
 },
   modifiedAt: Date,

@@ -5,21 +5,13 @@ const RepresentativeData = require("../backend/models/representativeDataSchema")
 
 async function removeGarbageVoteRefs() {
   try {
-
-    // 1. Get all valid vote IDs
     const validVoteIds = await Vote.find({}, { _id: 1 }).lean();
     const validIdsSet = validVoteIds.map((doc) => doc._id);
-
-
-    // 2. Remove invalid references from SenatorData
     const senatorResult = await SenatorData.updateMany(
       {},
       { $pull: { votesScore: { voteId: { $nin: validIdsSet } } } }
     );
-    
-
-    // 3. Remove invalid references from RepresentativeData
-    const repResult = await RepresentativeData.updateMany(
+        const repResult = await RepresentativeData.updateMany(
       {},
       { $pull: { votesScore: { voteId: { $nin: validIdsSet } } } }
     );
@@ -30,8 +22,6 @@ async function removeGarbageVoteRefs() {
     mongoose.connection.close();
   }
 }
-
-// Run if executed directly
 if (require.main === module) {
   mongoose
     .connect(

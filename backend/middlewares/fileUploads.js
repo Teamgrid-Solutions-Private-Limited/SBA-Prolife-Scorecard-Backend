@@ -66,15 +66,11 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// Set up storage
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    let uploadPath = './uploads/'; // Default upload directory
-
+    let uploadPath = './uploads/';
     if (file.mimetype.startsWith('image/')) {
-      uploadPath = './uploads/photos/'; // Default image folder
-
-      // Determine subdirectory based on query parameter
+      uploadPath = './uploads/photos/'; 
       const subdirectory = req.query.type === 'house' ? 'house' : 'senator';
       uploadPath = path.join(uploadPath, subdirectory);
 
@@ -84,25 +80,18 @@ const storage = multer.diskStorage({
       file.mimetype === 'application/msword' || 
       file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     ) {
-      uploadPath = './uploads/documents/'; // Store documents in "documents/"
+      uploadPath = './uploads/documents/'; 
     }
-
-    // Ensure the directory exists
-    fs.mkdirSync(uploadPath, { recursive: true }); // Creates directory if it doesn’t exist
-
-    cb(null, uploadPath); // Set the destination folder dynamically
+    fs.mkdirSync(uploadPath, { recursive: true });
+    cb(null, uploadPath);  
   },
   filename: (req, file, cb) => {
-    // Generate unique filename to avoid overwriting
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const ext = path.extname(file.originalname);
     cb(null, `${uniqueSuffix}${ext}`); 
   }
 });
-
-// File filter function
 const fileFilter = (req, file, cb) => {
-
   const allowedImageTypes = ['image/jpeg', 'image/png', 'image/jpg' ];
   const allowedDocumentTypes = [
     "application/pdf",
@@ -110,21 +99,16 @@ const fileFilter = (req, file, cb) => {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "text/html",
   ];
-
-  // Allow images and documents only
   if (allowedImageTypes.includes(file.mimetype) || allowedDocumentTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
     cb(new Error('Only .jpg, .jpeg, .png, .pdf, .doc, and .docx files are allowed'), false);
   }
 };
-
-// Initialize multer with storage and file filter
- 
 const upload = multer({
   storage,
   fileFilter,
-  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+  limits: { fileSize: 10 * 1024 * 1024 } 
 });
 
 
