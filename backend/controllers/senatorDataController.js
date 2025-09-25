@@ -73,7 +73,7 @@ class senatorDataController {
       });
       const savedData = await newSenatorData.save();
       const populatedData = await SenatorData.findById(savedData._id)
-        .populate("senateId", "name title") 
+        .populate("senateId", "name title")
         .populate("termId", "name startYear endYear")
         .lean();
 
@@ -421,6 +421,10 @@ class senatorDataController {
         });
       }
 
+      // Fetch senator's name
+      const senator = await Senator.findById(senateId).select("name").lean();
+      const senatorName = senator ? senator.name : null;
+
       const voteDetails = await SenatorData.aggregate([
         { $match: { senateId: new mongoose.Types.ObjectId(senateId) } },
         {
@@ -469,6 +473,7 @@ class senatorDataController {
         success: true,
         data: {
           senateId,
+          name: senatorName,
           pastVotes: voteDetails,
           count: voteDetails.length,
         },
