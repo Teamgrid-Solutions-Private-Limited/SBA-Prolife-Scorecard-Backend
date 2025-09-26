@@ -6,10 +6,11 @@ This is the backend API for the SBA Prolife Scorecard project. It is built with 
 
 - **Senator & Representative Management**: CRUD operations for senators, representatives, and their associated data.
 - **Scorecard Data**: Manage and retrieve voting and activity scores for senators and representatives.
+- **Vote & Activity Management**: Create, update, and manage votes and activities with robust support for tracking legislative actions and participation.
 - **User Authentication**: Secure endpoints with authentication middleware.
 - **File Uploads**: Upload and manage documents and photos.
 - **Bulk Operations**: Helpers for efficient bulk updates and data management.
-- **Validation**: Input validation for invites and other sensitive operations.
+- **Unified Platform**: Powers both the SBA Prolife Scorecard admin dashboard and the public scorecard frontend UI. All APIs are available to enable full control over both the dashboard and the frontend UI.
 
 ## User Roles & Permissions
 
