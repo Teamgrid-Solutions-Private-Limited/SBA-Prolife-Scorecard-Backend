@@ -15,52 +15,59 @@ const Senator = require("../models/senatorSchema");
 const Representative = require("../models/representativeSchema");
 const SenatorData = require("../models/senatorDataSchema");
 const RepresentativeData = require("../models/representativeDataSchema");
+const path = require("path");
+const { getFileUrl } = require("../helper/filePath");
 
 class voteController {
   static async createVote(req, res) {
-    upload.single("readMore")(req, res, async (err) => {
-      if (err) {
-        return res.status(400).json({ message: err.message });
+    try {
+      const {
+        type,
+        title,
+        shortDesc,
+        longDesc,
+        rollCall,
+        date,
+        congress,
+        termId,
+        sbaPosition,
+      } = req.body;
+
+      // basic validation (you can use Joi or express-validator for stronger validation)
+      if (!type || !title || !rollCall || !date || !congress || !termId) {
+        return res.status(400).json({ message: "Missing required fields" });
       }
-      try {
-        const {
-          type,
-          title,
-          shortDesc,
-          longDesc,
-          rollCall,
-          date,
-          congress,
-          termId,
-          sbaPosition,
-        } = req.body;
-        const readMore = req.file
-          ? `/${req.file.path.replace(/\\/g, "/").replace(/^\.\//, "")}` 
-          : null;
-        const newVote = new Vote({
-          type,
-          title,
-          shortDesc,
-          longDesc,
-          rollCall,
-          readMore, 
-          date,
-          congress,
-          termId,
-          sbaPosition,
-          status: "draft", 
-        });
-        await newVote.save();
-        res
-          .status(201)
-          .json({ message: "Vote created successfully", info: newVote });
-      } catch (error) {
-        res
-          .status(500)
-          .json({ message: "Error creating vote", error: error.message });
-      }
-    });
+ const readMore = getFileUrl(req.file);
+      const newVote = new Vote({
+        type,
+        title,
+        shortDesc,
+        longDesc,
+        rollCall,
+        readMore,
+        date,
+        congress,
+        termId,
+        status: "draft",
+        ...(sbaPosition && { sbaPosition }),
+      });
+
+      await newVote.save();
+
+      res.status(201).json({
+        success: true,
+        message: "Vote created successfully",
+        data: newVote,
+      });
+    } catch (error) {
+      console.error("Error creating vote:", error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
   }
+
   static async getAllVotes(req, res) {
     try {
       const votes = await Vote.find({})
@@ -107,10 +114,7 @@ class voteController {
                   ],
                 },
                 {
-                  $mergeObjects: [
-                    "$history.oldData",
-                    { _id: "$_id" },
-                  ],
+                  $mergeObjects: ["$history.oldData", { _id: "$_id" }],
                 },
                 {
                   $cond: [
@@ -273,7 +277,7 @@ class voteController {
         }
         const updatedVote = await Vote.findByIdAndUpdate(
           voteID,
-          updateOperations, 
+          updateOperations,
           { new: true }
         ).populate("termId");
 
@@ -327,72 +331,89 @@ class voteController {
       let historyCleared = false;
 
       function makeEditorKey(title, fieldType = "votesScore") {
-        if (title.includes('H.R.')) {
-          return fieldType + "_" +
+        if (title.includes("H.R.")) {
+          return (
+            fieldType +
+            "_" +
             title
-              .replace(/H\.R\.\s*(\d+):/g, 'H_R_$1_')
-              .replace(/'/g, '')
-              .replace(/\s+/g, '_')
-              .replace(/[^a-zA-Z0-9_]/g, '');
-        }
-
-        else if (title.includes('S.')) {
-          return fieldType + "_" +
+              .replace(/H\.R\.\s*(\d+):/g, "H_R_$1_")
+              .replace(/'/g, "")
+              .replace(/\s+/g, "_")
+              .replace(/[^a-zA-Z0-9_]/g, "")
+          );
+        } else if (title.includes("S.")) {
+          return (
+            fieldType +
+            "_" +
             title
-              .replace(/S\.\s*(\d+):/g, 'S_$1_')
-              .replace(/'/g, '')
-              .replace(/\s+/g, '_')
-              .replace(/[^a-zA-Z0-9_]/g, '');
-        }
-        else {
-          return fieldType + "_" +
+              .replace(/S\.\s*(\d+):/g, "S_$1_")
+              .replace(/'/g, "")
+              .replace(/\s+/g, "_")
+              .replace(/[^a-zA-Z0-9_]/g, "")
+          );
+        } else {
+          return (
+            fieldType +
+            "_" +
             title
-              .replace(/\./g, '')
-              .replace(/:/g, '')
-              .replace(/'/g, '')
-              .replace(/\s+/g, '_')
-              .replace(/[^a-zA-Z0-9_]/g, '');
+              .replace(/\./g, "")
+              .replace(/:/g, "")
+              .replace(/'/g, "")
+              .replace(/\s+/g, "_")
+              .replace(/[^a-zA-Z0-9_]/g, "")
+          );
         }
       }
       const senatorDataResult = await SenatorData.updateMany(
         {
           $or: [
             { "votesScore.voteId": voteId },
-            { "pastVotesScore.voteId": voteId }
-          ]
+            { "pastVotesScore.voteId": voteId },
+          ],
         },
         {
           $pull: {
             votesScore: { voteId },
-            pastVotesScore: { voteId }
-          }
+            pastVotesScore: { voteId },
+          },
         }
       );
       const repDataResult = await RepresentativeData.updateMany(
         {
           $or: [
             { "votesScore.voteId": voteId },
-            { "pastVotesScore.voteId": voteId }
-          ]
+            { "pastVotesScore.voteId": voteId },
+          ],
         },
         {
           $pull: {
             votesScore: { voteId },
-            pastVotesScore: { voteId }
-          }
+            pastVotesScore: { voteId },
+          },
         }
       );
       const senators = await Senator.find({
         $or: [
-          { "editedFields.name": vote.title, "editedFields.field": "votesScore" },
-          { "editedFields.name": vote.title, "editedFields.field": "pastVotesScore" }
-        ]
+          {
+            "editedFields.name": vote.title,
+            "editedFields.field": "votesScore",
+          },
+          {
+            "editedFields.name": vote.title,
+            "editedFields.field": "pastVotesScore",
+          },
+        ],
       });
       for (const senator of senators) {
         const beforeCount = senator.editedFields.length;
-        senator.editedFields = senator.editedFields.filter((f) =>
-          !(f.name === vote.title && f.field &&
-            (f.field.includes("votesScore") || f.field.includes("pastVotesScore")))
+        senator.editedFields = senator.editedFields.filter(
+          (f) =>
+            !(
+              f.name === vote.title &&
+              f.field &&
+              (f.field.includes("votesScore") ||
+                f.field.includes("pastVotesScore"))
+            )
         );
         const afterCount = senator.editedFields.length;
         const removedCount = beforeCount - afterCount;
@@ -400,15 +421,20 @@ class voteController {
         }
         let fieldEditorDeleted = false;
         const votesScoreEditorKey = makeEditorKey(vote.title, "votesScore");
-        const pastVotesScoreEditorKey = makeEditorKey(vote.title, "pastVotesScore");
+        const pastVotesScoreEditorKey = makeEditorKey(
+          vote.title,
+          "pastVotesScore"
+        );
         let fieldEditorsPlain = {};
         if (senator.fieldEditors) {
           try {
-            fieldEditorsPlain = JSON.parse(JSON.stringify(senator.fieldEditors));
+            fieldEditorsPlain = JSON.parse(
+              JSON.stringify(senator.fieldEditors)
+            );
           } catch (error) {
             fieldEditorsPlain = {};
             for (const key in senator.fieldEditors) {
-              if (!key.startsWith('$__') && key !== '_id' && key !== '__v') {
+              if (!key.startsWith("$__") && key !== "_id" && key !== "__v") {
                 fieldEditorsPlain[key] = senator.fieldEditors[key];
               }
             }
@@ -419,28 +445,27 @@ class voteController {
           if (fieldEditorsPlain[targetKey]) {
             delete fieldEditorsPlain[targetKey];
             return true;
-          }
-          else {
-            const foundKey = actualKeys.find(key => key.toLowerCase() === targetKey.toLowerCase());
+          } else {
+            const foundKey = actualKeys.find(
+              (key) => key.toLowerCase() === targetKey.toLowerCase()
+            );
             if (foundKey) {
               delete fieldEditorsPlain[foundKey];
               return true;
-            }
-            else {
-              const normalizedTargetKey = targetKey.replace(/_/g, '');
-              const foundPatternKey = actualKeys.find(key => {
-                const normalizedKey = key.replace(/_/g, '');
+            } else {
+              const normalizedTargetKey = targetKey.replace(/_/g, "");
+              const foundPatternKey = actualKeys.find((key) => {
+                const normalizedKey = key.replace(/_/g, "");
                 return normalizedKey === normalizedTargetKey;
               });
 
               if (foundPatternKey) {
                 delete fieldEditorsPlain[foundPatternKey];
                 return true;
-              }
-              else {
-                const partialMatch = actualKeys.find(key => {
-                  const cleanKey = key.replace(/[^a-zA-Z0-9]/g, '');
-                  const cleanTargetKey = targetKey.replace(/[^a-zA-Z0-9]/g, '');
+              } else {
+                const partialMatch = actualKeys.find((key) => {
+                  const cleanKey = key.replace(/[^a-zA-Z0-9]/g, "");
+                  const cleanTargetKey = targetKey.replace(/[^a-zA-Z0-9]/g, "");
                   return cleanKey === cleanTargetKey;
                 });
 
@@ -455,7 +480,9 @@ class voteController {
           }
         };
         const votesScoreDeleted = deleteFieldEditor(votesScoreEditorKey);
-        const pastVotesScoreDeleted = deleteFieldEditor(pastVotesScoreEditorKey);
+        const pastVotesScoreDeleted = deleteFieldEditor(
+          pastVotesScoreEditorKey
+        );
         fieldEditorDeleted = votesScoreDeleted || pastVotesScoreDeleted;
         if (fieldEditorDeleted) {
           senator.fieldEditors = fieldEditorsPlain;
@@ -463,7 +490,8 @@ class voteController {
         if (senator.editedFields.length === 0) {
           if (Array.isArray(senator.history) && senator.history.length > 0) {
             const lastHistory = senator.history[senator.history.length - 1];
-            const restoredStatus = lastHistory.oldData?.publishStatus || lastHistory.publishStatus;
+            const restoredStatus =
+              lastHistory.oldData?.publishStatus || lastHistory.publishStatus;
             if (restoredStatus) {
               senator.publishStatus = restoredStatus;
               if (
@@ -482,31 +510,40 @@ class voteController {
         const updateData = {};
         if (removedCount > 0) updateData.editedFields = senator.editedFields;
         if (fieldEditorDeleted) updateData.fieldEditors = senator.fieldEditors;
-        if (senator.publishStatus !== undefined) updateData.publishStatus = senator.publishStatus;
+        if (senator.publishStatus !== undefined)
+          updateData.publishStatus = senator.publishStatus;
         if (historyCleared) updateData.history = [];
 
         if (Object.keys(updateData).length > 0) {
-          await Senator.updateOne(
-            { _id: senator._id },
-            { $set: updateData }
-          );
+          await Senator.updateOne({ _id: senator._id }, { $set: updateData });
         } else {
         }
       }
       const representatives = await Representative.find({
         $or: [
-          { "editedFields.name": vote.title, "editedFields.field": "votesScore" },
-          { "editedFields.name": vote.title, "editedFields.field": "pastVotesScore" }
-        ]
+          {
+            "editedFields.name": vote.title,
+            "editedFields.field": "votesScore",
+          },
+          {
+            "editedFields.name": vote.title,
+            "editedFields.field": "pastVotesScore",
+          },
+        ],
       });
       for (const rep of representatives) {
         let removedCount = 0;
-        let historyCleared = false;  
+        let historyCleared = false;
         if (rep.editedFields && rep.editedFields.length > 0) {
           const beforeCount = rep.editedFields.length;
-          rep.editedFields = rep.editedFields.filter((f) =>
-            !(f.name === vote.title && f.field &&
-              (f.field.includes("votesScore") || f.field.includes("pastVotesScore")))
+          rep.editedFields = rep.editedFields.filter(
+            (f) =>
+              !(
+                f.name === vote.title &&
+                f.field &&
+                (f.field.includes("votesScore") ||
+                  f.field.includes("pastVotesScore"))
+              )
           );
           removedCount = beforeCount - rep.editedFields.length;
           if (removedCount > 0) {
@@ -515,7 +552,10 @@ class voteController {
 
         let fieldEditorDeleted = false;
         const votesScoreEditorKey = makeEditorKey(vote.title, "votesScore");
-        const pastVotesScoreEditorKey = makeEditorKey(vote.title, "pastVotesScore");
+        const pastVotesScoreEditorKey = makeEditorKey(
+          vote.title,
+          "pastVotesScore"
+        );
         let repFieldEditorsPlain = {};
         if (rep.fieldEditors) {
           try {
@@ -523,7 +563,7 @@ class voteController {
           } catch (error) {
             repFieldEditorsPlain = {};
             for (const key in rep.fieldEditors) {
-              if (!key.startsWith('$__') && key !== '_id' && key !== '__v') {
+              if (!key.startsWith("$__") && key !== "_id" && key !== "__v") {
                 repFieldEditorsPlain[key] = rep.fieldEditors[key];
               }
             }
@@ -534,28 +574,27 @@ class voteController {
           if (repFieldEditorsPlain[targetKey]) {
             delete repFieldEditorsPlain[targetKey];
             return true;
-          }
-          else {
-            const foundKey = repActualKeys.find(key => key.toLowerCase() === targetKey.toLowerCase());
+          } else {
+            const foundKey = repActualKeys.find(
+              (key) => key.toLowerCase() === targetKey.toLowerCase()
+            );
             if (foundKey) {
               delete repFieldEditorsPlain[foundKey];
               return true;
-            }
-            else {
-              const normalizedTargetKey = targetKey.replace(/_/g, '');
-              const foundPatternKey = repActualKeys.find(key => {
-                const normalizedKey = key.replace(/_/g, '');
+            } else {
+              const normalizedTargetKey = targetKey.replace(/_/g, "");
+              const foundPatternKey = repActualKeys.find((key) => {
+                const normalizedKey = key.replace(/_/g, "");
                 return normalizedKey === normalizedTargetKey;
               });
 
               if (foundPatternKey) {
                 delete repFieldEditorsPlain[foundPatternKey];
                 return true;
-              }
-              else {
-                const partialMatch = repActualKeys.find(key => {
-                  const cleanKey = key.replace(/[^a-zA-Z0-9]/g, '');
-                  const cleanTargetKey = targetKey.replace(/[^a-zA-Z0-9]/g, '');
+              } else {
+                const partialMatch = repActualKeys.find((key) => {
+                  const cleanKey = key.replace(/[^a-zA-Z0-9]/g, "");
+                  const cleanTargetKey = targetKey.replace(/[^a-zA-Z0-9]/g, "");
                   return cleanKey === cleanTargetKey;
                 });
 
@@ -570,7 +609,9 @@ class voteController {
           }
         };
         const votesScoreDeleted = deleteRepFieldEditor(votesScoreEditorKey);
-        const pastVotesScoreDeleted = deleteRepFieldEditor(pastVotesScoreEditorKey);
+        const pastVotesScoreDeleted = deleteRepFieldEditor(
+          pastVotesScoreEditorKey
+        );
         fieldEditorDeleted = votesScoreDeleted || pastVotesScoreDeleted;
         if (fieldEditorDeleted) {
           rep.fieldEditors = repFieldEditorsPlain;
@@ -578,7 +619,8 @@ class voteController {
         if (rep.editedFields.length === 0) {
           if (Array.isArray(rep.history) && rep.history.length > 0) {
             const lastHistory = rep.history[rep.history.length - 1];
-            const restoredStatus = lastHistory.oldData?.publishStatus || lastHistory.publishStatus;
+            const restoredStatus =
+              lastHistory.oldData?.publishStatus || lastHistory.publishStatus;
             if (restoredStatus) {
               rep.publishStatus = restoredStatus;
               if (
@@ -597,7 +639,8 @@ class voteController {
         const updateData = {};
         if (removedCount > 0) updateData.editedFields = rep.editedFields;
         if (fieldEditorDeleted) updateData.fieldEditors = rep.fieldEditors;
-        if (rep.publishStatus !== undefined) updateData.publishStatus = rep.publishStatus;
+        if (rep.publishStatus !== undefined)
+          updateData.publishStatus = rep.publishStatus;
         if (historyCleared) updateData.history = [];
 
         if (Object.keys(updateData).length > 0) {
