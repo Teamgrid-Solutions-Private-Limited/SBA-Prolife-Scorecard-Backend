@@ -85,12 +85,6 @@ backend/
    ```
    The server will run on the port specified in your environment variables (default: 3000).
 
-### Development
-
-- For development with auto-reload:
-  ```sh
-  npm run dev
-  ```
 
 ## API Endpoints
 
