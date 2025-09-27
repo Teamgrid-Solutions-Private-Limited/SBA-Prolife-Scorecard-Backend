@@ -33,11 +33,11 @@ class voteController {
         sbaPosition,
       } = req.body;
 
-      // basic validation (you can use Joi or express-validator for stronger validation)
+     
       if (!type || !title || !rollCall || !date || !congress || !termId) {
         return res.status(400).json({ message: "Missing required fields" });
       }
- const readMore = getFileUrl(req.file);
+      const readMore = getFileUrl(req.file);
       const newVote = new Vote({
         type,
         title,

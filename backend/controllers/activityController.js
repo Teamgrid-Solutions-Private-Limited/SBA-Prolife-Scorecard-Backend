@@ -16,6 +16,7 @@ const { buildSupportData } = require("../helper/supportDataHelper");
 const mongoose = require("mongoose");
 
 const axios = require("axios");
+const { getFileUrl } = require("../helper/filePath");
 const BASE = process.env.QUORUM_BASE_URL || "https://www.quorum.us";
 const API_KEY = process.env.QUORUM_API_KEY;
 const USERNAME = process.env.QUORUM_USERNAME;
@@ -26,23 +27,44 @@ async function saveCosponsorshipToLegislator({
   score = "yes",
   editorInfo,
   title,
-  activityType
+  activityType,
 }) {
-  personId = String(personId); 
+  personId = String(personId);
   const [senator, representative] = await Promise.all([
     Senator.findOne({ senatorId: personId }),
-    Representative.findOne({ repId: personId })
+    Representative.findOne({ repId: personId }),
   ]);
 
   let localPerson, dataModel, personField, personModel, roleLabel;
-if (senator && representative) {
-  if (activityType === 'senate') {
+  if (senator && representative) {
+    if (activityType === "senate") {
+      localPerson = senator;
+      dataModel = SenatorData;
+      personField = "senateId";
+      personModel = Senator;
+      roleLabel = "Senator";
+    } else if (activityType === "house") {
+      localPerson = representative;
+      dataModel = RepresentativeData;
+      personField = "houseId";
+      personModel = Representative;
+      roleLabel = "Representative";
+    } else {
+      return false;
+    }
+  } else if (senator) {
+    if (activityType === "house") {
+      return false;
+    }
     localPerson = senator;
     dataModel = SenatorData;
     personField = "senateId";
     personModel = Senator;
     roleLabel = "Senator";
-  } else if (activityType === 'house') {
+  } else if (representative) {
+    if (activityType === "senate") {
+      return false;
+    }
     localPerson = representative;
     dataModel = RepresentativeData;
     personField = "houseId";
@@ -51,27 +73,6 @@ if (senator && representative) {
   } else {
     return false;
   }
-} else if (senator) {
-  if (activityType === "house") {
-    return false;
-  }
-  localPerson = senator;
-  dataModel = SenatorData;
-  personField = "senateId";
-  personModel = Senator;
-  roleLabel = "Senator";
-} else if (representative) {
-  if (activityType === "senate") {
-    return false;
-  }
-  localPerson = representative;
-  dataModel = RepresentativeData;
-  personField = "houseId";
-  personModel = Representative;
-  roleLabel = "Representative";
-} else {
-  return false;
-}
   const filter = { [personField]: localPerson._id };
   const existing = await dataModel.findOne(filter);
 
@@ -187,59 +188,51 @@ if (senator && representative) {
   return true;
 }
 
-
 class activityController {
   static async createActivity(req, res) {
-    upload.single("readMore")(req, res, async (err) => {
-      if (err) return res.status(400).json({ message: err.message });
+    try {
+      const {
+        type,
+        title,
+        shortDesc,
 
-      try {
-        const {
-          type,
-          title,
-          shortDesc,
-          longDesc,
-          rollCall,
-          date,
-          congress,
-          termId,
-          trackActivities,
-        } = req.body;
+        rollCall,
+        date,
+        congress,
 
-        const readMore = req.file
-          ? `/uploads/documents/${req.file.filename}`
-          : null;
+        trackActivities,
+      } = req.body;
 
-        const newActivity = new Activity({
-          type,
-          title,
-          shortDesc,
-          longDesc,
-          rollCall,
-          readMore,
-          date,
-          congress,
-          termId,
-          status: "draft",
-        });
+      const readMore = getFileUrl(req.file);
+      const newActivity = new Activity({
+        type,
+        title,
+        shortDesc,
 
-        if (trackActivities) {
-          newActivity.trackActivities = trackActivities;
-        }
+        rollCall,
+        readMore,
+        date,
+        congress,
 
-        const newActivityData = new Activity(newActivity);
-        await newActivityData.save();
+        status: "draft",
+      });
 
-        res.status(201).json({
-          message: "Activity created successfully",
-          info: newActivity,
-        });
-      } catch (error) {
-        res
-          .status(500)
-          .json({ message: "Error creating Activity", error: error.message });
+      if (trackActivities) {
+        newActivity.trackActivities = trackActivities;
       }
-    });
+
+      const newActivityData = new Activity(newActivity);
+      await newActivityData.save();
+
+      res.status(201).json({
+        message: "Activity created successfully",
+        info: newActivity,
+      });
+    } catch (error) {
+      res
+        .status(500)
+        .json({ message: "Error creating Activity", error: error.message });
+    }
   }
 
   static async getAllActivities(req, res) {
@@ -349,9 +342,7 @@ class activityController {
 
   static async getActivityById(req, res) {
     try {
-      const activity = await Activity.findById(req.params.id)
-        .populate("termId", "_id name startYear endYear congresses") // cleaned termId
-        .lean();
+      const activity = await Activity.findById(req.params.id).lean();
 
       if (!activity) {
         return res.status(404).json({ message: "Activity not found" });
@@ -378,11 +369,13 @@ class activityController {
         supportData,
       });
     } catch (error) {
-      res
-        .status(500)
-        .json({ message: "Error retrieving activity", error: error.message });
+      res.status(500).json({
+        message: "Error retrieving activity",
+        error: error.message,
+      });
     }
   }
+
   static async updateActivity(req, res) {
     upload.single("readMore")(req, res, async (err) => {
       if (err) return res.status(400).json({ message: err.message });
@@ -455,7 +448,7 @@ class activityController {
           activityID,
           updateOperations,
           { new: true }
-        ).populate("termId");
+        );
 
         if (!updatedActivity) {
           return res.status(404).json({ message: "Activity not found" });
@@ -516,22 +509,20 @@ class activityController {
             "activitiesScore_" +
             title
               .replace(/S\.\s*(\d+):/g, "S_$1_")
-              .replace(/'/g, "") 
-              .replace(/\s+/g, "_") 
+              .replace(/'/g, "")
+              .replace(/\s+/g, "_")
               .replace(/[^a-zA-Z0-9_]/g, "")
-          ); 
-        }
-        else if (title.includes("H.R.")) {
+          );
+        } else if (title.includes("H.R.")) {
           return (
             "activitiesScore_" +
             title
-              .replace(/H\.R\.\s*(\d+):/g, "H_R_$1_") 
-              .replace(/'/g, "") 
-              .replace(/\s+/g, "_") 
+              .replace(/H\.R\.\s*(\d+):/g, "H_R_$1_")
+              .replace(/'/g, "")
+              .replace(/\s+/g, "_")
               .replace(/[^a-zA-Z0-9_]/g, "")
           );
-        }
-        else {
+        } else {
           return (
             "activitiesScore_" +
             title
@@ -558,9 +549,8 @@ class activityController {
         "editedFields.name": activity.title,
         "editedFields.field": "activitiesScore",
       });
-    
+
       for (const senator of senators) {
-      
         const beforeCount = senator.editedFields.length;
         senator.editedFields = senator.editedFields.filter(
           (f) =>
@@ -594,23 +584,20 @@ class activityController {
         }
 
         const actualKeys = Object.keys(fieldEditorsPlain);
-       
+
         let fieldEditorDeleted = false;
 
         if (fieldEditorsPlain[editorKey]) {
           delete fieldEditorsPlain[editorKey];
           fieldEditorDeleted = true;
-        }
-        else {
+        } else {
           const foundKey = actualKeys.find(
             (key) => key.toLowerCase() === editorKey.toLowerCase()
           );
           if (foundKey) {
-         
             delete fieldEditorsPlain[foundKey];
             fieldEditorDeleted = true;
-          }
-          else {
+          } else {
             const normalizedEditorKey = editorKey.replace(/_/g, "");
             const foundPatternKey = actualKeys.find((key) => {
               const normalizedKey = key.replace(/_/g, "");
@@ -618,11 +605,9 @@ class activityController {
             });
 
             if (foundPatternKey) {
-             
               delete fieldEditorsPlain[foundPatternKey];
               fieldEditorDeleted = true;
-            }
-            else {
+            } else {
               const partialMatch = actualKeys.find((key) => {
                 const cleanKey = key.replace(/[^a-zA-Z0-9]/g, "");
                 const cleanEditorKey = editorKey.replace(/[^a-zA-Z0-9]/g, "");
@@ -630,7 +615,6 @@ class activityController {
               });
 
               if (partialMatch) {
-                
                 delete fieldEditorsPlain[partialMatch];
                 fieldEditorDeleted = true;
               } else {
@@ -648,14 +632,12 @@ class activityController {
             const restoredStatus =
               lastHistory.oldData?.publishStatus || lastHistory.publishStatus;
             if (restoredStatus) {
-             
               senator.publishStatus = restoredStatus;
               if (
                 senator.history.length === 1 &&
                 (lastHistory.oldData?.publishStatus === "published" ||
                   lastHistory.publishStatus === "published")
               ) {
-               
                 senator.history = [];
               }
             }
@@ -680,10 +662,8 @@ class activityController {
         "editedFields.name": activity.title,
         "editedFields.field": "activitiesScore",
       });
-   
 
       for (const rep of representatives) {
-
         let removedCount = 0;
         if (rep.editedFields && rep.editedFields.length > 0) {
           const beforeCount = rep.editedFields.length;
@@ -716,22 +696,19 @@ class activityController {
         }
 
         const repActualKeys = Object.keys(repFieldEditorsPlain);
-      
+
         let fieldEditorDeleted = false;
         if (repFieldEditorsPlain[editorKey]) {
           delete repFieldEditorsPlain[editorKey];
           fieldEditorDeleted = true;
-        }
-        else {
+        } else {
           const foundKey = repActualKeys.find(
             (key) => key.toLowerCase() === editorKey.toLowerCase()
           );
           if (foundKey) {
-           
             delete repFieldEditorsPlain[foundKey];
             fieldEditorDeleted = true;
-          }
-          else {
+          } else {
             const normalizedEditorKey = editorKey.replace(/_/g, "");
             const foundPatternKey = repActualKeys.find((key) => {
               const normalizedKey = key.replace(/_/g, "");
@@ -739,11 +716,9 @@ class activityController {
             });
 
             if (foundPatternKey) {
-            
               delete repFieldEditorsPlain[foundPatternKey];
               fieldEditorDeleted = true;
-            }
-            else {
+            } else {
               const partialMatch = repActualKeys.find((key) => {
                 const cleanKey = key.replace(/[^a-zA-Z0-9]/g, "");
                 const cleanEditorKey = editorKey.replace(/[^a-zA-Z0-9]/g, "");
@@ -751,7 +726,6 @@ class activityController {
               });
 
               if (partialMatch) {
-               
                 delete repFieldEditorsPlain[partialMatch];
                 fieldEditorDeleted = true;
               } else {
@@ -769,19 +743,16 @@ class activityController {
             const restoredStatus =
               lastHistory.oldData?.publishStatus || lastHistory.publishStatus;
             if (restoredStatus) {
-             
               rep.publishStatus = restoredStatus;
               if (
                 rep.history.length === 1 &&
                 (lastHistory.oldData?.publishStatus === "published" ||
                   lastHistory.publishStatus === "published")
               ) {
-               
                 rep.history = [];
               }
             }
           } else {
-           
             rep.publishStatus = "draft";
           }
         }
@@ -800,7 +771,7 @@ class activityController {
         } else {
         }
       }
--    await Activity.findByIdAndDelete(id);
+      -(await Activity.findByIdAndDelete(id));
 
       res.status(200).json({
         message: "Activity and its references deleted successfully",
@@ -884,7 +855,6 @@ class activityController {
     congress,
     editorInfo
   ) {
-   
     if (!billId || !title || !introduced || !congress) {
       console.warn(" Missing required bill data");
       return 0;
@@ -900,12 +870,11 @@ class activityController {
     try {
       const billRes = await axios.get(billUrl, { params: queryParams });
       const bill = billRes.data;
-    
+
       let activityType = bill.type || null;
       if (!activityType && bill.bill_type) {
         const fallbackType = bill.bill_type.toLowerCase();
         if (fallbackType.includes("senate")) activityType = "senate";
-        
         else if (fallbackType.includes("house")) activityType = "house";
       }
       if (!activityType) {
@@ -947,7 +916,7 @@ class activityController {
 
       for (const sponsorUri of bill.sponsors) {
         const sponsorId = sponsorUri.split("/").filter(Boolean).pop();
-           
+
         try {
           const sponsorRes = await axios.get(
             `${BASE}/api/newsponsor/${sponsorId}/`,
@@ -956,7 +925,6 @@ class activityController {
           const sponsor = sponsorRes.data;
 
           const personId = sponsor.person?.split("/").filter(Boolean).pop();
-
 
           if (!personId) {
             console.warn(
@@ -969,7 +937,7 @@ class activityController {
             Senator.findOne({ senatorId: personId }),
             Representative.findOne({ repId: personId }),
           ]);
- 
+
           if (!senator && !rep) {
             console.warn(
               ` No matching local legislator found for personId ${personId}`
@@ -983,7 +951,7 @@ class activityController {
             score: "yes",
             title: bill.title,
             editorInfo,
-            activityType 
+            activityType,
           });
 
           if (linked) savedCount++;

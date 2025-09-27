@@ -10,7 +10,6 @@ const activitySchema = new mongoose.Schema(
     readMore: { type: String, default: "" },
     date: Date,
     congress: { type: String },
-    termId: { type: mongoose.Schema.Types.ObjectId, ref: "terms" },
     trackActivities: {
       type: String,
       enum: ["completed", "pending", "failed"],
