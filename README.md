@@ -1,10 +1,12 @@
 # SBA Prolife Scorecard Backend
 
-This is the backend API for the SBA Prolife Scorecard project. It is built with Node.js, Express, and MongoDB (Mongoose), and provides endpoints for managing senators, representatives, terms, votes, activities, and user authentication.
+This is the backend API for the SBA Prolife Scorecard project. It is built with Node.js, Express, and MongoDB (Mongoose), and provides secure endpoints for managing senators, representatives, terms, votes, activities, and user authentication.
+
+The backend powers both the admin dashboard and the public scorecard frontend UI.
 
 ## Features
 
-- **Senator & Representative Management**: CRUD operations for senators, representatives, and their associated data.
+- **Senator & Representative Management**: CRUD operations for senators, representatives, and related data.
 - **Scorecard Data**: Manage and retrieve voting and activity scores for senators and representatives.
 - **Vote & Activity Management**: Create, update, and manage votes and activities with robust support for tracking legislative actions and participation.
 - **User Authentication**: Secure endpoints with authentication middleware.
