@@ -132,7 +132,6 @@ backend/
 ## Scripts
 
 - `npm start` — Start the server
-- `npm run dev` — Start server with nodemon
 - `npm run cleanup:votes` — Run vote cleanup script
 - `npm run cleanup:activities` — Run activity cleanup script
 
