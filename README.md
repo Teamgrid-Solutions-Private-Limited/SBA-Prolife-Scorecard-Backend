@@ -77,14 +77,46 @@ backend/
    npm install
    ```
 3. Configure environment variables:
-   - Copy `config/env.js.example` to `config/env.js` and update with your settings.
-   - Or set environment variables as needed.
+   Create a .env file (or configure config/env.js) with the following:
+
+   ```
+   # Server
+   BASE_URL=http://localhost:3000
+   PORT=3000
+
+   # Database
+   MONGODB_URI=mongodb+srv://<username>:<password>@cluster0.mongodb.net/sbaProlife
+
+   # Auth
+   JWT_SECRET=<your-strong-secret-key>
+   PROTECTED_KEY=<internal-api-key>
+
+   # Quorum API
+   QUORUM_API_KEY=<your-quorum-api-key>
+   QUORUM_USERNAME=<your-username>
+   QUORUM_BASE_URL=https://www.quorum.us
+
+   # API Endpoints (built from QUORUM_BASE_URL in code)
+   # QUORUM_SENATOR_API = ${QUORUM_BASE_URL}/api/newperson/
+   # QUORUM_REP_API = ${QUORUM_BASE_URL}/api/newperson/
+   # BILL_API_URL = ${QUORUM_BASE_URL}/api/newbill/
+   # VOTE_API_URL = ${QUORUM_BASE_URL}/api/vote/
+   # SPONSOR_API_URL = ${QUORUM_BASE_URL}/api/newsponsor/
+
+   # Email (SMTP)
+   EMAIL_HOST=smtp.gmail.com
+   EMAIL_PORT=587
+   EMAIL_USERNAME=<your-email>
+   EMAIL_PASSWORD=<your-email-app-password>
+   EMAIL_FROM="SBA Pro-Life <sba@pro.org>"
+   EMAIL_FROM_NAME="SBA-Scorecard-Admin"
+   ```
+
 4. Start the server:
    ```sh
    npm start
    ```
    The server will run on the port specified in your environment variables (default: 3000).
-
 
 ## API Endpoints
 
