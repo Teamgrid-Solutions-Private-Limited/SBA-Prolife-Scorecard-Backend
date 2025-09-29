@@ -1,3 +1,5 @@
+const mongoose = require("mongoose");
+const axios = require("axios");
 const Activity = require("../models/activitySchema");
 const upload = require("../middlewares/fileUploads");
 const Senator = require("../models/senatorSchema");
@@ -6,17 +8,19 @@ const RepresentativeData = require("../models/representativeDataSchema");
 const SenatorData = require("../models/senatorDataSchema");
 const Vote = require("../models/voteSchema");
 const { ACTIVITY_PUBLIC_FIELDS } = require("../constants/projection");
+
 const {
   applyCommonFilters,
   applyCongressFilter,
   applyChamberFilter,
   applyActivityTermFilter,
 } = require("../middlewares/filter");
-const { buildSupportData } = require("../helper/supportDataHelper");
-const mongoose = require("mongoose");
 
-const axios = require("axios");
+const { performBulkUpdate } = require("../helper/bulkUpdateHelper");
+const { buildSupportData } = require("../helper/supportDataHelper");
+const { discardChanges } = require("../helper/discardHelper");
 const { getFileUrl } = require("../helper/filePath");
+
 const BASE = process.env.QUORUM_BASE_URL || "https://www.quorum.us";
 const API_KEY = process.env.QUORUM_API_KEY;
 const USERNAME = process.env.QUORUM_USERNAME;
@@ -104,7 +108,6 @@ async function saveCosponsorshipToLegislator({
         editedFields: currentPerson.editedFields || [],
         fieldEditors: currentPerson.fieldEditors || {},
         modifiedAt: currentPerson.modifiedAt,
-        modifiedBy: currentPerson.modifiedBy,
         publishStatus: currentPerson.publishStatus,
         snapshotSource: currentPerson.snapshotSource,
         status: currentPerson.status,
@@ -195,11 +198,9 @@ class activityController {
         type,
         title,
         shortDesc,
-
         rollCall,
         date,
         congress,
-
         trackActivities,
       } = req.body;
 
@@ -208,12 +209,10 @@ class activityController {
         type,
         title,
         shortDesc,
-
         rollCall,
         readMore,
         date,
         congress,
-
         status: "draft",
       });
 
@@ -468,13 +467,11 @@ class activityController {
   }
   static async discardActivityChanges(req, res) {
     try {
-      const { discardChanges } = require("../helper/discardHelper");
-
       const restoredActivity = await discardChanges({
         model: Activity,
         documentId: req.params.id,
         userId: req.user?._id,
-        options: { new: true, populate: "termId" },
+        options: { new: true },
       });
 
       res.status(200).json({
@@ -497,12 +494,6 @@ class activityController {
       if (!activity) {
         return res.status(404).json({ message: "Activity not found" });
       }
-
-      const Senator = require("../models/senatorSchema");
-      const Representative = require("../models/representativeSchema");
-      const SenatorData = require("../models/senatorDataSchema");
-      const RepresentativeData = require("../models/representativeDataSchema");
-
       function makeActivityEditorKey(title) {
         if (title.includes("S.")) {
           return (
@@ -821,9 +812,7 @@ class activityController {
   static async bulkUpdateTrackActivities(req, res) {
     try {
       const { ids, trackActivities } = req.body;
-      const { performBulkUpdate } = require("../helper/bulkUpdateHelper");
-
-      const validation = (data) => {
+     const validation = (data) => {
         const validStatuses = ["pending", "completed", "failed"];
         if (!validStatuses.includes(data.trackActivities)) {
           return "Invalid trackActivities value";
