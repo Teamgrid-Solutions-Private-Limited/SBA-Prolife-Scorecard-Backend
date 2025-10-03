@@ -1,6 +1,5 @@
 const Vote = require("../models/voteSchema");
 const upload = require("../middlewares/fileUploads");
-const Term = require("../models/termSchema");
 const { buildSupportData } = require("../helper/supportDataHelper");
 const { VOTE_PUBLIC_FIELDS } = require("../constants/projection");
 const {
@@ -9,12 +8,11 @@ const {
   applyCongressFilter,
   applyChamberFilter,
 } = require("../middlewares/filter");
-const senatorDataSchema = require("../models/senatorDataSchema");
-const representativeDataSchema = require("../models/representativeDataSchema");
 const Senator = require("../models/senatorSchema");
 const Representative = require("../models/representativeSchema");
 const SenatorData = require("../models/senatorDataSchema");
 const RepresentativeData = require("../models/representativeDataSchema");
+const { makeEditorKey, deleteFieldEditor } = require("../helper/editorKeyService");
 const path = require("path");
 const { getFileUrl } = require("../helper/filePath");
 
@@ -33,7 +31,7 @@ class voteController {
         sbaPosition,
       } = req.body;
 
-     
+
       if (!type || !title || !rollCall || !date || !congress || !termId) {
         return res.status(400).json({ message: "Missing required fields" });
       }
@@ -327,43 +325,7 @@ class voteController {
       if (!vote) {
         return res.status(404).json({ message: "Vote not found" });
       }
-
       let historyCleared = false;
-
-      function makeEditorKey(title, fieldType = "votesScore") {
-        if (title.includes("H.R.")) {
-          return (
-            fieldType +
-            "_" +
-            title
-              .replace(/H\.R\.\s*(\d+):/g, "H_R_$1_")
-              .replace(/'/g, "")
-              .replace(/\s+/g, "_")
-              .replace(/[^a-zA-Z0-9_]/g, "")
-          );
-        } else if (title.includes("S.")) {
-          return (
-            fieldType +
-            "_" +
-            title
-              .replace(/S\.\s*(\d+):/g, "S_$1_")
-              .replace(/'/g, "")
-              .replace(/\s+/g, "_")
-              .replace(/[^a-zA-Z0-9_]/g, "")
-          );
-        } else {
-          return (
-            fieldType +
-            "_" +
-            title
-              .replace(/\./g, "")
-              .replace(/:/g, "")
-              .replace(/'/g, "")
-              .replace(/\s+/g, "_")
-              .replace(/[^a-zA-Z0-9_]/g, "")
-          );
-        }
-      }
       const senatorDataResult = await SenatorData.updateMany(
         {
           $or: [
@@ -441,48 +403,8 @@ class voteController {
           }
         }
         const actualKeys = Object.keys(fieldEditorsPlain);
-        const deleteFieldEditor = (targetKey) => {
-          if (fieldEditorsPlain[targetKey]) {
-            delete fieldEditorsPlain[targetKey];
-            return true;
-          } else {
-            const foundKey = actualKeys.find(
-              (key) => key.toLowerCase() === targetKey.toLowerCase()
-            );
-            if (foundKey) {
-              delete fieldEditorsPlain[foundKey];
-              return true;
-            } else {
-              const normalizedTargetKey = targetKey.replace(/_/g, "");
-              const foundPatternKey = actualKeys.find((key) => {
-                const normalizedKey = key.replace(/_/g, "");
-                return normalizedKey === normalizedTargetKey;
-              });
-
-              if (foundPatternKey) {
-                delete fieldEditorsPlain[foundPatternKey];
-                return true;
-              } else {
-                const partialMatch = actualKeys.find((key) => {
-                  const cleanKey = key.replace(/[^a-zA-Z0-9]/g, "");
-                  const cleanTargetKey = targetKey.replace(/[^a-zA-Z0-9]/g, "");
-                  return cleanKey === cleanTargetKey;
-                });
-
-                if (partialMatch) {
-                  delete fieldEditorsPlain[partialMatch];
-                  return true;
-                } else {
-                  return false;
-                }
-              }
-            }
-          }
-        };
-        const votesScoreDeleted = deleteFieldEditor(votesScoreEditorKey);
-        const pastVotesScoreDeleted = deleteFieldEditor(
-          pastVotesScoreEditorKey
-        );
+        const votesScoreDeleted = deleteFieldEditor(fieldEditorsPlain, actualKeys, votesScoreEditorKey);
+        const pastVotesScoreDeleted = deleteFieldEditor(fieldEditorsPlain, actualKeys, pastVotesScoreEditorKey);
         fieldEditorDeleted = votesScoreDeleted || pastVotesScoreDeleted;
         if (fieldEditorDeleted) {
           senator.fieldEditors = fieldEditorsPlain;
@@ -570,48 +492,8 @@ class voteController {
           }
         }
         const repActualKeys = Object.keys(repFieldEditorsPlain);
-        const deleteRepFieldEditor = (targetKey) => {
-          if (repFieldEditorsPlain[targetKey]) {
-            delete repFieldEditorsPlain[targetKey];
-            return true;
-          } else {
-            const foundKey = repActualKeys.find(
-              (key) => key.toLowerCase() === targetKey.toLowerCase()
-            );
-            if (foundKey) {
-              delete repFieldEditorsPlain[foundKey];
-              return true;
-            } else {
-              const normalizedTargetKey = targetKey.replace(/_/g, "");
-              const foundPatternKey = repActualKeys.find((key) => {
-                const normalizedKey = key.replace(/_/g, "");
-                return normalizedKey === normalizedTargetKey;
-              });
-
-              if (foundPatternKey) {
-                delete repFieldEditorsPlain[foundPatternKey];
-                return true;
-              } else {
-                const partialMatch = repActualKeys.find((key) => {
-                  const cleanKey = key.replace(/[^a-zA-Z0-9]/g, "");
-                  const cleanTargetKey = targetKey.replace(/[^a-zA-Z0-9]/g, "");
-                  return cleanKey === cleanTargetKey;
-                });
-
-                if (partialMatch) {
-                  delete repFieldEditorsPlain[partialMatch];
-                  return true;
-                } else {
-                  return false;
-                }
-              }
-            }
-          }
-        };
-        const votesScoreDeleted = deleteRepFieldEditor(votesScoreEditorKey);
-        const pastVotesScoreDeleted = deleteRepFieldEditor(
-          pastVotesScoreEditorKey
-        );
+        const votesScoreDeleted = deleteFieldEditor(repFieldEditorsPlain, repActualKeys, votesScoreEditorKey);
+        const pastVotesScoreDeleted = deleteFieldEditor(repFieldEditorsPlain, repActualKeys, pastVotesScoreEditorKey);
         fieldEditorDeleted = votesScoreDeleted || pastVotesScoreDeleted;
         if (fieldEditorDeleted) {
           rep.fieldEditors = repFieldEditorsPlain;
@@ -659,14 +541,13 @@ class voteController {
         deletedVoteId: voteId,
       });
     } catch (error) {
-      console.error("❌ Error deleting vote:", error);
+      console.error(" Error deleting vote:", error);
       res.status(500).json({
         message: "Error deleting vote and its references",
         error: error.message,
       });
     }
   }
-  // Update status (draft/published)
   static async updateVoteStatus(req, res) {
     try {
       const { status } = req.body;
@@ -694,7 +575,6 @@ class voteController {
         .json({ message: "Error updating vote status", error: error.message });
     }
   }
-  // Toggle publish status - Admin only
   static async togglePublishStatus(req, res) {
     try {
       const { id } = req.params;
