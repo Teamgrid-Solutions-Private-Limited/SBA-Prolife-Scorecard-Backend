@@ -20,6 +20,7 @@ const { performBulkUpdate } = require("../helper/bulkUpdateHelper");
 const { buildSupportData } = require("../helper/supportDataHelper");
 const { discardChanges } = require("../helper/discardHelper");
 const { getFileUrl } = require("../helper/filePath");
+const { makeEditorKey, deleteFieldEditor } = require("../helper/editorKeyService");
 
 const BASE = process.env.QUORUM_BASE_URL || "https://www.quorum.us";
 const API_KEY = process.env.QUORUM_API_KEY;
@@ -494,37 +495,6 @@ class activityController {
       if (!activity) {
         return res.status(404).json({ message: "Activity not found" });
       }
-      function makeActivityEditorKey(title) {
-        if (title.includes("S.")) {
-          return (
-            "activitiesScore_" +
-            title
-              .replace(/S\.\s*(\d+):/g, "S_$1_")
-              .replace(/'/g, "")
-              .replace(/\s+/g, "_")
-              .replace(/[^a-zA-Z0-9_]/g, "")
-          );
-        } else if (title.includes("H.R.")) {
-          return (
-            "activitiesScore_" +
-            title
-              .replace(/H\.R\.\s*(\d+):/g, "H_R_$1_")
-              .replace(/'/g, "")
-              .replace(/\s+/g, "_")
-              .replace(/[^a-zA-Z0-9_]/g, "")
-          );
-        } else {
-          return (
-            "activitiesScore_" +
-            title
-              .replace(/\./g, "")
-              .replace(/:/g, "")
-              .replace(/'/g, "")
-              .replace(/\s+/g, "_")
-              .replace(/[^a-zA-Z0-9_]/g, "")
-          );
-        }
-      }
 
       const senatorDataResult = await SenatorData.updateMany(
         { "activitiesScore.activityId": id },
@@ -556,7 +526,7 @@ class activityController {
         if (removedCount > 0) {
         }
 
-        const editorKey = makeActivityEditorKey(activity.title);
+        const editorKey = makeEditorKey(activity.title, "activitiesScore");
 
         let fieldEditorsPlain = {};
         if (senator.fieldEditors) {
@@ -573,47 +543,8 @@ class activityController {
             }
           }
         }
-
         const actualKeys = Object.keys(fieldEditorsPlain);
-
-        let fieldEditorDeleted = false;
-
-        if (fieldEditorsPlain[editorKey]) {
-          delete fieldEditorsPlain[editorKey];
-          fieldEditorDeleted = true;
-        } else {
-          const foundKey = actualKeys.find(
-            (key) => key.toLowerCase() === editorKey.toLowerCase()
-          );
-          if (foundKey) {
-            delete fieldEditorsPlain[foundKey];
-            fieldEditorDeleted = true;
-          } else {
-            const normalizedEditorKey = editorKey.replace(/_/g, "");
-            const foundPatternKey = actualKeys.find((key) => {
-              const normalizedKey = key.replace(/_/g, "");
-              return normalizedKey === normalizedEditorKey;
-            });
-
-            if (foundPatternKey) {
-              delete fieldEditorsPlain[foundPatternKey];
-              fieldEditorDeleted = true;
-            } else {
-              const partialMatch = actualKeys.find((key) => {
-                const cleanKey = key.replace(/[^a-zA-Z0-9]/g, "");
-                const cleanEditorKey = editorKey.replace(/[^a-zA-Z0-9]/g, "");
-                return cleanKey === cleanEditorKey;
-              });
-
-              if (partialMatch) {
-                delete fieldEditorsPlain[partialMatch];
-                fieldEditorDeleted = true;
-              } else {
-              }
-            }
-          }
-        }
-
+        const fieldEditorDeleted = deleteFieldEditor(fieldEditorsPlain, actualKeys, editorKey);
         if (fieldEditorDeleted) {
           senator.fieldEditors = fieldEditorsPlain;
         }
@@ -671,7 +602,7 @@ class activityController {
           }
         }
 
-        const editorKey = makeActivityEditorKey(activity.title);
+        const editorKey = makeEditorKey(activity.title, "activitiesScore");
         let repFieldEditorsPlain = {};
         if (rep.fieldEditors) {
           try {
@@ -687,44 +618,7 @@ class activityController {
         }
 
         const repActualKeys = Object.keys(repFieldEditorsPlain);
-
-        let fieldEditorDeleted = false;
-        if (repFieldEditorsPlain[editorKey]) {
-          delete repFieldEditorsPlain[editorKey];
-          fieldEditorDeleted = true;
-        } else {
-          const foundKey = repActualKeys.find(
-            (key) => key.toLowerCase() === editorKey.toLowerCase()
-          );
-          if (foundKey) {
-            delete repFieldEditorsPlain[foundKey];
-            fieldEditorDeleted = true;
-          } else {
-            const normalizedEditorKey = editorKey.replace(/_/g, "");
-            const foundPatternKey = repActualKeys.find((key) => {
-              const normalizedKey = key.replace(/_/g, "");
-              return normalizedKey === normalizedEditorKey;
-            });
-
-            if (foundPatternKey) {
-              delete repFieldEditorsPlain[foundPatternKey];
-              fieldEditorDeleted = true;
-            } else {
-              const partialMatch = repActualKeys.find((key) => {
-                const cleanKey = key.replace(/[^a-zA-Z0-9]/g, "");
-                const cleanEditorKey = editorKey.replace(/[^a-zA-Z0-9]/g, "");
-                return cleanKey === cleanEditorKey;
-              });
-
-              if (partialMatch) {
-                delete repFieldEditorsPlain[partialMatch];
-                fieldEditorDeleted = true;
-              } else {
-              }
-            }
-          }
-        }
-
+        const fieldEditorDeleted = deleteFieldEditor(repFieldEditorsPlain, repActualKeys, editorKey);
         if (fieldEditorDeleted) {
           rep.fieldEditors = repFieldEditorsPlain;
         }
@@ -769,7 +663,7 @@ class activityController {
         deletedActivityId: id,
       });
     } catch (error) {
-      console.error("❌ Error deleting activity:", error);
+      console.error(" Error deleting activity:", error);
       res.status(500).json({
         message: "Error deleting activity and its references",
         error: error.message,
@@ -812,7 +706,7 @@ class activityController {
   static async bulkUpdateTrackActivities(req, res) {
     try {
       const { ids, trackActivities } = req.body;
-     const validation = (data) => {
+      const validation = (data) => {
         const validStatuses = ["pending", "completed", "failed"];
         if (!validStatuses.includes(data.trackActivities)) {
           return "Invalid trackActivities value";
