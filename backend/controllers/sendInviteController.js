@@ -1,4 +1,3 @@
-
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const User = require("../models/userSchema");
@@ -7,7 +6,7 @@ const sendEmail = require("../config/send-email");
 const sendInvite = async (req, res) => {
   try {
     const { email, role, password, fullName, nickName } = req.body;
-   // const adminId = req.user.id; // Assuming you have admin info in req.user
+    // const adminId = req.user.id; // Assuming you have admin info in req.user
 
     // 1. Validation
     if (!email || !role || !password || !fullName) {
@@ -45,7 +44,7 @@ const sendInvite = async (req, res) => {
     });
 
     // 6. Generate activation link
-    const baseUrl = process.env.BASE_URL;
+    const baseUrl = "https://demos.godigitalalchemy.com/scorecard/admin";
 
     const activationUrl = `${baseUrl}/activate-account?token=${inviteToken}`;
     console.log("Base URL:", baseUrl);
@@ -120,7 +119,7 @@ const verifyActivation = async (req, res) => {
     const user = await User.findOne({
       inviteToken: token,
       status: "invited",
-    })
+    });
 
     if (!user) {
       return res
