@@ -45,12 +45,10 @@ const sendInvite = async (req, res) => {
     });
 
     // 6. Generate activation link
-    const baseUrl =
-      process.env.NODE_ENV === "production"
-        ? "https://demos.godigitalalchemy.com/scorecard/admin"
-        : "http://localhost:3001/scorecard/admin";
+    const baseUrl = process.env.BASE_URL;
 
     const activationUrl = `${baseUrl}/activate-account?token=${inviteToken}`;
+    console.log("Base URL:", baseUrl);
 
     // 7. Send email WITHOUT password
     const emailContent = `
