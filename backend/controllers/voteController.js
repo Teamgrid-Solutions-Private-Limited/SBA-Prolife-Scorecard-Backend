@@ -12,7 +12,7 @@ const Senator = require("../models/senatorSchema");
 const Representative = require("../models/representativeSchema");
 const SenatorData = require("../models/senatorDataSchema");
 const RepresentativeData = require("../models/representativeDataSchema");
-const { makeEditorKey, deleteFieldEditor } = require("../helper/editorKeyService");
+const { makeEditorKey, deleteFieldEditor,cleanupPersonAfterDelete } = require("../helper/editorKeyService");
 const path = require("path");
 const { getFileUrl } = require("../helper/filePath");
 
@@ -366,81 +366,20 @@ class voteController {
           },
         ],
       });
-      for (const senator of senators) {
-        const beforeCount = senator.editedFields.length;
-        senator.editedFields = senator.editedFields.filter(
-          (f) =>
-            !(
-              f.name === vote.title &&
-              f.field &&
-              (f.field.includes("votesScore") ||
-                f.field.includes("pastVotesScore"))
-            )
-        );
-        const afterCount = senator.editedFields.length;
-        const removedCount = beforeCount - afterCount;
-        if (removedCount > 0) {
-        }
-        let fieldEditorDeleted = false;
-        const votesScoreEditorKey = makeEditorKey(vote.title, "votesScore");
-        const pastVotesScoreEditorKey = makeEditorKey(
-          vote.title,
-          "pastVotesScore"
-        );
-        let fieldEditorsPlain = {};
-        if (senator.fieldEditors) {
-          try {
-            fieldEditorsPlain = JSON.parse(
-              JSON.stringify(senator.fieldEditors)
-            );
-          } catch (error) {
-            fieldEditorsPlain = {};
-            for (const key in senator.fieldEditors) {
-              if (!key.startsWith("$__") && key !== "_id" && key !== "__v") {
-                fieldEditorsPlain[key] = senator.fieldEditors[key];
-              }
-            }
-          }
-        }
-        const actualKeys = Object.keys(fieldEditorsPlain);
-        const votesScoreDeleted = deleteFieldEditor(fieldEditorsPlain, actualKeys, votesScoreEditorKey);
-        const pastVotesScoreDeleted = deleteFieldEditor(fieldEditorsPlain, actualKeys, pastVotesScoreEditorKey);
-        fieldEditorDeleted = votesScoreDeleted || pastVotesScoreDeleted;
-        if (fieldEditorDeleted) {
-          senator.fieldEditors = fieldEditorsPlain;
-        }
-        if (senator.editedFields.length === 0) {
-          if (Array.isArray(senator.history) && senator.history.length > 0) {
-            const lastHistory = senator.history[senator.history.length - 1];
-            const restoredStatus =
-              lastHistory.oldData?.publishStatus || lastHistory.publishStatus;
-            if (restoredStatus) {
-              senator.publishStatus = restoredStatus;
-              if (
-                senator.history.length === 1 &&
-                (lastHistory.oldData?.publishStatus === "published" ||
-                  lastHistory.publishStatus === "published")
-              ) {
-                senator.history = [];
-                historyCleared = true;
-              }
-            }
-          } else {
-            senator.publishStatus = "draft";
-          }
-        }
-        const updateData = {};
-        if (removedCount > 0) updateData.editedFields = senator.editedFields;
-        if (fieldEditorDeleted) updateData.fieldEditors = senator.fieldEditors;
-        if (senator.publishStatus !== undefined)
-          updateData.publishStatus = senator.publishStatus;
-        if (historyCleared) updateData.history = [];
-
-        if (Object.keys(updateData).length > 0) {
-          await Senator.updateOne({ _id: senator._id }, { $set: updateData });
-        } else {
-        }
-      }
+     for (const senator of senators) {
+  await cleanupPersonAfterDelete({
+    person: senator,
+    title: vote.title,
+    fieldType: "votesScore",
+    model: Senator,
+  });
+  await cleanupPersonAfterDelete({
+    person: senator,
+    title: vote.title,
+    fieldType: "pastVotesScore",
+    model: Senator,
+  });
+}
       const representatives = await Representative.find({
         $or: [
           {
@@ -453,87 +392,20 @@ class voteController {
           },
         ],
       });
-      for (const rep of representatives) {
-        let removedCount = 0;
-        let historyCleared = false;
-        if (rep.editedFields && rep.editedFields.length > 0) {
-          const beforeCount = rep.editedFields.length;
-          rep.editedFields = rep.editedFields.filter(
-            (f) =>
-              !(
-                f.name === vote.title &&
-                f.field &&
-                (f.field.includes("votesScore") ||
-                  f.field.includes("pastVotesScore"))
-              )
-          );
-          removedCount = beforeCount - rep.editedFields.length;
-          if (removedCount > 0) {
-          }
-        }
-
-        let fieldEditorDeleted = false;
-        const votesScoreEditorKey = makeEditorKey(vote.title, "votesScore");
-        const pastVotesScoreEditorKey = makeEditorKey(
-          vote.title,
-          "pastVotesScore"
-        );
-        let repFieldEditorsPlain = {};
-        if (rep.fieldEditors) {
-          try {
-            repFieldEditorsPlain = JSON.parse(JSON.stringify(rep.fieldEditors));
-          } catch (error) {
-            repFieldEditorsPlain = {};
-            for (const key in rep.fieldEditors) {
-              if (!key.startsWith("$__") && key !== "_id" && key !== "__v") {
-                repFieldEditorsPlain[key] = rep.fieldEditors[key];
-              }
-            }
-          }
-        }
-        const repActualKeys = Object.keys(repFieldEditorsPlain);
-        const votesScoreDeleted = deleteFieldEditor(repFieldEditorsPlain, repActualKeys, votesScoreEditorKey);
-        const pastVotesScoreDeleted = deleteFieldEditor(repFieldEditorsPlain, repActualKeys, pastVotesScoreEditorKey);
-        fieldEditorDeleted = votesScoreDeleted || pastVotesScoreDeleted;
-        if (fieldEditorDeleted) {
-          rep.fieldEditors = repFieldEditorsPlain;
-        }
-        if (rep.editedFields.length === 0) {
-          if (Array.isArray(rep.history) && rep.history.length > 0) {
-            const lastHistory = rep.history[rep.history.length - 1];
-            const restoredStatus =
-              lastHistory.oldData?.publishStatus || lastHistory.publishStatus;
-            if (restoredStatus) {
-              rep.publishStatus = restoredStatus;
-              if (
-                rep.history.length === 1 &&
-                (lastHistory.oldData?.publishStatus === "published" ||
-                  lastHistory.publishStatus === "published")
-              ) {
-                rep.history = [];
-                historyCleared = true;
-              }
-            }
-          } else {
-            rep.publishStatus = "draft";
-          }
-        }
-        const updateData = {};
-        if (removedCount > 0) updateData.editedFields = rep.editedFields;
-        if (fieldEditorDeleted) updateData.fieldEditors = rep.fieldEditors;
-        if (rep.publishStatus !== undefined)
-          updateData.publishStatus = rep.publishStatus;
-        if (historyCleared) updateData.history = [];
-
-        if (Object.keys(updateData).length > 0) {
-          await Representative.updateOne(
-            { _id: rep._id },
-            { $set: updateData }
-          );
-        } else {
-        }
-      }
-
+     for (const rep of representatives) {
+  await cleanupPersonAfterDelete({
+    person: rep,
+    title: vote.title,
+    fieldType: "votesScore",
+    model: Representative,
+  });
+  await cleanupPersonAfterDelete({
+    person: rep,
+    title: vote.title,
+    fieldType: "pastVotesScore",
+    model: Representative,
+  });
+}
       await Vote.findByIdAndDelete(voteId);
 
       res.status(200).json({
