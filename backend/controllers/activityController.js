@@ -20,6 +20,7 @@ const { performBulkUpdate } = require("../helper/bulkUpdateHelper");
 const { buildSupportData } = require("../helper/supportDataHelper");
 const { discardChanges } = require("../helper/discardHelper");
 const { getFileUrl } = require("../helper/filePath");
+const { makeEditorKey, deleteFieldEditor, cleanupPersonAfterDelete } = require("../helper/editorKeyService");
 
 const BASE = process.env.QUORUM_BASE_URL || "https://www.quorum.us";
 const API_KEY = process.env.QUORUM_API_KEY;
@@ -489,43 +490,10 @@ class activityController {
   static async deleteActivity(req, res) {
     try {
       const { id } = req.params;
-
       const activity = await Activity.findById(id);
       if (!activity) {
         return res.status(404).json({ message: "Activity not found" });
       }
-      function makeActivityEditorKey(title) {
-        if (title.includes("S.")) {
-          return (
-            "activitiesScore_" +
-            title
-              .replace(/S\.\s*(\d+):/g, "S_$1_")
-              .replace(/'/g, "")
-              .replace(/\s+/g, "_")
-              .replace(/[^a-zA-Z0-9_]/g, "")
-          );
-        } else if (title.includes("H.R.")) {
-          return (
-            "activitiesScore_" +
-            title
-              .replace(/H\.R\.\s*(\d+):/g, "H_R_$1_")
-              .replace(/'/g, "")
-              .replace(/\s+/g, "_")
-              .replace(/[^a-zA-Z0-9_]/g, "")
-          );
-        } else {
-          return (
-            "activitiesScore_" +
-            title
-              .replace(/\./g, "")
-              .replace(/:/g, "")
-              .replace(/'/g, "")
-              .replace(/\s+/g, "_")
-              .replace(/[^a-zA-Z0-9_]/g, "")
-          );
-        }
-      }
-
       const senatorDataResult = await SenatorData.updateMany(
         { "activitiesScore.activityId": id },
         { $pull: { activitiesScore: { activityId: id } } }
@@ -542,225 +510,24 @@ class activityController {
       });
 
       for (const senator of senators) {
-        const beforeCount = senator.editedFields.length;
-        senator.editedFields = senator.editedFields.filter(
-          (f) =>
-            !(
-              f.name === activity.title &&
-              f.field &&
-              f.field.includes("activitiesScore")
-            )
-        );
-        const afterCount = senator.editedFields.length;
-        const removedCount = beforeCount - afterCount;
-        if (removedCount > 0) {
-        }
-
-        const editorKey = makeActivityEditorKey(activity.title);
-
-        let fieldEditorsPlain = {};
-        if (senator.fieldEditors) {
-          try {
-            fieldEditorsPlain = JSON.parse(
-              JSON.stringify(senator.fieldEditors)
-            );
-          } catch (error) {
-            fieldEditorsPlain = {};
-            for (const key in senator.fieldEditors) {
-              if (!key.startsWith("$__") && key !== "_id" && key !== "__v") {
-                fieldEditorsPlain[key] = senator.fieldEditors[key];
-              }
-            }
-          }
-        }
-
-        const actualKeys = Object.keys(fieldEditorsPlain);
-
-        let fieldEditorDeleted = false;
-
-        if (fieldEditorsPlain[editorKey]) {
-          delete fieldEditorsPlain[editorKey];
-          fieldEditorDeleted = true;
-        } else {
-          const foundKey = actualKeys.find(
-            (key) => key.toLowerCase() === editorKey.toLowerCase()
-          );
-          if (foundKey) {
-            delete fieldEditorsPlain[foundKey];
-            fieldEditorDeleted = true;
-          } else {
-            const normalizedEditorKey = editorKey.replace(/_/g, "");
-            const foundPatternKey = actualKeys.find((key) => {
-              const normalizedKey = key.replace(/_/g, "");
-              return normalizedKey === normalizedEditorKey;
-            });
-
-            if (foundPatternKey) {
-              delete fieldEditorsPlain[foundPatternKey];
-              fieldEditorDeleted = true;
-            } else {
-              const partialMatch = actualKeys.find((key) => {
-                const cleanKey = key.replace(/[^a-zA-Z0-9]/g, "");
-                const cleanEditorKey = editorKey.replace(/[^a-zA-Z0-9]/g, "");
-                return cleanKey === cleanEditorKey;
-              });
-
-              if (partialMatch) {
-                delete fieldEditorsPlain[partialMatch];
-                fieldEditorDeleted = true;
-              } else {
-              }
-            }
-          }
-        }
-
-        if (fieldEditorDeleted) {
-          senator.fieldEditors = fieldEditorsPlain;
-        }
-        if (senator.editedFields.length === 0) {
-          if (Array.isArray(senator.history) && senator.history.length > 0) {
-            const lastHistory = senator.history[senator.history.length - 1];
-            const restoredStatus =
-              lastHistory.oldData?.publishStatus || lastHistory.publishStatus;
-            if (restoredStatus) {
-              senator.publishStatus = restoredStatus;
-              if (
-                senator.history.length === 1 &&
-                (lastHistory.oldData?.publishStatus === "published" ||
-                  lastHistory.publishStatus === "published")
-              ) {
-                senator.history = [];
-              }
-            }
-          } else {
-            senator.publishStatus = "draft";
-          }
-        }
-        const updateData = {};
-        if (removedCount > 0) updateData.editedFields = senator.editedFields;
-        if (fieldEditorDeleted) updateData.fieldEditors = senator.fieldEditors;
-        if (senator.publishStatus !== undefined)
-          updateData.publishStatus = senator.publishStatus;
-        if (senator.history && senator.history.length === 0)
-          updateData.history = [];
-        if (Object.keys(updateData).length > 0) {
-          await Senator.updateOne({ _id: senator._id }, { $set: updateData });
-        } else {
-        }
+        await cleanupPersonAfterDelete({
+          person: senator,
+          title: activity.title,
+          fieldType: "activitiesScore",
+          model: Senator,
+        });
       }
-
       const representatives = await Representative.find({
         "editedFields.name": activity.title,
         "editedFields.field": "activitiesScore",
       });
-
       for (const rep of representatives) {
-        let removedCount = 0;
-        if (rep.editedFields && rep.editedFields.length > 0) {
-          const beforeCount = rep.editedFields.length;
-          rep.editedFields = rep.editedFields.filter(
-            (f) =>
-              !(
-                f.name === activity.title &&
-                f.field &&
-                f.field.includes("activitiesScore")
-              )
-          );
-          removedCount = beforeCount - rep.editedFields.length;
-          if (removedCount > 0) {
-          }
-        }
-
-        const editorKey = makeActivityEditorKey(activity.title);
-        let repFieldEditorsPlain = {};
-        if (rep.fieldEditors) {
-          try {
-            repFieldEditorsPlain = JSON.parse(JSON.stringify(rep.fieldEditors));
-          } catch (error) {
-            repFieldEditorsPlain = {};
-            for (const key in rep.fieldEditors) {
-              if (!key.startsWith("$__") && key !== "_id" && key !== "__v") {
-                repFieldEditorsPlain[key] = rep.fieldEditors[key];
-              }
-            }
-          }
-        }
-
-        const repActualKeys = Object.keys(repFieldEditorsPlain);
-
-        let fieldEditorDeleted = false;
-        if (repFieldEditorsPlain[editorKey]) {
-          delete repFieldEditorsPlain[editorKey];
-          fieldEditorDeleted = true;
-        } else {
-          const foundKey = repActualKeys.find(
-            (key) => key.toLowerCase() === editorKey.toLowerCase()
-          );
-          if (foundKey) {
-            delete repFieldEditorsPlain[foundKey];
-            fieldEditorDeleted = true;
-          } else {
-            const normalizedEditorKey = editorKey.replace(/_/g, "");
-            const foundPatternKey = repActualKeys.find((key) => {
-              const normalizedKey = key.replace(/_/g, "");
-              return normalizedKey === normalizedEditorKey;
-            });
-
-            if (foundPatternKey) {
-              delete repFieldEditorsPlain[foundPatternKey];
-              fieldEditorDeleted = true;
-            } else {
-              const partialMatch = repActualKeys.find((key) => {
-                const cleanKey = key.replace(/[^a-zA-Z0-9]/g, "");
-                const cleanEditorKey = editorKey.replace(/[^a-zA-Z0-9]/g, "");
-                return cleanKey === cleanEditorKey;
-              });
-
-              if (partialMatch) {
-                delete repFieldEditorsPlain[partialMatch];
-                fieldEditorDeleted = true;
-              } else {
-              }
-            }
-          }
-        }
-
-        if (fieldEditorDeleted) {
-          rep.fieldEditors = repFieldEditorsPlain;
-        }
-        if (rep.editedFields.length === 0) {
-          if (Array.isArray(rep.history) && rep.history.length > 0) {
-            const lastHistory = rep.history[rep.history.length - 1];
-            const restoredStatus =
-              lastHistory.oldData?.publishStatus || lastHistory.publishStatus;
-            if (restoredStatus) {
-              rep.publishStatus = restoredStatus;
-              if (
-                rep.history.length === 1 &&
-                (lastHistory.oldData?.publishStatus === "published" ||
-                  lastHistory.publishStatus === "published")
-              ) {
-                rep.history = [];
-              }
-            }
-          } else {
-            rep.publishStatus = "draft";
-          }
-        }
-        const updateData = {};
-        if (removedCount > 0) updateData.editedFields = rep.editedFields;
-        if (fieldEditorDeleted) updateData.fieldEditors = rep.fieldEditors;
-        if (rep.publishStatus !== undefined)
-          updateData.publishStatus = rep.publishStatus;
-        if (rep.history && rep.history.length === 0) updateData.history = [];
-
-        if (Object.keys(updateData).length > 0) {
-          await Representative.updateOne(
-            { _id: rep._id },
-            { $set: updateData }
-          );
-        } else {
-        }
+        await cleanupPersonAfterDelete({
+          person: rep,
+          title: activity.title,
+          fieldType: "activitiesScore",
+          model: Representative,
+        });
       }
       -(await Activity.findByIdAndDelete(id));
 
@@ -769,7 +536,7 @@ class activityController {
         deletedActivityId: id,
       });
     } catch (error) {
-      console.error("❌ Error deleting activity:", error);
+      console.error(" Error deleting activity:", error);
       res.status(500).json({
         message: "Error deleting activity and its references",
         error: error.message,
@@ -812,7 +579,7 @@ class activityController {
   static async bulkUpdateTrackActivities(req, res) {
     try {
       const { ids, trackActivities } = req.body;
-     const validation = (data) => {
+      const validation = (data) => {
         const validStatuses = ["pending", "completed", "failed"];
         if (!validStatuses.includes(data.trackActivities)) {
           return "Invalid trackActivities value";

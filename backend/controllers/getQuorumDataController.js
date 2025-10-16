@@ -382,8 +382,6 @@ class QuorumDataController {
   }
   trimDataForMemory(data, type) {
     if (!data || !data.length) return data;
-
-    const startTime = Date.now();
     const keepFields = {
       senator: [
         "id",
@@ -431,10 +429,6 @@ class QuorumDataController {
 
       trimmed.push(...batchResult);
     }
-
-    const memoryReduction =
-      (JSON.stringify(data).length - JSON.stringify(trimmed).length) / 1024;
-    const endTime = Date.now();
 
     return trimmed;
   }

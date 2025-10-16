@@ -259,6 +259,7 @@ class senatorDataController {
     }
   }
 
+ 
   static async SenatorDataBySenatorId(req, res) {
     try {
       const senateId = req.params.senatorId;
@@ -308,17 +309,26 @@ class senatorDataController {
         senatorDetails = getSenatorDetails(latestHistory.oldData, true);
         const historicalTerms = latestHistory.oldData.senatorData;
         const allTermIds = historicalTerms.map((t) => t.termId);
-        const allVoteIds = historicalTerms.flatMap((t) =>
-          (t.votesScore || []).map((v) => v.voteId)
-        );
+
+        // Get all vote IDs from both votesScore AND pastVotesScore
+        const allVoteIds = historicalTerms.flatMap((t) => {
+          const votesScoreIds = (t.votesScore || []).map((v) => v.voteId);
+          const pastVotesScoreIds = (t.pastVotesScore || []).map(
+            (v) => v.voteId
+          );
+          return [...votesScoreIds, ...pastVotesScoreIds];
+        });
+
         const allActivityIds = historicalTerms.flatMap((t) =>
           (t.activitiesScore || []).map((a) => a.activityId)
         );
+
         const [termDocs, voteDocs, activityDocs] = await Promise.all([
           Term.find({ _id: { $in: allTermIds } }).lean(),
           Vote.find({ _id: { $in: allVoteIds } }).lean(),
           Activity.find({ _id: { $in: allActivityIds } }).lean(),
         ]);
+
         const termMap = Object.fromEntries(
           termDocs.map((d) => [String(d._id), d])
         );
@@ -339,6 +349,11 @@ class senatorDataController {
             score: v.score,
             voteId: voteMap[String(v.voteId)] || null,
           })),
+          // ADDED: Include pastVotesScore with the same structure
+          pastVotesScore: (term.pastVotesScore || []).map((v) => ({
+            score: v.score,
+            voteId: voteMap[String(v.voteId)] || null,
+          })),
           activitiesScore: (term.activitiesScore || []).map((a) => ({
             score: a.score,
             activityId: activityMap[String(a.activityId)] || null,
@@ -348,11 +363,17 @@ class senatorDataController {
         finalCurrentTerm = populatedTerms.find((t) => t.currentTerm) || null;
         finalPastTerms = populatedTerms.filter((t) => !t.currentTerm);
       } else {
+        // MODIFIED: Added pastVotesScore population to existing queries
         const [currentTerm, pastTerms] = await Promise.all([
           SenatorData.findOne({ senateId, currentTerm: true })
             .populate("termId", "_id name startYear endYear congresses")
             .populate(
               "votesScore.voteId",
+              "_id title shortDesc longDesc rollCall readMore"
+            )
+            .populate(
+              // ADDED: populate pastVotesScore
+              "pastVotesScore.voteId",
               "_id title shortDesc longDesc rollCall readMore"
             )
             .populate(
@@ -364,6 +385,11 @@ class senatorDataController {
             .populate("termId", "_id name startYear endYear congresses")
             .populate(
               "votesScore.voteId",
+              "_id title shortDesc longDesc rollCall readMore"
+            )
+            .populate(
+              // ADDED: populate pastVotesScore
+              "pastVotesScore.voteId",
               "_id title shortDesc longDesc rollCall readMore"
             )
             .populate(
@@ -383,6 +409,11 @@ class senatorDataController {
           summary: term.summary,
           rating: term.rating,
           votesScore: (term.votesScore || []).map((v) => ({
+            score: v.score,
+            voteId: cleanVoteOrActivity(v.voteId),
+          })),
+          // ADDED: Include pastVotesScore with the same formatting
+          pastVotesScore: (term.pastVotesScore || []).map((v) => ({
             score: v.score,
             voteId: cleanVoteOrActivity(v.voteId),
           })),
@@ -411,6 +442,7 @@ class senatorDataController {
       });
     }
   }
+
   static async getPastVotesWithDetails(req, res) {
     try {
       const { senateId } = req.params;
