@@ -32,10 +32,11 @@ class voteController {
       } = req.body;
 
 
-      if (!type || !title || !rollCall || !date || !congress || !termId) {
+      if (!type || !title || !rollCall || !date  || !termId) {
         return res.status(400).json({ message: "Missing required fields" });
       }
-      const readMore = getFileUrl(req.file);
+   
+      const readMore = getFileUrl(req.file) || req.body.readMore;
       const newVote = new Vote({
         type,
         title,
