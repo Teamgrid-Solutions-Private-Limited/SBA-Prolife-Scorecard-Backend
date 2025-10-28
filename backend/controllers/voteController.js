@@ -12,7 +12,7 @@ const Senator = require("../models/senatorSchema");
 const Representative = require("../models/representativeSchema");
 const SenatorData = require("../models/senatorDataSchema");
 const RepresentativeData = require("../models/representativeDataSchema");
-const { makeEditorKey, deleteFieldEditor,cleanupPersonAfterDelete } = require("../helper/editorKeyService");
+const { makeEditorKey, deleteFieldEditor,cleanupPersonAfterDelete,migrateTitleForScoreTypes } = require("../helper/editorKeyService");
 const path = require("path");
 const { getFileUrl } = require("../helper/filePath");
 
@@ -283,7 +283,15 @@ class voteController {
         if (!updatedVote) {
           return res.status(404).json({ message: "Vote not found" });
         }
-
+ // migrate editedFields & fieldEditors if title changed (shared helper)
+      if (existingVote.title && existingVote.title !== updatedVote.title) {
+        await migrateTitleForScoreTypes({
+          oldTitle: existingVote.title,
+          newTitle: updatedVote.title,
+          fieldTypes: ["votesScore", "pastVotesScore"],
+          personModels: [Senator, Representative],
+        });
+      }
         res.status(200).json({
           message: "Vote updated successfully",
           info: updatedVote,
