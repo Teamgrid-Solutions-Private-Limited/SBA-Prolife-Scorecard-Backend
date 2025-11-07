@@ -223,94 +223,107 @@ class senatorController {
         .json({ message: "Error retrieving senator", error: error.message });
     }
   }
-  static async updateSenator(req, res) {
-    try {
-      const senatorId = req.params.id;
-      const existingSenator = await Senator.findById(senatorId);
+static async updateSenator(req, res) {
+  try {
+    const senatorId = req.params.id;
+    const existingSenator = await Senator.findById(senatorId);
 
-      if (!existingSenator) {
-        return res.status(404).json({ message: "Senator not found" });
-      }
-      const userId = req.user?._id || null;
-      const updateData = {
-        $set: {
-          ...req.body,
-          modifiedBy: userId,
-          modifiedAt: new Date(),
-        },
-      };
-      if (req.file) {
-        updateData.$set.photo = req.file.filename;
-      }
-      if (typeof updateData.$set.editedFields === "string") {
-        updateData.$set.editedFields = JSON.parse(updateData.$set.editedFields);
-      }
-      if (typeof updateData.$set.fieldEditors === "string") {
-        updateData.$set.fieldEditors = JSON.parse(updateData.$set.fieldEditors);
-      }
-      if (updateData.$set.publishStatus === "published") {
-        updateData.$set.editedFields = [];
-        updateData.$set.fieldEditors = {};
-        updateData.$set.history = []; 
-      }
-
-    const canTakeSnapshot =
-        !existingSenator.history ||
-        existingSenator.history.length === 0 ||
-        existingSenator.snapshotSource === "edited";
-
-      if (
-        canTakeSnapshot &&
-        updateData.$set.publishStatus !== "published" &&
-        (!existingSenator.history || existingSenator.history.length === 0)
-      ) {
-        const senatorDataList = await SenatorData.find({
-          senateId: senatorId,
-        }).lean();
-        const currentState = existingSenator.toObject();
-        delete currentState._id;
-        delete currentState.createdAt;
-        delete currentState.updatedAt;
-        delete currentState.__v;
-        delete currentState.history;
-        currentState.senatorData = senatorDataList;
-
-        const historyEntry = {
-          oldData: currentState,
-          timestamp: new Date(),
-          actionType: "update",
-        };
-
-        updateData.$push = {
-          history: historyEntry,
-        };
-
-        updateData.$set.snapshotSource = "edited";
-      } else if (existingSenator.snapshotSource === "deleted_pending_update") {
-        updateData.$set.snapshotSource = "edited";
-      }
-
-      const updatedSenator = await Senator.findByIdAndUpdate(
-        senatorId,
-        updateData,
-        { new: true }
-      );
-
-      if (!updatedSenator) {
-        return res.status(404).json({ message: "Senator not found" });
-      }
-
-      res.status(200).json({
-        message: "Senator updated successfully",
-        senator: updatedSenator,
-      });
-    } catch (error) {
-      res.status(500).json({
-        message: "Error updating senator",
-        error: error.message,
-      });
+    if (!existingSenator) {
+      return res.status(404).json({ message: "Senator not found" });
     }
+
+    const appUrl = process.env.BASE_URL || `${req.protocol}://${req.get("host")}`;
+    const userId = req.user?._id || null;
+
+    const updateData = {
+      $set: {
+        ...req.body,
+        modifiedBy: userId,
+        modifiedAt: new Date(),
+      },
+    };
+
+    if (req.file) {
+      const filename = req.file.filename;
+      const photoUrl = `${appUrl}/uploads/photos/senator/${filename}`;
+      updateData.$set.photo = photoUrl;
+    }
+
+    if (typeof updateData.$set.editedFields === "string") {
+      try {
+        updateData.$set.editedFields = JSON.parse(updateData.$set.editedFields);
+      } catch {
+        console.warn("Invalid JSON in editedFields");
+      }
+    }
+
+    if (typeof updateData.$set.fieldEditors === "string") {
+      try {
+        updateData.$set.fieldEditors = JSON.parse(updateData.$set.fieldEditors);
+      } catch {
+        console.warn("Invalid JSON in fieldEditors");
+      }
+    }
+
+    const oldSnapshot = {
+      name: existingSenator.name,
+      state: existingSenator.state,
+      party: existingSenator.party,
+      photo: existingSenator.photo,
+      status: existingSenator.status,
+      publishStatus: existingSenator.publishStatus,
+      editedFields: existingSenator.editedFields,
+      fieldEditors: existingSenator.fieldEditors,
+    };
+
+    const updatedSenator = await Senator.findByIdAndUpdate(senatorId, updateData, {
+      new: true,
+    });
+
+    if (!updatedSenator) {
+      return res.status(404).json({ message: "Senator not found after update" });
+    }
+
+    // Track which fields changed
+    const changedFields = [];
+    for (const key in updateData.$set) {
+      if (JSON.stringify(updateData.$set[key]) !== JSON.stringify(oldSnapshot[key])) {
+        changedFields.push(key);
+      }
+    }
+
+    // Optional: store change history (if applicable)
+    const historyEntry = {
+      senator: senatorId,
+      modifiedBy: userId,
+      modifiedAt: new Date(),
+      changes: changedFields.map((field) => ({
+        field,
+        oldValue: oldSnapshot[field],
+        newValue: updateData.$set[field],
+      })),
+    };
+    await SenatorData.create(historyEntry);
+
+    const responseData = updatedSenator.toObject();
+    if (responseData.photo && !responseData.photo.startsWith("http")) {
+      responseData.photo = `${appUrl}${responseData.photo}`;
+    }
+
+    res.status(200).json({
+      message: "Senator updated successfully",
+      senator: responseData,
+    });
+  } catch (error) {
+    console.error("Error updating senator:", error);
+    res.status(500).json({
+      message: "Error updating senator",
+      error: error.message,
+    });
   }
+}
+
+
 
   static async discardSenatorChanges(req, res) {
     try {
