@@ -19,7 +19,8 @@ class ImageDownloader {
       }
  
       if (fs.existsSync(filePath)) {
-        return `${this.baseUrl}/uploads/photos/${typeFolder}/${fileName}`; 
+        return `${this.baseUrl}/images/${typeFolder}/${fileName}`;
+
       }
      
       const response = await axios({

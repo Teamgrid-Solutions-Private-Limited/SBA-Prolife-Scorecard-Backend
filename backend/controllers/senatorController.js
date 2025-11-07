@@ -245,7 +245,7 @@ static async updateSenator(req, res) {
 
     if (req.file) {
       const filename = req.file.filename;
-      const photoUrl = `${appUrl}/uploads/photos/senator/${filename}`;
+      const photoUrl = `${appUrl}/images/senator/${req.file.filename}`;
       updateData.$set.photo = photoUrl;
     }
 

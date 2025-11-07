@@ -2,13 +2,12 @@ const House = require("../models/representativeSchema");
 const RepresentativeData = require("../models/representativeDataSchema");
 const upload = require("../middlewares/fileUploads");
 
-
 class representativeController {
   static createHouse = async (req, res) => {
     try {
       const { name, district, party, status } = req.body;
 
-      const photo = req.file ? req.file.filename : null; 
+      const photo = req.file ? req.file.filename : null;
 
       const newHouse = new House({
         name,
@@ -169,104 +168,104 @@ class representativeController {
       });
     }
   }
-static async updateHouse(req, res) {
-  try {
-    const houseId = req.params.id;
-    const existingHouse = await House.findById(houseId);
+  static async updateHouse(req, res) {
+    try {
+      const houseId = req.params.id;
+      const existingHouse = await House.findById(houseId);
 
-    if (!existingHouse) {
-      return res.status(404).json({ message: "House not found" });
-    }
+      if (!existingHouse) {
+        return res.status(404).json({ message: "House not found" });
+      }
 
-    const userId = req.user?._id || null;
-    const updateData = {
-      $set: {
-        ...req.body,
-        modifiedBy: userId,
-        modifiedAt: new Date(),
-      },
-    };
-
-    const baseUrl =
-      process.env.BASE_URL && process.env.BASE_URL.trim() !== ""
-        ? process.env.BASE_URL
-        : `${req.protocol}://${req.get("host")}`;
-    if (req.file) {
-      updateData.$set.photo = `${baseUrl}/uploads/photos/house/${req.file.filename}`;
-    }
-    if (typeof updateData.$set.editedFields === "string") {
-      updateData.$set.editedFields = JSON.parse(updateData.$set.editedFields);
-    }
-    if (typeof updateData.$set.fieldEditors === "string") {
-      updateData.$set.fieldEditors = JSON.parse(updateData.$set.fieldEditors);
-    }
-
-    if (updateData.$set.publishStatus === "published") {
-      updateData.$set.editedFields = [];
-      updateData.$set.fieldEditors = {};
-      updateData.$set.history = [];
-    }
-
-    const canTakeSnapshot =
-      !existingHouse.history ||
-      existingHouse.history.length === 0 ||
-      existingHouse.snapshotSource === "edited";
-
-    const noHistory =
-      !existingHouse.history || existingHouse.history.length === 0;
-
-    if (
-      canTakeSnapshot &&
-      updateData.$set.publishStatus !== "published" &&
-      noHistory
-    ) {
-      const representativeDataList = await RepresentativeData.find({
-        houseId: houseId,
-      }).lean();
-
-      const currentState = existingHouse.toObject();
-      delete currentState._id;
-      delete currentState.createdAt;
-      delete currentState.updatedAt;
-      delete currentState.__v;
-      delete currentState.history;
-      currentState.representativeData = representativeDataList;
-
-      const historyEntry = {
-        oldData: currentState,
-        timestamp: new Date(),
-        actionType: "update",
+      const userId = req.user?._id || null;
+      const updateData = {
+        $set: {
+          ...req.body,
+          modifiedBy: userId,
+          modifiedAt: new Date(),
+        },
       };
 
-      updateData.$push = { history: historyEntry };
-      updateData.$set.snapshotSource = "edited";
-    } else if (existingHouse.snapshotSource === "deleted_pending_update") {
-      updateData.$set.snapshotSource = "edited";
+      const baseUrl =
+        process.env.BASE_URL && process.env.BASE_URL.trim() !== ""
+          ? process.env.BASE_URL
+          : `${req.protocol}://${req.get("host")}`;
+      if (req.file) {
+        updateData.$set.photo = `${baseUrl}/images/house/${req.file.filename}`;
+      }
+      if (typeof updateData.$set.editedFields === "string") {
+        updateData.$set.editedFields = JSON.parse(updateData.$set.editedFields);
+      }
+      if (typeof updateData.$set.fieldEditors === "string") {
+        updateData.$set.fieldEditors = JSON.parse(updateData.$set.fieldEditors);
+      }
+
+      if (updateData.$set.publishStatus === "published") {
+        updateData.$set.editedFields = [];
+        updateData.$set.fieldEditors = {};
+        updateData.$set.history = [];
+      }
+
+      const canTakeSnapshot =
+        !existingHouse.history ||
+        existingHouse.history.length === 0 ||
+        existingHouse.snapshotSource === "edited";
+
+      const noHistory =
+        !existingHouse.history || existingHouse.history.length === 0;
+
+      if (
+        canTakeSnapshot &&
+        updateData.$set.publishStatus !== "published" &&
+        noHistory
+      ) {
+        const representativeDataList = await RepresentativeData.find({
+          houseId: houseId,
+        }).lean();
+
+        const currentState = existingHouse.toObject();
+        delete currentState._id;
+        delete currentState.createdAt;
+        delete currentState.updatedAt;
+        delete currentState.__v;
+        delete currentState.history;
+        currentState.representativeData = representativeDataList;
+
+        const historyEntry = {
+          oldData: currentState,
+          timestamp: new Date(),
+          actionType: "update",
+        };
+
+        updateData.$push = { history: historyEntry };
+        updateData.$set.snapshotSource = "edited";
+      } else if (existingHouse.snapshotSource === "deleted_pending_update") {
+        updateData.$set.snapshotSource = "edited";
+      }
+
+      // ✅ Perform the update
+      const updatedHouse = await House.findByIdAndUpdate(houseId, updateData, {
+        new: true,
+      });
+
+      if (!updatedHouse) {
+        return res
+          .status(404)
+          .json({ message: "House not found after update" });
+      }
+
+      res.status(200).json({
+        message: "House updated successfully",
+        house: updatedHouse,
+      });
+    } catch (error) {
+      console.error("Error updating house:", error);
+      res.status(500).json({
+        message: "Error updating house",
+        error: error.message,
+      });
     }
-
-    // ✅ Perform the update
-    const updatedHouse = await House.findByIdAndUpdate(houseId, updateData, {
-      new: true,
-    });
-
-    if (!updatedHouse) {
-      return res.status(404).json({ message: "House not found after update" });
-    }
-
-    res.status(200).json({
-      message: "House updated successfully",
-      house: updatedHouse,
-    });
-  } catch (error) {
-    console.error("Error updating house:", error);
-    res.status(500).json({
-      message: "Error updating house",
-      error: error.message,
-    });
   }
-}
-
-
 
   static async discardHouseChanges(req, res) {
     try {
