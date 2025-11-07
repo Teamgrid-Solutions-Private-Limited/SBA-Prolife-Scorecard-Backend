@@ -20,7 +20,7 @@ const { performBulkUpdate } = require("../helper/bulkUpdateHelper");
 const { buildSupportData } = require("../helper/supportDataHelper");
 const { discardChanges } = require("../helper/discardHelper");
 const { getFileUrl } = require("../helper/filePath");
-const { makeEditorKey, deleteFieldEditor, cleanupPersonAfterDelete } = require("../helper/editorKeyService");
+const { makeEditorKey, deleteFieldEditor, cleanupPersonAfterDelete ,migrateTitleForScoreTypes} = require("../helper/editorKeyService");
 
 const BASE = process.env.QUORUM_BASE_URL || "https://www.quorum.us";
 const API_KEY = process.env.QUORUM_API_KEY;
@@ -453,7 +453,15 @@ class activityController {
         if (!updatedActivity) {
           return res.status(404).json({ message: "Activity not found" });
         }
-
+ // migrate editedFields & fieldEditors when activity title changes
+       if (existingActivity.title && existingActivity.title !== updatedActivity.title) {
+         await migrateTitleForScoreTypes({
+           oldTitle: existingActivity.title,
+           newTitle: updatedActivity.title,
+           fieldTypes: ["activitiesScore"],
+           personModels: [Senator, Representative],
+         });
+       }
         res.status(200).json({
           message: "Activity updated successfully",
           info: updatedActivity,

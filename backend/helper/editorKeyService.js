@@ -1,38 +1,19 @@
 function makeEditorKey(title, fieldType = "votesScore") {
-  if (title.includes("H.R.")) {
-    return (
-      fieldType +
-      "_" +
-      title
-        .replace(/H\.R\.\s*(\d+):/g, "H_R_$1_")
-        .replace(/'/g, "")
-        .replace(/\s+/g, "_")
-        .replace(/[^a-zA-Z0-9_]/g, "")
-    );
-  } else if (title.includes("S.")) {
-    return (
-      fieldType +
-      "_" +
-      title
-        .replace(/S\.\s*(\d+):/g, "S_$1_")
-        .replace(/'/g, "")
-        .replace(/\s+/g, "_")
-        .replace(/[^a-zA-Z0-9_]/g, "")
-    );
-  } else {
-    return (
-      fieldType +
-      "_" +
-      title
-        .replace(/\./g, "")
-        .replace(/:/g, "")
-        .replace(/'/g, "")
-        .replace(/\s+/g, "_")
-        .replace(/[^a-zA-Z0-9_]/g, "")
-    );
-  }
-}
+  if (!title || typeof title !== "string") return fieldType;
 
+  const normalize = (s) =>
+    String(s)
+      .replace(/['"]/g, "")
+      .replace(/H\.R\.\s*(\d+):?/gi, "H_R_$1_")
+      .replace(/S\.\s*(\d+):?/gi, "S_$1_")
+      .replace(/[-–—]/g, "_")
+      .replace(/[:.]/g, "_")
+      .replace(/\s+/g, "_")
+      .replace(/[^A-Za-z0-9_]+/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/^_+|_+$/g, "");
+  return `${fieldType}_${normalize(title)}`;
+}
 function deleteFieldEditor(fieldEditorsPlain, actualKeys, targetKey) {
   if (fieldEditorsPlain[targetKey]) {
     delete fieldEditorsPlain[targetKey];
@@ -79,20 +60,17 @@ async function cleanupPersonAfterDelete({
   removedFields = [],
   historyCleared = false,
 }) {
-   const hasMatch = (person.editedFields || []).some(
+  const hasMatch = (person.editedFields || []).some(
     (f) => f.name === title && f.field && f.field.includes(fieldType)
   );
   if (!hasMatch) {
-    return; // skip — prevents duplicate cleanup and logs
+    return;
   }
-  // Remove editedFields for this title/fieldType
   const beforeCount = person.editedFields?.length || 0;
   person.editedFields = (person.editedFields || []).filter(
     (f) => !(f.name === title && f.field && f.field.includes(fieldType))
   );
   const removedCount = beforeCount - person.editedFields.length;
-
-  // Remove fieldEditor key
   const editorKey = makeEditorKey(title, fieldType);
   let fieldEditorsPlain = {};
   if (person.fieldEditors) {
@@ -112,15 +90,13 @@ async function cleanupPersonAfterDelete({
   if (fieldEditorDeleted) {
     person.fieldEditors = fieldEditorsPlain;
   }
-
-  // Restore publishStatus and history if needed
   if (person.editedFields.length === 0) {
     if (Array.isArray(person.history) && person.history.length > 0) {
       const lastHistory = person.history[person.history.length - 1];
       const restoredStatus =
         lastHistory.oldData?.publishStatus || lastHistory.publishStatus;
-         if (restoredStatus === "published") {
-  }
+      if (restoredStatus === "published") {
+      }
 
       if (restoredStatus) {
         person.publishStatus = restoredStatus;
@@ -137,22 +113,91 @@ async function cleanupPersonAfterDelete({
       person.publishStatus = "draft";
     }
   }
-
-  // Prepare updateData
   const updateData = {};
   if (removedCount > 0) updateData.editedFields = person.editedFields;
   if (fieldEditorDeleted) updateData.fieldEditors = person.fieldEditors;
   if (person.publishStatus !== undefined) updateData.publishStatus = person.publishStatus;
   if (historyCleared) updateData.history = [];
 
-  // Update in DB if needed
   if (Object.keys(updateData).length > 0) {
-      if (updateData.publishStatus === "published") {
-  }
+    if (updateData.publishStatus === "published") {
+    }
 
 
     await model.updateOne({ _id: person._id }, { $set: updateData });
   }
 }
+async function migrateTitleForScoreTypes({
+  oldTitle,
+  newTitle,
+  fieldTypes = ["votesScore"],
+  personModels = [],
+}) {
+  if (!oldTitle || !newTitle || !personModels.length) return;
 
-module.exports = { makeEditorKey, deleteFieldEditor, cleanupPersonAfterDelete };
+  for (const Model of personModels) {
+    try {
+      const persons = await Model.find({
+        "editedFields.name": oldTitle,
+        "editedFields.field": { $in: fieldTypes }
+      });
+
+      for (const person of persons) {
+        let changed = false;
+        if (Array.isArray(person.editedFields)) {
+          person.editedFields = person.editedFields.map((ef) => {
+            if (ef && ef.name === oldTitle) {
+              const fields = Array.isArray(ef.field) ? ef.field : [ef.field];
+              const hasMatchingField = fields.some(field =>
+                fieldTypes.some(ft => field && field.includes(ft))
+              );
+
+              if (hasMatchingField) {
+                changed = true;
+                return { ...ef, name: newTitle };
+              }
+            }
+            return ef;
+          });
+        }
+        const plain = person.fieldEditors ?
+          JSON.parse(JSON.stringify(person.fieldEditors)) : {};
+
+        for (const fieldType of fieldTypes) {
+          const oldKey = makeEditorKey(oldTitle, fieldType);
+          const newKey = makeEditorKey(newTitle, fieldType);
+          if (plain[oldKey]) {
+            plain[newKey] = plain[oldKey];
+            delete plain[oldKey];
+            changed = true;
+          }
+          const actualKeys = Object.keys(plain);
+          const caseInsensitiveMatch = actualKeys.find(
+            key => key.toLowerCase() === oldKey.toLowerCase()
+          );
+
+          if (caseInsensitiveMatch && caseInsensitiveMatch !== oldKey) {
+            plain[newKey] = plain[caseInsensitiveMatch];
+            delete plain[caseInsensitiveMatch];
+            changed = true;
+          }
+        }
+
+        if (changed) {
+          await Model.updateOne(
+            { _id: person._id },
+            {
+              $set: {
+                editedFields: person.editedFields,
+                fieldEditors: plain
+              }
+            }
+          );
+        }
+      }
+    } catch (e) {
+      console.warn(`migrateTitleForScoreTypes: error for model ${Model.modelName}:`, e.message);
+    }
+  }
+}
+module.exports = { makeEditorKey, deleteFieldEditor, cleanupPersonAfterDelete, migrateTitleForScoreTypes };

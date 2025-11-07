@@ -151,15 +151,10 @@ class houseDataController {
         }
 
         if (!documentToDelete) {
-          await session.abortTransaction();
-          session.endSession();
           return res.status(404).json({ message: "House data not found" });
         }
 
-        await HouseData.findByIdAndDelete(req.params.id, { session });
-
-        await session.commitTransaction();
-        session.endSession();
+        await HouseData.findByIdAndDelete(req.params.id);
 
         return res.status(200).json({
           message: "House data deleted because termId was null/empty",
@@ -167,23 +162,15 @@ class houseDataController {
         });
       }
 
-      //  Optional: Validate houseId
+      // Optional: Validate houseId
       if (!houseId || houseId.toString().trim() === "") {
-        await session.abortTransaction();
-        session.endSession();
         return res.status(400).json({ message: "houseId is required" });
       }
 
-      //  Find the existing document
-
-      const existing = await HouseData.findById(req.params.id).session(session);
-
-      if (existing) {
-      }
+      // Find the existing document
+      const existing = await HouseData.findById(req.params.id);
 
       if (!existing) {
-        await session.abortTransaction();
-        session.endSession();
         return res.status(404).json({ message: "House data not found" });
       }
 
@@ -196,11 +183,9 @@ class houseDataController {
           houseId: existing.houseId, // Use existing houseId to avoid changing it
           termId: termId,
           _id: { $ne: req.params.id },
-        }).session(session);
+        });
 
         if (duplicateHouseData) {
-          await session.abortTransaction();
-          session.endSession();
           return res.status(409).json({
             message:
               "House data already exists for this representative and term",
@@ -209,45 +194,36 @@ class houseDataController {
         }
       }
 
-      //  Apply the updates
+      // Apply the updates
       Object.assign(existing, req.body);
 
-      //  If currentTerm is being set to true, ensure no other currentTerm exists
+      // If currentTerm is being set to true, ensure no other currentTerm exists
       if (existing.currentTerm === true) {
         const existingCurrentTerm = await HouseData.findOne({
           houseId: existing.houseId,
           currentTerm: true,
           _id: { $ne: req.params.id },
-        }).session(session);
+        });
 
         if (existingCurrentTerm) {
           // Automatically update the existing currentTerm to false
-          await HouseData.findByIdAndUpdate(
-            existingCurrentTerm._id,
-            { currentTerm: false },
-            { session }
-          );
+          await HouseData.findByIdAndUpdate(existingCurrentTerm._id, {
+            currentTerm: false,
+          });
         }
       }
 
-      //  Save to trigger schema validation
-      const updated = await existing.save({ session });
-
-      await session.commitTransaction();
-      session.endSession();
+      // Save to trigger schema validation
+      const updated = await existing.save();
 
       res.status(200).json({
         message: "House data updated successfully",
         data: updated,
       });
     } catch (error) {
-      await session.abortTransaction();
-      session.endSession();
-
-      //  Handle schema validation errors
+      // Handle schema validation errors
       if (error.name === "ValidationError") {
         const messages = Object.values(error.errors).map((err) => err.message);
-
         return res.status(400).json({ message: messages.join(", ") });
       }
 
