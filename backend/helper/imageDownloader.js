@@ -34,7 +34,7 @@ class ImageDownloader {
  
       return new Promise((resolve, reject) => {
         writer.on('finish', () => {
-          resolve(`${this.baseUrl}/uploads/photos/${typeFolder}/${fileName}`);
+          resolve(`${this.baseUrl}/images/${typeFolder}/${fileName}`);
         });
         writer.on('error', (error) => {
           console.error(`Error writing file ${filePath}:`, error);
