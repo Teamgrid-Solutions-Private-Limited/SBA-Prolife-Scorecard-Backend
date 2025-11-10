@@ -232,7 +232,7 @@ static async updateSenator(req, res) {
       return res.status(404).json({ message: "Senator not found" });
     }
 
-    const appUrl = process.env.BASE_URL || `${req.protocol}://${req.get("host")}`;
+    // const appUrl = process.env.BASE_URL || `${req.protocol}://${req.get("host")}`;
     const userId = req.user?._id || null;
 
     const updateData = {
@@ -245,7 +245,7 @@ static async updateSenator(req, res) {
 
     if (req.file) {
       const filename = req.file.filename;
-      const photoUrl = `${appUrl}/images/senator/${req.file.filename}`;
+      const photoUrl = `${req.file.filename}`;
       updateData.$set.photo = photoUrl;
     }
 
@@ -307,7 +307,7 @@ static async updateSenator(req, res) {
 
     const responseData = updatedSenator.toObject();
     if (responseData.photo && !responseData.photo.startsWith("http")) {
-      responseData.photo = `${appUrl}${responseData.photo}`;
+      responseData.photo = `${responseData.photo}`;
     }
 
     res.status(200).json({

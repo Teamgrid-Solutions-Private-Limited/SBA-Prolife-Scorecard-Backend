@@ -19,7 +19,7 @@ class ImageDownloader {
       }
  
       if (fs.existsSync(filePath)) {
-        return `${this.baseUrl}/images/${typeFolder}/${fileName}`;
+        return `${fileName}`;
 
       }
      
@@ -34,7 +34,7 @@ class ImageDownloader {
  
       return new Promise((resolve, reject) => {
         writer.on('finish', () => {
-          resolve(`${this.baseUrl}/images/${typeFolder}/${fileName}`);
+          resolve(`${fileName}`);
         });
         writer.on('error', (error) => {
           console.error(`Error writing file ${filePath}:`, error);

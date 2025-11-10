@@ -186,12 +186,8 @@ class representativeController {
         },
       };
 
-      const baseUrl =
-        process.env.BASE_URL && process.env.BASE_URL.trim() !== ""
-          ? process.env.BASE_URL
-          : `${req.protocol}://${req.get("host")}`;
       if (req.file) {
-        updateData.$set.photo = `${baseUrl}/images/house/${req.file.filename}`;
+        updateData.$set.photo = `${req.file.filename}`;
       }
       if (typeof updateData.$set.editedFields === "string") {
         updateData.$set.editedFields = JSON.parse(updateData.$set.editedFields);
