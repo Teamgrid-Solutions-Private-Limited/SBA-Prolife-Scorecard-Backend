@@ -5,7 +5,7 @@ const path = require('path');
 class ImageDownloader {
   constructor() {
     this.basePath = path.join(__dirname, '../uploads');
-    this.baseUrl = process.env.BASE_URL;
+   
   }
  
   async downloadImage(imageUrl, type, fileName) {
