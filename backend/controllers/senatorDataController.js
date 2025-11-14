@@ -259,7 +259,6 @@ class senatorDataController {
     }
   }
 
- 
   static async SenatorDataBySenatorId(req, res) {
     try {
       const senateId = req.params.senatorId;
@@ -282,6 +281,7 @@ class senatorDataController {
           longDesc: doc.longDesc || null,
           rollCall: doc.rollCall || null,
           readMore: doc.readMore || null,
+          sbaPosition: doc.sbaPosition || null,
         };
 
       const getSenatorDetails = (sourceData, isHistorical = false) => ({
@@ -369,32 +369,32 @@ class senatorDataController {
             .populate("termId", "_id name startYear endYear congresses")
             .populate(
               "votesScore.voteId",
-              "_id title shortDesc longDesc rollCall readMore"
+              "_id title shortDesc longDesc rollCall readMore sbaPosition"
             )
             .populate(
               // ADDED: populate pastVotesScore
               "pastVotesScore.voteId",
-              "_id title shortDesc longDesc rollCall readMore"
+              "_id title shortDesc longDesc rollCall readMore sbaPosition"
             )
             .populate(
               "activitiesScore.activityId",
-              "_id title shortDesc longDesc rollCall readMore"
+              "_id title shortDesc longDesc rollCall readMore sbaPosition"
             )
             .lean(),
           SenatorData.find({ senateId, currentTerm: { $ne: true } })
             .populate("termId", "_id name startYear endYear congresses")
             .populate(
               "votesScore.voteId",
-              "_id title shortDesc longDesc rollCall readMore"
+              "_id title shortDesc longDesc rollCall readMore sbaPosition"
             )
             .populate(
               // ADDED: populate pastVotesScore
               "pastVotesScore.voteId",
-              "_id title shortDesc longDesc rollCall readMore"
+              "_id title shortDesc longDesc rollCall readMore sbaPosition"
             )
             .populate(
               "activitiesScore.activityId",
-              "_id title shortDesc longDesc rollCall readMore"
+              "_id title shortDesc longDesc rollCall readMore sbaPosition"
             )
             .sort({ "termId.startYear": -1, createdAt: -1 })
             .lean(),

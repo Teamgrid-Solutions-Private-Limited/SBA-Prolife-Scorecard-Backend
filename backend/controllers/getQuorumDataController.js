@@ -9,6 +9,7 @@ const SenatorData = require("../models/senatorDataSchema");
 const RepresentativeData = require("../models/representativeDataSchema");
 const ActivityController = require("../controllers/activityController");
 const mongoose = require("mongoose");
+const  imageDownloader  = require("../helper/imageDownloader");
 class CircuitBreaker {
   constructor(host) {
     this.host = host;
@@ -434,45 +435,70 @@ class QuorumDataController {
   }
 
   async filterData(type, data) {
-
     if (!data || data.length === 0) {
       return [];
     }
-
+ 
     const partyMap = { 1: "democrat", 2: "republican", 3: "independent" };
     const [stateMap, districtMap] = await Promise.all([
       this.fetchStateData(),
       this.fetchDistrictData(),
     ]);
-
-
-    const mappings = {
-      senator: (item) =>
-        item.title === "US Senator"
-          ? {
-            senatorId: item.id,
-            name: `Sen. ${item.firstname || ""} ${item.middlename || ""} ${item.lastname || ""
-              }`.trim(),
-            party: partyMap[item.most_recent_party] || "Unknown",
-            photo: item.high_quality_image_url || item.image_url || null,
-            state: stateMap[item.most_recent_state] || "Unknown",
-          }
-          : null,
-
-      representative: (item) =>
-        item.title === "US Representative"
-          ? {
-            repId: item.id,
-            name: `Rep. ${item.firstname || ""} ${item.middlename || ""} ${item.lastname || ""
-              }`.trim(),
-            party: partyMap[item.most_recent_party] || "Unknown",
-            photo: item.high_quality_image_url || item.image_url || null,
-            district: formatDistrict(
-              districtMap[item.most_recent_district] || "Unknown"
-            ),
-          }
-          : null,
-
+ 
+   const mappings = {
+  senator: async (item) => {
+    if (item.title === "US Senator") {
+      let photoPath = null;
+     
+      const imageUrl = item.high_quality_image_url || item.image_url;
+      if (imageUrl) {
+        try {
+          const fileName = imageDownloader.generateFileName('senator', item.id, imageUrl);
+          photoPath = await imageDownloader.downloadImage(imageUrl, 'senator', fileName);
+        } catch (error) {
+          console.error(`Failed to download image for senator ${item.id}:`, error.message);
+          photoPath = null;
+        }
+      }
+ 
+      return {
+        senatorId: item.id,
+        name: `Sen. ${item.firstname || ""} ${item.middlename || ""} ${item.lastname || ""}`.trim(),
+        party: partyMap[item.most_recent_party] || "Unknown",
+        photo: photoPath,
+        state: stateMap[item.most_recent_state] || "Unknown",
+      };
+    }
+    return null;
+  },
+ 
+  representative: async (item) => {
+    if (item.title === "US Representative") {
+      let photoPath = null;
+     
+      const imageUrl = item.high_quality_image_url || item.image_url;
+      if (imageUrl) {
+        try {
+          const fileName = imageDownloader.generateFileName('representative', item.id, imageUrl);
+          photoPath = await imageDownloader.downloadImage(imageUrl, 'representative', fileName);
+        } catch (error) {
+          console.error(`Failed to download image for rep ${item.id}:`, error.message);
+          photoPath = null;
+        }
+      }
+ 
+      return {
+        repId: item.id,
+        name: `Rep. ${item.firstname || ""} ${item.middlename || ""} ${item.lastname || ""}`.trim(),
+        party: partyMap[item.most_recent_party] || "Unknown",
+        photo: photoPath,
+        district: formatDistrict(
+          districtMap[item.most_recent_district] || "Unknown"
+        ),
+      };
+    }
+    return null;
+  },
       bills: (item) => ({
         quorumId: item.id,
         title: item.title || "Unknown",
@@ -480,21 +506,26 @@ class QuorumDataController {
         date: item.introduced_date || "Unknown",
       }),
     };
+ 
     const BATCH_SIZE = 250;
     const filtered = [];
-
+ 
     for (let i = 0; i < data.length; i += BATCH_SIZE) {
       const batch = data.slice(i, i + BATCH_SIZE);
-      const batchResult = batch.map(mappings[type]).filter(Boolean);
-      filtered.push(...batchResult);
+     
+      const batchPromises = batch.map(mappings[type]);
+      const batchResult = await Promise.all(batchPromises);
+     
+      filtered.push(...batchResult.filter(Boolean));
+     
       if (data.length > 500 && i % 500 === 0) {
-
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
-
+ 
     return filtered;
   }
-
+ 
   async saveData(req, res) {
     try {
       const { type, additionalParams } = req.body;

@@ -388,7 +388,7 @@ class activityController {
         updateData.modifiedAt = new Date();
 
         if (req.file) {
-          updateData.readMore = `/uploads/${req.file.filename}`;
+          updateData.readMore = `/uploads/documents/${req.file.filename}`;
         }
         if (req.body.discardChanges === "true") {
           return activityController.discardActivityChanges(req, res);
