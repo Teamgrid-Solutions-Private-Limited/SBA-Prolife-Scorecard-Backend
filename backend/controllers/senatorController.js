@@ -164,8 +164,8 @@ class senatorController {
       res.status(200).json({
         message: "Retrieved successfully",
         info: senatorsWithRatings,
-        totalCount, 
-        fetchedCount, 
+        totalCount,
+        fetchedCount,
         page: pageNum,
         totalPages,
         hasNextPage: pageNum < totalPages,
@@ -231,7 +231,11 @@ class senatorController {
       if (!existingSenator) {
         return res.status(404).json({ message: "Senator not found" });
       }
+
+      // Safe check for req.user
       const userId = req.user?._id || null;
+
+      // Base update structure
       const updateData = {
         $set: {
           ...req.body,
@@ -239,22 +243,29 @@ class senatorController {
           modifiedAt: new Date(),
         },
       };
+
+      // Handle file upload
       if (req.file) {
         updateData.$set.photo = req.file.filename;
       }
+
+      // Parse fields if needed
       if (typeof updateData.$set.editedFields === "string") {
         updateData.$set.editedFields = JSON.parse(updateData.$set.editedFields);
       }
       if (typeof updateData.$set.fieldEditors === "string") {
         updateData.$set.fieldEditors = JSON.parse(updateData.$set.fieldEditors);
       }
+
+      // Clear fields if publishing
       if (updateData.$set.publishStatus === "published") {
         updateData.$set.editedFields = [];
         updateData.$set.fieldEditors = {};
-        updateData.$set.history = []; 
+        updateData.$set.history = []; // clear history completely on publish
       }
 
-    const canTakeSnapshot =
+      // Determine if we should take a snapshot
+      const canTakeSnapshot =
         !existingSenator.history ||
         existingSenator.history.length === 0 ||
         existingSenator.snapshotSource === "edited";
@@ -268,6 +279,8 @@ class senatorController {
           senateId: senatorId,
         }).lean();
         const currentState = existingSenator.toObject();
+
+        // Clean up state
         delete currentState._id;
         delete currentState.createdAt;
         delete currentState.updatedAt;

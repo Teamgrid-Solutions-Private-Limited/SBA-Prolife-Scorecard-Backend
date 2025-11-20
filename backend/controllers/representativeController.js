@@ -7,7 +7,7 @@ class representativeController {
     try {
       const { name, district, party, status } = req.body;
 
-      const photo = req.file ? req.file.filename : null; 
+      const photo = req.file ? req.file.filename : null;
 
       const newHouse = new House({
         name,
@@ -176,6 +176,7 @@ class representativeController {
       if (!existingHouse) {
         return res.status(404).json({ message: "House not found" });
       }
+
       const userId = req.user?._id || null;
       const updateData = {
         $set: {
@@ -184,8 +185,9 @@ class representativeController {
           modifiedAt: new Date(),
         },
       };
+
       if (req.file) {
-        updateData.$set.photo = req.file.filename;
+        updateData.$set.photo = `${req.file.filename}`;
       }
       if (typeof updateData.$set.editedFields === "string") {
         updateData.$set.editedFields = JSON.parse(updateData.$set.editedFields);
@@ -193,17 +195,21 @@ class representativeController {
       if (typeof updateData.$set.fieldEditors === "string") {
         updateData.$set.fieldEditors = JSON.parse(updateData.$set.fieldEditors);
       }
+
       if (updateData.$set.publishStatus === "published") {
         updateData.$set.editedFields = [];
         updateData.$set.fieldEditors = {};
-        updateData.$set.history = []; 
+        updateData.$set.history = [];
       }
+
       const canTakeSnapshot =
         !existingHouse.history ||
         existingHouse.history.length === 0 ||
         existingHouse.snapshotSource === "edited";
+
       const noHistory =
         !existingHouse.history || existingHouse.history.length === 0;
+
       if (
         canTakeSnapshot &&
         updateData.$set.publishStatus !== "published" &&
@@ -212,6 +218,7 @@ class representativeController {
         const representativeDataList = await RepresentativeData.find({
           houseId: houseId,
         }).lean();
+
         const currentState = existingHouse.toObject();
         delete currentState._id;
         delete currentState.createdAt;
@@ -226,15 +233,13 @@ class representativeController {
           actionType: "update",
         };
 
-        updateData.$push = {
-          history: historyEntry,
-        };
-
+        updateData.$push = { history: historyEntry };
         updateData.$set.snapshotSource = "edited";
       } else if (existingHouse.snapshotSource === "deleted_pending_update") {
         updateData.$set.snapshotSource = "edited";
       }
 
+      // ✅ Perform the update
       const updatedHouse = await House.findByIdAndUpdate(houseId, updateData, {
         new: true,
       });
@@ -257,6 +262,7 @@ class representativeController {
       });
     }
   }
+
   static async discardHouseChanges(req, res) {
     try {
       const { discardChanges } = require("../helper/discardHelper");
