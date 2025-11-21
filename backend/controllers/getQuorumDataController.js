@@ -9,7 +9,8 @@ const SenatorData = require("../models/senatorDataSchema");
 const RepresentativeData = require("../models/representativeDataSchema");
 const ActivityController = require("../controllers/activityController");
 const mongoose = require("mongoose");
-const  imageDownloader  = require("../helper/imageDownloader");
+const imageDownloader = require("../helper/imageDownloader");
+
 class CircuitBreaker {
   constructor(host) {
     this.host = host;
@@ -18,7 +19,7 @@ class CircuitBreaker {
     this.successCount = 0;
     this.lastFailureTime = 0;
     this.failureThreshold = 3;
-    this.resetTimeout = 30000; 
+    this.resetTimeout = 30000;
     this.successThreshold = 2;
   }
 
@@ -164,12 +165,14 @@ class QuorumDataController {
     representative:
       process.env.QUORUM_REP_API || "https://www.quorum.us/api/newperson/",
     bills: process.env.BILL_API_URL || "https://www.quorum.us/api/newbill/",
+    votes: process.env.VOTE_API_URL || "https://www.quorum.us/api/vote/",
   };
 
   static MODELS = {
     senator: { model: Senator, idField: "senatorId" },
     representative: { model: Representative, idField: "repId" },
     bills: { model: Bill, idField: "quorumId" },
+    votes: { model: Bill, idField: "quorumId" },
   };
   async fetchFromApi(url, params, cacheKey) {
     if (cacheKey) {
@@ -247,21 +250,28 @@ class QuorumDataController {
   async fetchData(type, additionalParams = {}) {
     if (!QuorumDataController.API_URLS[type])
       throw new Error(`Invalid API type: ${type}`);
+
     const cacheKey = getCacheKey(type, additionalParams);
     const cache = this._dataCache[cacheKey];
     const now = Date.now();
+
     if (
       cache?.data &&
       now - cache.timestamp <
       (this._CACHE_TTL[type] || cacheConfig.CACHE_TTL.DEFAULT)
     ) {
-
+      console.log(
+        `🔄 [${type}] Returning cached data with ${cache.data.length} items`
+      );
       return cache.data;
     }
+
     const circuitBreaker = this._circuitBreakers.quorum;
     if (!circuitBreaker.canRequest()) {
       if (cache?.data) {
-
+        console.log(
+          `🚨 [${type}] Circuit breaker OPEN, returning stale cache with ${cache.data.length} items`
+        );
         return cache.data;
       }
       return [];
@@ -271,38 +281,151 @@ class QuorumDataController {
     const limit =
       {
         senator: 100,
-        representative: 250, 
+        representative: 250,
         bills: 20,
+        votes: 20, // Reduced for votes to avoid timeouts
       }[type] || 20;
+
     const maxRecords =
       {
         senator: 120,
-        representative: 20000, 
+        representative: 20000,
         bills: 20,
+        votes: 20, // Limit votes to 50 for testing
       }[type] || 1000;
 
     try {
+      console.log(
+        `🚀 [${type}] Starting API fetch with params:`,
+        JSON.stringify(additionalParams, null, 2)
+      );
+
+      // Transform search params for more flexible searching
+      const processedParams = { ...additionalParams };
+
+      // For votes, enable partial matching on question field
+      if (type === "votes" && processedParams.question) {
+        console.log(
+          `🔍 [VOTES] Converting exact question search to partial match: "${processedParams.question}"`
+        );
+        // Use __icontains for case-insensitive partial matching
+        processedParams.question__icontains = processedParams.question;
+        delete processedParams.question;
+        console.log(`   Using question__icontains for flexible search`);
+      }
+
+      // For bills, enable partial matching on title field
+      if (type === "bills" && processedParams.title) {
+        console.log(
+          `🔍 [BILLS] Converting exact title search to partial match: "${processedParams.title}"`
+        );
+        // Use __icontains for case-insensitive partial matching
+        processedParams.title__icontains = processedParams.title;
+        delete processedParams.title;
+        console.log(`   Using title__icontains for flexible search`);
+      }
+
       const firstParams = {
         api_key: process.env.QUORUM_API_KEY,
         username: process.env.QUORUM_USERNAME,
         limit,
         offset: 0,
-        ...additionalParams,
+        ...processedParams,
+        ...(type === "bills" || type === "votes" ? { region: "federal" } : {}),
         ...(type === "senator"
           ? { current: true }
           : type === "representative"
             ? { current: true, most_recent_role_type: 2 }
             : {}),
       };
+
+      // Enhanced logging for votes
+      if (type === "votes") {
+        console.log("🎯 [VOTES DEBUG] Vote search configuration:");
+        console.log("   - API URL:", QuorumDataController.API_URLS[type]);
+        console.log(
+          "   - Search params:",
+          JSON.stringify(firstParams, null, 2)
+        );
+        console.log("   - Region:", firstParams.region);
+
+        if (firstParams.question__icontains) {
+          console.log(
+            "🔍 [VOTES DEBUG] Partial question search:",
+            firstParams.question__icontains
+          );
+          console.log(
+            "   - Using flexible matching (case-insensitive contains)"
+          );
+        }
+
+        if (firstParams.number || additionalParams.number) {
+          console.log(
+            "🔢 [VOTES DEBUG] Roll call number search:",
+            firstParams.number || additionalParams.number
+          );
+          console.log("   - Number param:", firstParams.number);
+          console.log("   - Number type:", typeof firstParams.number);
+        }
+
+        if (firstParams.related_bill || additionalParams.related_bill) {
+          console.log(
+            "📋 [VOTES DEBUG] Related bill search:",
+            firstParams.related_bill || additionalParams.related_bill
+          );
+        }
+      }
+
       const fetchTask = () =>
         apiClient.get(QuorumDataController.API_URLS[type], {
           params: firstParams,
         });
+
+      console.log(`📡 [${type}] Making initial API request...`);
       const response = await this._requestQueue.add(fetchTask);
       circuitBreaker.success();
 
-      if (!response.data?.objects?.length) return [];
+      console.log(`✅ [${type}] Initial request successful`);
+      console.log(`   - Response status: ${response.status}`);
+      console.log(`   - Has data: ${!!response.data}`);
+      console.log(`   - Has objects: ${!!response.data?.objects}`);
+      console.log(`   - Objects count: ${response.data?.objects?.length || 0}`);
+
+      if (response.data?.meta) {
+        console.log(`   - Total count: ${response.data.meta.total_count}`);
+        console.log(`   - Next page: ${response.data.meta.next}`);
+      }
+
+      if (!response.data?.objects?.length) {
+        console.log(`❌ [${type}] No objects in response`);
+        return [];
+      }
+
       allData.push(...response.data.objects);
+      console.log(
+        `📥 [${type}] Initial batch: ${response.data.objects.length} items`
+      );
+
+      // Log sample data for votes
+      if (type === "votes" && response.data.objects.length > 0) {
+        console.log("📊 [VOTES SAMPLE] First 3 vote objects:");
+        response.data.objects.slice(0, 3).forEach((vote, index) => {
+          console.log(
+            `   ${index + 1}. ID: ${vote.id}, Number: ${vote.number
+            }, Question: ${vote.question?.substring(0, 50)}...`
+          );
+          console.log(
+            `      Chamber: ${vote.chamber}, Category: ${vote.category}, Result: ${vote.result}`
+          );
+          console.log(`      Date: ${vote.created}, Region: ${vote.region}`);
+          if (vote.related_bill) {
+            console.log(
+              `      Related Bill: ${vote.related_bill.id
+              } - ${vote.related_bill.title?.substring(0, 30)}...`
+            );
+          }
+        });
+      }
 
       if (response.data.meta?.next && type !== "bills") {
         const totalCount = response.data.meta.total_count;
@@ -312,7 +435,17 @@ class QuorumDataController {
         );
         const maxParallelRequests = cacheConfig.MAX_PARALLEL_PAGES || 3;
 
+        console.log(
+          `📄 [${type}] Pagination: ${totalPages} total pages, ${maxParallelRequests} concurrent`
+        );
+
         for (let page = 1; page <= totalPages; page += maxParallelRequests) {
+          console.log(
+            `🔄 [${type}] Processing pages ${page} to ${Math.min(
+              page + maxParallelRequests - 1,
+              totalPages
+            )}`
+          );
 
           const pagePromises = [];
           for (
@@ -322,32 +455,55 @@ class QuorumDataController {
           ) {
             const pageOffset = (page + i) * limit;
             const pageParams = { ...firstParams, offset: pageOffset };
+
+            console.log(
+              `   📖 [${type}] Queueing page ${page + i}, offset ${pageOffset}`
+            );
+
             const pageTask = () =>
               apiClient
                 .get(QuorumDataController.API_URLS[type], {
                   params: pageParams,
                 })
                 .then((res) => {
-
+                  console.log(
+                    `   ✅ [${type}] Page ${page + i} fetched: ${res.data?.objects?.length || 0
+                    } items`
+                  );
                   return res.data?.objects || [];
                 })
                 .catch((err) => {
-                  console.error(`Page ${page + i} fetch error:`, err.message);
+                  console.error(
+                    `   ❌ [${type}] Page ${page + i} fetch error:`,
+                    err.message
+                  );
                   return [];
                 });
 
             pagePromises.push(this._requestQueue.add(pageTask));
           }
+
           const pageResults = await Promise.all(pagePromises);
-          pageResults.forEach((pageData) => {
+          pageResults.forEach((pageData, index) => {
             if (pageData.length > 0) {
               allData.push(...pageData);
+              console.log(
+                `   📥 [${type}] Page ${page + index}: added ${pageData.length
+                } items`
+              );
             }
           });
-          if (allData.length >= maxRecords) {
 
+          console.log(`   📊 [${type}] Total so far: ${allData.length} items`);
+
+          if (allData.length >= maxRecords) {
+            console.log(
+              `🛑 [${type}] Reached max records limit: ${maxRecords}`
+            );
             break;
           }
+
+          // Cache intermediate results
           if (page % 3 === 0 || page + maxParallelRequests > totalPages) {
             const trimmedIntermediateData = this.trimDataForMemory(
               allData.slice(0, maxRecords),
@@ -357,24 +513,41 @@ class QuorumDataController {
               data: trimmedIntermediateData,
               timestamp: now,
             };
-
+            console.log(
+              `💾 [${type}] Cached intermediate results: ${trimmedIntermediateData.length} items`
+            );
           }
         }
       }
+
       const trimmedData = this.trimDataForMemory(
         allData.slice(0, maxRecords),
         type
       );
+
       this._dataCache[cacheKey] = {
         data: trimmedData,
         timestamp: now,
       };
 
+      console.log(
+        `🎉 [${type}] Fetch completed: ${trimmedData.length} total items`
+      );
+      console.log(`💾 [${type}] Cached final results`);
+
       return trimmedData;
     } catch (error) {
       circuitBreaker.failure();
-      console.error(`Failed to fetch ${type} data:`, error.message);
+      console.error(`❌ [${type}] Failed to fetch data:`, error.message);
+      console.error(
+        `   - Error details:`,
+        error.response?.data || error.message
+      );
+
       if (cache?.data) {
+        console.log(
+          `🔄 [${type}] Falling back to cached data: ${cache.data.length} items`
+        );
         return cache.data;
       }
 
@@ -403,13 +576,27 @@ class QuorumDataController {
         "title",
         "most_recent_party",
         "most_recent_district",
-        "minor_person_types",
+        "minr_person_types",
         "high_quality_image_url",
         "image_url",
       ],
-      bills: ["id", "title", "bill_type", "introduced_date"],
-      state: null, 
-      district: null, 
+      bills: ["id", "title", "bill_type", "introduced_date", "region"],
+      votes: [
+        // ⭐⭐⭐ ADD VOTE FIELDS ⭐⭐⭐
+        "id",
+        "number",
+        "question",
+        "chamber",
+        "category",
+        "created",
+        "region",
+        "related_bill",
+        "total_plus",
+        "total_minus",
+        "total_other",
+      ],
+      state: null,
+      district: null,
     };
     if (!keepFields[type]) return data;
     const fieldsToKeep = new Set(keepFields[type]);
@@ -438,94 +625,256 @@ class QuorumDataController {
     if (!data || data.length === 0) {
       return [];
     }
- 
+
     const partyMap = { 1: "democrat", 2: "republican", 3: "independent" };
     const [stateMap, districtMap] = await Promise.all([
       this.fetchStateData(),
       this.fetchDistrictData(),
     ]);
- 
-   const mappings = {
-  senator: async (item) => {
-    if (item.title === "US Senator") {
-      let photoPath = null;
-     
-      const imageUrl = item.high_quality_image_url || item.image_url;
-      if (imageUrl) {
-        try {
-          const fileName = imageDownloader.generateFileName('senator', item.id, imageUrl);
-          photoPath = await imageDownloader.downloadImage(imageUrl, 'senator', fileName);
-        } catch (error) {
-          console.error(`Failed to download image for senator ${item.id}:`, error.message);
-          photoPath = null;
+
+    const mappings = {
+      senator: async (item) => {
+        if (item.title === "US Senator") {
+          let photoPath = null;
+
+          const imageUrl = item.high_quality_image_url || item.image_url;
+          if (imageUrl) {
+            try {
+              const fileName = imageDownloader.generateFileName(
+                "senator",
+                item.id,
+                imageUrl
+              );
+              photoPath = await imageDownloader.downloadImage(
+                imageUrl,
+                "senator",
+                fileName
+              );
+            } catch (error) {
+              console.error(
+                `Failed to download image for senator ${item.id}:`,
+                error.message
+              );
+              photoPath = null;
+            }
+          }
+
+          return {
+            senatorId: item.id,
+            name: `Sen. ${item.firstname || ""} ${item.middlename || ""} ${item.lastname || ""
+              }`.trim(),
+            party: partyMap[item.most_recent_party] || "Unknown",
+            photo: photoPath,
+            state: stateMap[item.most_recent_state] || "Unknown",
+          };
         }
-      }
- 
-      return {
-        senatorId: item.id,
-        name: `Sen. ${item.firstname || ""} ${item.middlename || ""} ${item.lastname || ""}`.trim(),
-        party: partyMap[item.most_recent_party] || "Unknown",
-        photo: photoPath,
-        state: stateMap[item.most_recent_state] || "Unknown",
-      };
-    }
-    return null;
-  },
- 
-  representative: async (item) => {
-    if (item.title === "US Representative") {
-      let photoPath = null;
-     
-      const imageUrl = item.high_quality_image_url || item.image_url;
-      if (imageUrl) {
-        try {
-          const fileName = imageDownloader.generateFileName('representative', item.id, imageUrl);
-          photoPath = await imageDownloader.downloadImage(imageUrl, 'representative', fileName);
-        } catch (error) {
-          console.error(`Failed to download image for rep ${item.id}:`, error.message);
-          photoPath = null;
+        return null;
+      },
+
+      representative: async (item) => {
+        if (item.title === "US Representative") {
+          let photoPath = null;
+
+          const imageUrl = item.high_quality_image_url || item.image_url;
+          if (imageUrl) {
+            try {
+              const fileName = imageDownloader.generateFileName(
+                "representative",
+                item.id,
+                imageUrl
+              );
+              photoPath = await imageDownloader.downloadImage(
+                imageUrl,
+                "representative",
+                fileName
+              );
+            } catch (error) {
+              console.error(
+                `Failed to download image for rep ${item.id}:`,
+                error.message
+              );
+              photoPath = null;
+            }
+          }
+
+          return {
+            repId: item.id,
+            name: `Rep. ${item.firstname || ""} ${item.middlename || ""} ${item.lastname || ""
+              }`.trim(),
+            party: partyMap[item.most_recent_party] || "Unknown",
+            photo: photoPath,
+            odistrict: formatDistrict(
+              districtMap[item.most_recent_district] || "Unknown"
+            ),
+          };
         }
-      }
- 
-      return {
-        repId: item.id,
-        name: `Rep. ${item.firstname || ""} ${item.middlename || ""} ${item.lastname || ""}`.trim(),
-        party: partyMap[item.most_recent_party] || "Unknown",
-        photo: photoPath,
-        district: formatDistrict(
-          districtMap[item.most_recent_district] || "Unknown"
-        ),
-      };
-    }
-    return null;
-  },
-      bills: (item) => ({
-        quorumId: item.id,
-        title: item.title || "Unknown",
-        type: item.bill_type || "Unknown",
-        date: item.introduced_date || "Unknown",
-      }),
+        return null;
+      },
+      // bills: (item) => ({
+      //   quorumId: item.id,
+      //   title: item.title || "Unknown",
+      //   type: item.bill_type || "Unknown",
+      //   date: item.introduced_date || "Unknown",
+      // }),
+
+      bills: (item) => {
+        // ⭐⭐⭐ ONLY PROCESS FEDERAL BILLS ⭐⭐⭐
+        const isFederalBill = item.region === "federal";
+
+        if (isFederalBill) {
+          return {
+            quorumId: item.id,
+            title: item.title || "Unknown",
+            type: item.bill_type || "Unknown",
+            date: item.introduced_date || "Unknown",
+            region: item.region, // Keep region for verification
+            isFederal: true, // Add flag for clarity
+          };
+        }
+        return null; // Skip state bills
+      },
+      // In the filterData method, update the votes mapping:
+      votes: (item) => {
+        // Only process federal votes
+        const isFederalVote = item.region === "federal";
+
+        console.log(
+          `🔍 [VOTE FILTER] Processing vote ${item.id} (${item.number}):`
+        );
+        console.log(`   - Region: ${item.region}, Federal: ${isFederalVote}`);
+        console.log(
+          `   - Chamber: ${item.chamber}, Category: ${item.category}`
+        );
+        console.log(
+          `   - Date: ${item.created}, Question: ${item.question?.substring(
+            0,
+            50
+          )}...`
+        );
+
+        if (isFederalVote) {
+          // Add date filtering - only votes from 2015 onwards
+          const voteDate = new Date(item.created || item.date);
+          const voteYear = voteDate.getFullYear();
+
+          console.log(
+            `   - Vote year: ${voteYear}, Before 2015: ${voteYear < 2015}`
+          );
+
+          // Skip votes before 2015
+          if (voteYear < 2015) {
+            console.log(`   ⏩ Skipping - vote before 2015`);
+            return null;
+          }
+
+          const voteType = this.determineVoteType(item);
+          console.log(`   - Determined vote type: ${voteType}`);
+          const chamberBasedType =
+            item.chamber?.toLowerCase() === "senate"
+              ? "senate_vote"
+              : item.chamber?.toLowerCase() === "house"
+                ? "house_vote"
+                : "vote";
+
+          console.log(`   - Chamber-based type: ${chamberBasedType}`);
+
+          const filteredVote = {
+            voteId: item.id,
+            rollCallNumber: item.number || 0,
+            question: item.question || "Unknown",
+            chamber: item.chamber || "Unknown",
+            category: item.category || "Unknown",
+            result: item.result || "Unknown",
+            date: item.created || "Unknown",
+            voteType: voteType,
+            type: chamberBasedType, // This will be 'senate_vote' or 'house_vote'
+            relatedBill: item.related_bill
+              ? {
+                id: item.related_bill.id,
+                title: item.related_bill.title,
+                label: item.related_bill.label,
+              }
+              : null,
+            voteCounts: {
+              yea: item.total_plus || 0,
+              nay: item.total_minus || 0,
+              present: item.total_other || 0,
+            },
+            region: item.region,
+            isFederal: true,
+            isAmendment: voteType === "amendment",
+            isProcedural: voteType === "procedural",
+          };
+
+          console.log(`   ✅ Keeping vote - ${voteType} vote from ${voteYear}`);
+          return filteredVote;
+        }
+
+        console.log(`   ⏩ Skipping - not federal vote`);
+        return null;
+      },
     };
- 
+
     const BATCH_SIZE = 250;
     const filtered = [];
- 
+
     for (let i = 0; i < data.length; i += BATCH_SIZE) {
       const batch = data.slice(i, i + BATCH_SIZE);
-     
+
       const batchPromises = batch.map(mappings[type]);
       const batchResult = await Promise.all(batchPromises);
-     
-      filtered.push(...batchResult.filter(Boolean));
-     
+
+      // Filter out null values (votes before 2015 and other filtered items)
+      const validResults = batchResult.filter(Boolean);
+      filtered.push(...validResults);
+
       if (data.length > 500 && i % 500 === 0) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       }
     }
- 
+
     return filtered;
   }
- 
+  determineVoteType(voteData) {
+    const question = voteData.question || "";
+    const category = voteData.category || "";
+
+    if (
+      question.includes("Amendment") ||
+      question.includes("Amdt.") ||
+      question.includes("Amdt ")
+    ) {
+      return "amendment";
+    } else if (
+      question.includes("On Passage") ||
+      question.includes("Passage") ||
+      question.includes("Final Passage") ||
+      question.includes("Third Reading")
+    ) {
+      return "passage";
+    } else if (
+      question.includes("Cloture") ||
+      question.includes("Motion to Proceed") ||
+      question.includes("Motion to Recommit") ||
+      question.includes("Previous Question")
+    ) {
+      return "procedural";
+    } else if (
+      question.includes("Conference") ||
+      question.includes("Appointment")
+    ) {
+      return "procedural";
+    } else if (category === "floor_vote") {
+      return "floor_vote";
+    } else if (category === "committee_vote") {
+      return "committee_vote";
+    } else if (category === "procedural") {
+      return "procedural";
+    }
+
+    return "senate_vote";
+  }
+
   async saveData(req, res) {
     try {
       const { type, additionalParams } = req.body;
@@ -604,6 +953,17 @@ class QuorumDataController {
 
             return;
           }
+          // In your saveData method, add votes handling
+          if (type === "votes") {
+            if (!responseHandled) {
+              return res.json({
+                message: "Votes fetched successfully",
+                count: filtered.length,
+                data: filtered,
+              });
+            }
+            return;
+          }
           const { model, idField } = modelConfig;
           const BATCH_SIZE = cacheConfig.BATCH_SIZES.DATABASE_OPERATIONS;
           const totalBatches = Math.ceil(filtered.length / BATCH_SIZE);
@@ -629,7 +989,6 @@ class QuorumDataController {
               savedCount: savedCount,
             });
           } else {
-
           }
         })
         .catch((err) => {
@@ -672,14 +1031,32 @@ class QuorumDataController {
         const termId = `${congressStartYear}-${congressEndYear}`;
         bill.congress = String(congress);
         bill.termId = termId;
+
+        // Ensure type is set correctly for votes
+        if (bill.type === "vote") {
+          // If it's a generic vote, set type based on chamber
+          if (bill.chamber?.toLowerCase() === "senate") {
+            bill.type = "senate_vote";
+          } else if (bill.chamber?.toLowerCase() === "house") {
+            bill.type = "house_vote";
+          }
+        }
+
+        // ✅ NEW: Transform nested relatedBill to flat schema fields
+        if (bill.relatedBill && bill.relatedBill.id) {
+          bill.releatedBillid = String(bill.relatedBill.id);
+          bill.relatedBillTitle = bill.relatedBill.title || "";
+          console.log(`   🔗 Flattening relatedBill for ${bill.quorumId}: ${bill.releatedBillid}`);
+          delete bill.relatedBill; // Remove nested object before saving
+        }
+
         await model.updateOne(
           { [idField]: bill[idField] },
-          { $setOnInsert: bill }, 
+          { $setOnInsert: bill },
           { upsert: true }
         );
         return model.findOne({ [idField]: bill[idField] });
       });
-
       const saved = await Promise.all(savedPromises);
 
       res.json({
@@ -690,34 +1067,113 @@ class QuorumDataController {
       (async () => {
         try {
           await this.updateBillShortDesc(saved);
+          await this.updateBillRollCall(saved);
 
           const CHUNK_SIZE = cacheConfig.BATCH_SIZES.VOTE_UPDATES;
           for (let i = 0; i < saved.length; i += CHUNK_SIZE) {
             const chunk = saved.slice(i, i + CHUNK_SIZE);
             await Promise.all(
-              chunk.map((bill) => this.updateVoteScore(bill.quorumId, editorInfo))
+              chunk.map((bill) =>
+                this.updateVoteScore(bill.quorumId, editorInfo)
+              )
             );
           }
-
-          for (const bill of saved) {
+          for (const item of saved) {
             try {
+              // Check if this is a vote or bill
+              const isVote =
+                item.type === "senate_vote" || item.type === "house_vote";
 
-              const introduced = bill.date
-                ? new Date(bill.date).toISOString()
-                : new Date().toISOString();
+              console.log(`\n🟢 [QUORUM CONTROLLER] ================================================`);
+              console.log(`📋 Processing ${isVote ? "VOTE" : "BILL"}: ${item.quorumId}`);
+              console.log(`   - Type: ${item.type}`);
+              console.log(`   - Title: ${item.title}`);
+              console.log(`   - Congress: ${item.congress}`);
+              console.log(`   - Date: ${item.date}`);
 
-              await ActivityController.fetchAndCreateFromCosponsorships(
-                String(bill.quorumId),
-                String(bill.title || "Untitled Bill"),
-                introduced,
-                bill.congress,
+              // ✅ EXTRACT FROM NESTED relatedBill OBJECT
+              // ✅ Use flat schema fields
+              if (isVote && item.releatedBillid) {
+                console.log(`   - releatedBillid: ${item.releatedBillid}`);
+                console.log(`   - relatedBillTitle: ${item.relatedBillTitle}`);
+              } else {
+                console.log(`   - relatedBill: N/A`);
+              }
+
+              // For votes, use releatedBillid and relatedBillTitle from schema
+              // For bills, use their own quorumId and title
+              const billIdForActivity = isVote && item.releatedBillid
+                ? String(item.releatedBillid)
+                : String(item.quorumId);
+
+              const billTitleForActivity = isVote && item.relatedBillTitle
+                ? String(item.relatedBillTitle)
+                : String(item.title || "Untitled Bill/Vote");
+
+              console.log(`   📤 Parameters for activity creation:`);
+              console.log(`      - Bill ID for activity: ${billIdForActivity}`);
+              console.log(`      - Bill Title for activity: ${billTitleForActivity}`);
+
+              // Skip if no valid bill ID
+              if (
+                !billIdForActivity ||
+                billIdForActivity === "null" ||
+                billIdForActivity === "undefined"
+              ) {
+                console.log(`   ⏩ SKIPPING - no valid related bill ID`);
+                continue;
+              }
+
+              // For votes without related bills, skip activity creation
+              if (isVote && !item.releatedBillid) {
+                console.log(`   ⏩ SKIPPING - vote has no related bill`);
+                continue;
+              }
+
+              // Determine the date to use for activity
+              let dateForActivity = item.date || new Date().toISOString();
+
+              // For votes with related bills, fetch the bill date from database
+              if (isVote && item.releatedBillid) {
+                console.log(`   📅 Fetching date from related bill...`);
+                try {
+                  const relatedBill = await Bill.findOne({ quorumId: item.releatedBillid });
+                  if (relatedBill && relatedBill.date) {
+                    dateForActivity = relatedBill.date;
+                    console.log(`   ✅ Using related bill date: ${dateForActivity}`);
+                  } else {
+                    console.log(`   ⚠️ Related bill not found in DB, using vote date: ${dateForActivity}`);
+                  }
+                } catch (fetchErr) {
+                  console.warn(`   ⚠️ Could not fetch related bill date: ${fetchErr.message}`);
+                }
+              } else {
+                console.log(`   📅 Using ${isVote ? 'vote' : 'bill'} date: ${dateForActivity}`);
+              }
+
+              console.log(`\n   🚀 Calling ActivityController.fetchAndCreateFromCosponsorships...`);
+              console.log(`      Parameters being passed:`);
+              console.log(`      - billId: ${billIdForActivity}`);
+              console.log(`      - title: ${billTitleForActivity}`);
+              console.log(`      - date: ${dateForActivity}`);
+              console.log(`      - congress: ${item.congress}`);
+              console.log(`      - editorInfo:`, editorInfo);
+
+              const result = await ActivityController.fetchAndCreateFromCosponsorships(
+                billIdForActivity,
+                billTitleForActivity,
+                dateForActivity,
+                item.congress,
                 editorInfo
               );
+
+              console.log(`   ✅ ActivityController returned: ${result} cosponsorship(s) linked`);
+              console.log(`🟢 [QUORUM CONTROLLER] ================================================\n`);
+
             } catch (err) {
-              console.warn(
-                ` Cosponsorship fetch failed for ${bill.quorumId}:`,
-                err.message
-              );
+              console.error(`\n   ❌ [QUORUM CONTROLLER] Cosponsorship fetch failed for ${item.quorumId}`);
+              console.error(`      Error: ${err.message}`);
+              console.error(`      Stack:`, err.stack);
             }
           }
         } catch (err) {
@@ -771,13 +1227,77 @@ class QuorumDataController {
       );
     }
   }
+  async updateBillRollCall(bills) {
+    const { model, idField } = QuorumDataController.MODELS.bills;
+    const BATCH_SIZE = cacheConfig.BATCH_SIZES.BILL_UPDATES || 10;
 
+    console.log(
+      `📋 [ROLLCALL] Starting to fetch source links for ${bills.length} bills`
+    );
+
+    for (let i = 0; i < bills.length; i += BATCH_SIZE) {
+      const batch = bills.slice(i, i + BATCH_SIZE);
+
+      await Promise.all(
+        batch.map(async (bill) => {
+          try {
+            console.log(
+              `🔗 [ROLLCALL] Fetching source link for bill ${bill[idField]}`
+            );
+
+            const fetchTask = () =>
+              apiClient.get(process.env.VOTE_API_URL, {
+                params: {
+                  api_key: process.env.QUORUM_API_KEY,
+                  username: process.env.QUORUM_USERNAME,
+                  id: bill[idField],
+                  region: "federal",
+                },
+              });
+
+            const response = await this._requestQueue.add(fetchTask);
+            const voteData = response.data?.objects?.[0];
+
+            if (voteData && voteData.source_link) {
+              console.log(
+                `✅ [ROLLCALL] Found source link: ${voteData.source_link}`
+              );
+
+              await model.updateOne(
+                { [idField]: bill[idField] },
+                { $set: { rollCall: voteData.source_link } }
+              );
+
+              console.log(
+                `💾 [ROLLCALL] Saved source link for bill ${bill[idField]}`
+              );
+            } else {
+              console.warn(
+                `⚠️  [ROLLCALL] No source link found for bill ${bill[idField]}`
+              );
+            }
+          } catch (err) {
+            if (err.response?.status === 404) {
+              console.warn(
+                `⚠️  [ROLLCALL] Vote data not found for bill ${bill[idField]}`
+              );
+            } else {
+              console.error(
+                `❌ [ROLLCALL] Error fetching source link for bill ${bill[idField]}:`,
+                err.message
+              );
+            }
+          }
+        })
+      );
+    }
+  }
   async updateVoteScore(quorumId, editorInfo) {
     try {
       const editorData = editorInfo || {
         editorId: "system-auto",
         editorName: "System Auto-Update",
-        editedAt: new Date().toISOString()
+        editedAt: new Date().toISOString(),
       };
 
       const fetchTask = () =>
@@ -785,8 +1305,9 @@ class QuorumDataController {
           params: {
             api_key: process.env.QUORUM_API_KEY,
             username: process.env.QUORUM_USERNAME,
-            related_bill: quorumId,
-            limit: 2,
+            id: quorumId,
+            region: "federal",
+            // limit: 50,
           },
         });
 
@@ -797,11 +1318,11 @@ class QuorumDataController {
       const vote = await Bill.findOne({ quorumId });
       if (!vote) return;
       const billInfo = {
-        quorumId: vote.quorumId,
+        id: vote.quorumId,
         title: vote.title,
         congress: vote.congress,
         termId: vote.termId,
-        type: vote.type
+        type: vote.type,
       };
       const { bill_type } = data.related_bill || {};
       const voteConfigs = [
@@ -810,15 +1331,15 @@ class QuorumDataController {
           dataModel: SenatorData,
           idField: "senateId",
           refField: "senatorId",
-          type: "Senator"
+          type: "Senator",
         },
         {
           personModel: Representative,
           dataModel: RepresentativeData,
           idField: "houseId",
           refField: "repId",
-          type: "Representative"
-        }
+          type: "Representative",
+        },
       ];
 
       const votes = ["yea", "nay", "present", "other"];
@@ -834,8 +1355,10 @@ class QuorumDataController {
         const persons = await personModel.find({
           [refField]: { $in: personIds },
         });
-        if (!persons.length) continue; 
-        const personMap = Object.fromEntries(persons.map((p) => [p[refField], p]));
+        if (!persons.length) continue;
+        const personMap = Object.fromEntries(
+          persons.map((p) => [p[refField], p])
+        );
         const updates = [];
         for (const score of votes) {
           const uris = data[`${score}_votes`] || [];
@@ -860,14 +1383,14 @@ class QuorumDataController {
                       congress: billInfo.congress,
                       termId: billInfo.termId,
                       type: billInfo.type,
-                      voteDate: new Date().toISOString()
-                    }
-                  }
-                }
+                      voteDate: new Date().toISOString(),
+                    },
+                  },
+                },
               },
               personData: person,
               voteScore: score,
-              billInfo: billInfo
+              billInfo: billInfo,
             });
           }
         }
@@ -881,12 +1404,20 @@ class QuorumDataController {
               try {
                 if (update.personData.publishStatus === "published") {
                   try {
-                    const currentPerson = await personModel.findById(update.personData._id);
-                    if (currentPerson && currentPerson.publishStatus === "published") {
-                      if (Array.isArray(currentPerson.history) && currentPerson.history.length > 0) {
+                    const currentPerson = await personModel.findById(
+                      update.personData._id
+                    );
+                    if (
+                      currentPerson &&
+                      currentPerson.publishStatus === "published"
+                    ) {
+                      if (
+                        Array.isArray(currentPerson.history) &&
+                        currentPerson.history.length > 0
+                      ) {
                       } else {
                         const currentPersonData = await dataModel.find({
-                          [idField]: update.personData._id
+                          [idField]: update.personData._id,
                         });
 
                         const snapshotData = {
@@ -900,22 +1431,28 @@ class QuorumDataController {
                           modifiedBy: currentPerson.modifiedBy,
                           publishStatus: currentPerson.publishStatus,
                           snapshotSource: currentPerson.snapshotSource,
-                          status: currentPerson.status
+                          status: currentPerson.status,
                         };
-                        if (type === "Representative" && currentPerson.district) {
+                        if (
+                          type === "Representative" &&
+                          currentPerson.district
+                        ) {
                           snapshotData.district = currentPerson.district;
                         }
                         if (type === "Representative") {
-                          snapshotData.representativeData = currentPersonData.map(doc => doc.toObject());
+                          snapshotData.representativeData =
+                            currentPersonData.map((doc) => doc.toObject());
                         } else if (type === "Senator") {
-                          snapshotData.senatorData = currentPersonData.map(doc => doc.toObject());
+                          snapshotData.senatorData = currentPersonData.map(
+                            (doc) => doc.toObject()
+                          );
                         }
 
                         const snapshot = {
                           oldData: snapshotData,
                           timestamp: new Date().toISOString(),
                           actionType: "update",
-                          _id: new mongoose.Types.ObjectId()
+                          _id: new mongoose.Types.ObjectId(),
                         };
                         await personModel.findByIdAndUpdate(
                           update.personData._id,
@@ -923,25 +1460,30 @@ class QuorumDataController {
                             $push: {
                               history: {
                                 $each: [snapshot],
-                                $slice: -50
-                              }
-                            }
+                                $slice: -50,
+                              },
+                            },
                           },
                           { new: true }
                         );
                       }
                     }
                   } catch (snapshotError) {
-                    console.error(` Failed to take snapshot for ${update.personData.name}:`, snapshotError.message);
+                    console.error(
+                      ` Failed to take snapshot for ${update.personData.name}:`,
+                      snapshotError.message
+                    );
                   }
                 }
-                await dataModel.updateOne(update.filter, update.update, { upsert: true });
+                await dataModel.updateOne(update.filter, update.update, {
+                  upsert: true,
+                });
                 if (type === "Senator" || type === "Representative") {
                   const editedFieldEntry = {
                     field: "votesScore",
                     name: `${update.billInfo.title}`,
                     fromQuorum: true,
-                    updatedAt: new Date().toISOString()
+                    updatedAt: new Date().toISOString(),
                   };
                   const normalizedTitle = update.billInfo.title
                     .replace(/[^a-zA-Z0-9]+/g, "_")
@@ -971,62 +1513,67 @@ class QuorumDataController {
                     personUpdatePayload,
                     {
                       new: true,
-
                     }
                   );
                 }
               } catch (error) {
-                console.error(` Failed to update ${type} ${update.personData.name}:`, error.message);
+                console.error(
+                  ` Failed to update ${type} ${update.personData.name}:`,
+                  error.message
+                );
               }
             })
           );
         }
       }
-      } catch (err) {
-        console.error(` Vote score update failed for bill ${quorumId}:`, err.message);
-        console.error("Error stack:", err.stack);
-      }
-    }
-  async getDataStatus(req, res) {
-      try {
-        const { type } = req.params;
-
-        if (!type || !QuorumDataController.MODELS[type]) {
-          return res.status(400).json({ error: "Invalid data type" });
-        }
-        const cache = this._dataCache[type];
-        const now = Date.now();
-        const cacheAge = now - (cache?.timestamp || 0);
-        const ttl = this._CACHE_TTL[type] || cacheConfig.CACHE_TTL.DEFAULT;
-        const isCacheValid = cache?.data && cacheAge < ttl;
-        const circuitBreaker = this._circuitBreakers.quorum;
-        const circuitStatus = circuitBreaker.state;
-        const { model } = QuorumDataController.MODELS[type];
-        const count = await model.countDocuments();
-        return res.json({
-          type,
-          cache: {
-            available: !!cache?.data,
-            valid: isCacheValid,
-            itemCount: cache?.data?.length || 0,
-            age: cacheAge ? Math.round(cacheAge / 1000) + " seconds" : "N/A",
-            ttl: Math.round(ttl / 1000) + " seconds",
-          },
-          database: {
-            recordCount: count,
-          },
-          apiService: {
-            circuitStatus,
-            available: circuitBreaker.canRequest(),
-          },
-        });
-      } catch (err) {
-        console.error("Data status error:", err);
-        res
-          .status(500)
-          .json({ error: "Failed to get data status", message: err.message });
-      }
+    } catch (err) {
+      console.error(
+        ` Vote score update failed for bill ${quorumId}:`,
+        err.message
+      );
+      console.error("Error stack:", err.stack);
     }
   }
+  async getDataStatus(req, res) {
+    try {
+      const { type } = req.params;
+
+      if (!type || !QuorumDataController.MODELS[type]) {
+        return res.status(400).json({ error: "Invalid data type" });
+      }
+      const cache = this._dataCache[type];
+      const now = Date.now();
+      const cacheAge = now - (cache?.timestamp || 0);
+      const ttl = this._CACHE_TTL[type] || cacheConfig.CACHE_TTL.DEFAULT;
+      const isCacheValid = cache?.data && cacheAge < ttl;
+      const circuitBreaker = this._circuitBreakers.quorum;
+      const circuitStatus = circuitBreaker.state;
+      const { model } = QuorumDataController.MODELS[type];
+      const count = await model.countDocuments();
+      return res.json({
+        type,
+        cache: {
+          available: !!cache?.data,
+          valid: isCacheValid,
+          itemCount: cache?.data?.length || 0,
+          age: cacheAge ? Math.round(cacheAge / 1000) + " seconds" : "N/A",
+          ttl: Math.round(ttl / 1000) + " seconds",
+        },
+        database: {
+          recordCount: count,
+        },
+        apiService: {
+          circuitStatus,
+          available: circuitBreaker.canRequest(),
+        },
+      });
+    } catch (err) {
+      console.error("Data status error:", err);
+      res
+        .status(500)
+        .json({ error: "Failed to get data status", message: err.message });
+    }
+  }
+}
 
 module.exports = new QuorumDataController();

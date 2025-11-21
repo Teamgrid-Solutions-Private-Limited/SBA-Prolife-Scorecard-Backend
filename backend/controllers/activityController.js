@@ -619,8 +619,16 @@ class activityController {
     congress,
     editorInfo
   ) {
+    console.log(`\n🔵 [ACTIVITY CONTROLLER] fetchAndCreateFromCosponsorships called`);
+    console.log(`   📥 Input Parameters:`);
+    console.log(`      - billId: ${billId}`);
+    console.log(`      - title: ${title}`);
+    console.log(`      - introduced: ${introduced}`);
+    console.log(`      - congress: ${congress}`);
+    console.log(`      - editorInfo:`, editorInfo);
+    
     if (!billId || !title || !introduced || !congress) {
-      console.warn(" Missing required bill data");
+      console.warn("   ⚠️ Missing required bill data");
       return 0;
     }
     const queryParams = {
@@ -628,37 +636,51 @@ class activityController {
       username: USERNAME,
       dehydrate_extra: "sponsors",
     };
-
+  
     const billUrl = `${BASE}/api/newbill/${billId}`;
-
+    console.log(`   🌐 Fetching bill from: ${billUrl}`);
+  
     try {
       const billRes = await axios.get(billUrl, { params: queryParams });
       const bill = billRes.data;
-
+      console.log(`   ✅ Bill data fetched successfully`);
+      console.log(`      - Bill type from API: ${bill.type}`);
+      console.log(`      - Bill title from API: ${bill.title}`);
+      console.log(`      - Sponsors count: ${bill.sponsors?.length || 0}`);
+  
       let activityType = bill.type || null;
       if (!activityType && bill.bill_type) {
         const fallbackType = bill.bill_type.toLowerCase();
         if (fallbackType.includes("senate")) activityType = "senate";
         else if (fallbackType.includes("house")) activityType = "house";
       }
+      
+      console.log(`   🏛️ Determined activity type: ${activityType}`);
+      
       if (!activityType) {
-        console.warn(` Unable to determine activity type for bill ${billId}`);
+        console.warn(`   ⚠️ Unable to determine activity type for bill ${billId}`);
         return 0;
       }
-
+  
       if (!bill.sponsors || bill.sponsors.length === 0) {
+        console.warn(`   ⚠️ No sponsors found for bill ${billId}`);
         return 0;
       }
-
+  
+      console.log(`   🔍 Checking if activity already exists...`);
+      console.log(`      Query: { activityquorumId: ${billId}, date: ${introduced}, congress: ${congress}, type: ${activityType} }`);
+      
       let activity = await Activity.findOne({
         activityquorumId: billId,
         date: introduced,
         congress,
         type: activityType,
       });
-
+  
       if (!activity) {
-        activity = new Activity({
+        console.log(`   📝 Activity not found, creating new one...`);
+        
+        const activityData = {
           type: activityType,
           title,
           shortDesc: "",
@@ -672,43 +694,70 @@ class activityController {
           status: "draft",
           editedFields: [],
           activityquorumId: billId,
-        });
-        await activity.save();
+        };
+        
+        console.log(`   📋 Activity data to save:`, activityData);
+        
+        activity = new Activity(activityData);
+        
+        console.log(`   💾 Attempting to save activity...`);
+        console.log(`      - Activity _id (pre-save): ${activity._id}`);
+        
+        try {
+          await activity.save();
+          console.log(`   ✅ Activity saved successfully!`);
+          console.log(`      - Saved activity _id: ${activity._id}`);
+          console.log(`      - Saved activity title: ${activity.title}`);
+          console.log(`      - Saved activity type: ${activity.type}`);
+        } catch (saveError) {
+          console.error(`   ❌ CRITICAL: Activity save failed!`);
+          console.error(`      - Error message: ${saveError.message}`);
+          console.error(`      - Error name: ${saveError.name}`);
+          if (saveError.errors) {
+            console.error(`      - Validation errors:`, saveError.errors);
+          }
+          console.error(`      - Full error:`, saveError);
+          return 0; // Exit early - don't link to legislators
+        }
+      } else {
+        console.log(`   ♻️ Activity already exists: ${activity._id}`);
+        console.log(`      - Title: ${activity.title}`);
+        console.log(`      - Type: ${activity.type}`);
       }
-
+  
       let savedCount = 0;
-
+      console.log(`   👥 Processing ${bill.sponsors.length} sponsors...`);
+  
       for (const sponsorUri of bill.sponsors) {
         const sponsorId = sponsorUri.split("/").filter(Boolean).pop();
-
+        console.log(`      🔸 Processing sponsor ${sponsorId}...`);
+  
         try {
           const sponsorRes = await axios.get(
             `${BASE}/api/newsponsor/${sponsorId}/`,
             { params: { api_key: API_KEY, username: USERNAME } }
           );
           const sponsor = sponsorRes.data;
-
+  
           const personId = sponsor.person?.split("/").filter(Boolean).pop();
-
+  
           if (!personId) {
-            console.warn(
-              ` Skipping sponsor ${sponsorId} due to missing personId`
-            );
+            console.warn(`         ⚠️ Skipping sponsor ${sponsorId} - missing personId`);
             continue;
           }
-
+  
           const [senator, rep] = await Promise.all([
             Senator.findOne({ senatorId: personId }),
             Representative.findOne({ repId: personId }),
           ]);
-
+  
           if (!senator && !rep) {
-            console.warn(
-              ` No matching local legislator found for personId ${personId}`
-            );
+            console.warn(`         ⚠️ No matching legislator for personId ${personId}`);
             continue;
           }
-
+  
+          console.log(`         🔗 Linking activity ${activity._id} to legislator ${personId}`);
+          
           const linked = await saveCosponsorshipToLegislator({
             personId,
             activityId: activity._id,
@@ -717,19 +766,24 @@ class activityController {
             editorInfo,
             activityType,
           });
-
-          if (linked) savedCount++;
+  
+          if (linked) {
+            savedCount++;
+            console.log(`         ✅ Successfully linked to legislator`);
+          } else {
+            console.log(`         ℹ️ Not linked (already exists or filtered)`);
+          }
         } catch (err) {
-          console.warn(` Error processing sponsor ${sponsorId}:`, err.message);
+          console.warn(`         ❌ Error processing sponsor ${sponsorId}: ${err.message}`);
         }
       }
-
+  
+      console.log(`   📊 Total cosponsorship links created: ${savedCount}`);
       return savedCount;
     } catch (err) {
-      console.error(
-        ` Failed to fetch cosponsorships for bill ${billId}:`,
-        err.message
-      );
+      console.error(`   ❌ Failed to fetch cosponsorships for bill ${billId}`);
+      console.error(`      - Error: ${err.message}`);
+      console.error(`      - Stack:`, err.stack);
       return 0;
     }
   }

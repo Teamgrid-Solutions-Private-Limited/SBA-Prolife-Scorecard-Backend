@@ -17,6 +17,9 @@ const VoteSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    releatedBillid: {type:String  },
+    relatedBillTitle: {type:String  },
+    
     date: Date,
     congress: { type: String },
     termId: { type: String },
