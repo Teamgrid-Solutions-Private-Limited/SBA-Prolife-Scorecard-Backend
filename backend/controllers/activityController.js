@@ -20,7 +20,12 @@ const { performBulkUpdate } = require("../helper/bulkUpdateHelper");
 const { buildSupportData } = require("../helper/supportDataHelper");
 const { discardChanges } = require("../helper/discardHelper");
 const { getFileUrl } = require("../helper/filePath");
-const { makeEditorKey, deleteFieldEditor, cleanupPersonAfterDelete ,migrateTitleForScoreTypes} = require("../helper/editorKeyService");
+const {
+  makeEditorKey,
+  deleteFieldEditor,
+  cleanupPersonAfterDelete,
+  migrateTitleForScoreTypes,
+} = require("../helper/editorKeyService");
 
 const BASE = process.env.QUORUM_BASE_URL || "https://www.quorum.us";
 const API_KEY = process.env.QUORUM_API_KEY;
@@ -453,15 +458,18 @@ class activityController {
         if (!updatedActivity) {
           return res.status(404).json({ message: "Activity not found" });
         }
- // migrate editedFields & fieldEditors when activity title changes
-       if (existingActivity.title && existingActivity.title !== updatedActivity.title) {
-         await migrateTitleForScoreTypes({
-           oldTitle: existingActivity.title,
-           newTitle: updatedActivity.title,
-           fieldTypes: ["activitiesScore"],
-           personModels: [Senator, Representative],
-         });
-       }
+        // migrate editedFields & fieldEditors when activity title changes
+        if (
+          existingActivity.title &&
+          existingActivity.title !== updatedActivity.title
+        ) {
+          await migrateTitleForScoreTypes({
+            oldTitle: existingActivity.title,
+            newTitle: updatedActivity.title,
+            fieldTypes: ["activitiesScore"],
+            personModels: [Senator, Representative],
+          });
+        }
         res.status(200).json({
           message: "Activity updated successfully",
           info: updatedActivity,
@@ -619,14 +627,16 @@ class activityController {
     congress,
     editorInfo
   ) {
-    console.log(`\n🔵 [ACTIVITY CONTROLLER] fetchAndCreateFromCosponsorships called`);
+    console.log(
+      `\n🔵 [ACTIVITY CONTROLLER] fetchAndCreateFromCosponsorships called`
+    );
     console.log(`   📥 Input Parameters:`);
     console.log(`      - billId: ${billId}`);
     console.log(`      - title: ${title}`);
     console.log(`      - introduced: ${introduced}`);
     console.log(`      - congress: ${congress}`);
     console.log(`      - editorInfo:`, editorInfo);
-    
+
     if (!billId || !title || !introduced || !congress) {
       console.warn("   ⚠️ Missing required bill data");
       return 0;
@@ -636,53 +646,61 @@ class activityController {
       username: USERNAME,
       dehydrate_extra: "sponsors",
     };
-  
+
     const billUrl = `${BASE}/api/newbill/${billId}`;
     console.log(`   🌐 Fetching bill from: ${billUrl}`);
-  
+
     try {
       const billRes = await axios.get(billUrl, { params: queryParams });
+      console.log(billRes);
+
       const bill = billRes.data;
+      console.log("bill:-", bill);
+
       console.log(`   ✅ Bill data fetched successfully`);
       console.log(`      - Bill type from API: ${bill.type}`);
       console.log(`      - Bill title from API: ${bill.title}`);
       console.log(`      - Sponsors count: ${bill.sponsors?.length || 0}`);
-  
+
       let activityType = bill.type || null;
       if (!activityType && bill.bill_type) {
         const fallbackType = bill.bill_type.toLowerCase();
         if (fallbackType.includes("senate")) activityType = "senate";
         else if (fallbackType.includes("house")) activityType = "house";
       }
-      
+
       console.log(`   🏛️ Determined activity type: ${activityType}`);
-      
+
       if (!activityType) {
-        console.warn(`   ⚠️ Unable to determine activity type for bill ${billId}`);
+        console.warn(
+          `   ⚠️ Unable to determine activity type for bill ${billId}`
+        );
         return 0;
       }
-  
+
       if (!bill.sponsors || bill.sponsors.length === 0) {
         console.warn(`   ⚠️ No sponsors found for bill ${billId}`);
         return 0;
       }
-  
+
       console.log(`   🔍 Checking if activity already exists...`);
-      console.log(`      Query: { activityquorumId: ${billId}, date: ${introduced}, congress: ${congress}, type: ${activityType} }`);
-      
+      console.log(
+        `      Query: { activityquorumId: ${billId}, date: ${introduced}, congress: ${congress}, type: ${activityType} }`
+      );
+
       let activity = await Activity.findOne({
         activityquorumId: billId,
         date: introduced,
         congress,
         type: activityType,
       });
-  
+
       if (!activity) {
         console.log(`   📝 Activity not found, creating new one...`);
-        
+
         const activityData = {
           type: activityType,
-          title,
+          title: bill.title || title,
           shortDesc: "",
           longDesc: "",
           rollCall: null,
@@ -695,14 +713,14 @@ class activityController {
           editedFields: [],
           activityquorumId: billId,
         };
-        
+
         console.log(`   📋 Activity data to save:`, activityData);
-        
+
         activity = new Activity(activityData);
-        
+
         console.log(`   💾 Attempting to save activity...`);
         console.log(`      - Activity _id (pre-save): ${activity._id}`);
-        
+
         try {
           await activity.save();
           console.log(`   ✅ Activity saved successfully!`);
@@ -724,40 +742,46 @@ class activityController {
         console.log(`      - Title: ${activity.title}`);
         console.log(`      - Type: ${activity.type}`);
       }
-  
+
       let savedCount = 0;
       console.log(`   👥 Processing ${bill.sponsors.length} sponsors...`);
-  
+
       for (const sponsorUri of bill.sponsors) {
         const sponsorId = sponsorUri.split("/").filter(Boolean).pop();
         console.log(`      🔸 Processing sponsor ${sponsorId}...`);
-  
+
         try {
           const sponsorRes = await axios.get(
             `${BASE}/api/newsponsor/${sponsorId}/`,
             { params: { api_key: API_KEY, username: USERNAME } }
           );
           const sponsor = sponsorRes.data;
-  
+
           const personId = sponsor.person?.split("/").filter(Boolean).pop();
-  
+
           if (!personId) {
-            console.warn(`         ⚠️ Skipping sponsor ${sponsorId} - missing personId`);
+            console.warn(
+              `         ⚠️ Skipping sponsor ${sponsorId} - missing personId`
+            );
             continue;
           }
-  
+
           const [senator, rep] = await Promise.all([
             Senator.findOne({ senatorId: personId }),
             Representative.findOne({ repId: personId }),
           ]);
-  
+
           if (!senator && !rep) {
-            console.warn(`         ⚠️ No matching legislator for personId ${personId}`);
+            console.warn(
+              `         ⚠️ No matching legislator for personId ${personId}`
+            );
             continue;
           }
-  
-          console.log(`         🔗 Linking activity ${activity._id} to legislator ${personId}`);
-          
+
+          console.log(
+            `         🔗 Linking activity ${activity._id} to legislator ${personId}`
+          );
+
           const linked = await saveCosponsorshipToLegislator({
             personId,
             activityId: activity._id,
@@ -766,7 +790,7 @@ class activityController {
             editorInfo,
             activityType,
           });
-  
+
           if (linked) {
             savedCount++;
             console.log(`         ✅ Successfully linked to legislator`);
@@ -774,10 +798,12 @@ class activityController {
             console.log(`         ℹ️ Not linked (already exists or filtered)`);
           }
         } catch (err) {
-          console.warn(`         ❌ Error processing sponsor ${sponsorId}: ${err.message}`);
+          console.warn(
+            `         ❌ Error processing sponsor ${sponsorId}: ${err.message}`
+          );
         }
       }
-  
+
       console.log(`   📊 Total cosponsorship links created: ${savedCount}`);
       return savedCount;
     } catch (err) {
@@ -785,6 +811,73 @@ class activityController {
       console.error(`      - Error: ${err.message}`);
       console.error(`      - Stack:`, err.stack);
       return 0;
+    }
+  }
+  static async saveActivityFromBill(req, res) {
+    try {
+      const { billId, title, introduced, congress, editorInfo } = req.body;
+
+      console.log(`\n💾 [SAVE ACTIVITY] Received request:`, {
+        billId,
+        title: title?.substring(0, 50) + "...",
+        introduced,
+        congress,
+        hasEditorInfo: !!editorInfo,
+      });
+
+      // Validate required fields
+      if (!billId || !title || !introduced || !congress) {
+        console.log("❌ Missing required fields");
+        return res.status(400).json({
+          message:
+            "Missing required fields: billId, title, introduced, congress",
+        });
+      }
+
+      // Check if activity already exists
+      console.log(`🔍 Checking for existing activity...`);
+      let activity = await Activity.findOne({
+        activityquorumId: billId,
+        date: introduced,
+        congress,
+      });
+
+      if (activity) {
+        console.log(`❌ Activity already exists: ${activity._id}`);
+        return res.status(200).json({
+          exists: true,
+          message: "Activity already exists",
+          activityId: activity._id,
+        });
+      }
+
+      console.log(`✅ No existing activity found, proceeding with creation...`);
+
+      // Process the bill and create activity with sponsors
+      const savedCount =
+        await activityController.fetchAndCreateFromCosponsorships(
+          String(billId),
+          String(title),
+          String(introduced),
+          String(congress),
+          editorInfo || {}
+        );
+
+      console.log(
+        `🎉 [SAVE ACTIVITY] COMPLETED - Linked ${savedCount} sponsors`
+      );
+
+      res.status(200).json({
+        message: "Activity created and sponsors processed successfully",
+        savedCount,
+        exists: false,
+      });
+    } catch (err) {
+      console.error("💥 Error in saveActivityFromBill:", err);
+      res.status(500).json({
+        message: "Internal server error",
+        error: err.message,
+      });
     }
   }
 }

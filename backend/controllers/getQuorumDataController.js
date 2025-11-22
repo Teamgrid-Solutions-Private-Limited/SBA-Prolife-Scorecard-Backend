@@ -1,14 +1,12 @@
 require("dotenv").config();
 const axios = require("axios");
 const cacheConfig = require("../config/cache-config");
-const activitySchema = require("../models/activitySchema");
 const Senator = require("../models/senatorSchema");
 const Representative = require("../models/representativeSchema");
 const Bill = require("../models/voteSchema");
 const SenatorData = require("../models/senatorDataSchema");
 const RepresentativeData = require("../models/representativeDataSchema");
 const ActivityController = require("../controllers/activityController");
-const mongoose = require("mongoose");
 const imageDownloader = require("../helper/imageDownloader");
 const { updateBillRollCall } = require("../helper/billRollCallHelper");
 const { updateVoteScore } = require("../helper/voteScoreHelper");
@@ -143,14 +141,14 @@ class QuorumDataController {
     this._dataCache = {
       senator: { data: null, timestamp: 0 },
       representative: { data: null, timestamp: 0 },
-      bills: { data: null, timestamp: 0 },
+      bills: { data: null, timestamp: 0 }, // ❌ NOT IN USE (kept for reference)
       state: { data: null, timestamp: 0 },
       district: { data: null, timestamp: 0 },
     };
     this._CACHE_TTL = {
       senator: cacheConfig.CACHE_TTL.SENATOR,
       representative: cacheConfig.CACHE_TTL.REPRESENTATIVE,
-      bills: cacheConfig.CACHE_TTL.BILLS,
+      bills: cacheConfig.CACHE_TTL.BILLS, // ❌ NOT IN USE (kept for reference)
       state: cacheConfig.CACHE_TTL.STATE,
       district: cacheConfig.CACHE_TTL.DISTRICT,
     };
@@ -161,12 +159,15 @@ class QuorumDataController {
   }
 
   static API_URLS = {
+    // ✅ IN USE
     senator:
       process.env.QUORUM_SENATOR_API || "https://www.quorum.us/api/newperson/",
     representative:
       process.env.QUORUM_REP_API || "https://www.quorum.us/api/newperson/",
-    bills: process.env.BILL_API_URL || "https://www.quorum.us/api/newbill/",
     votes: process.env.VOTE_API_URL || "https://www.quorum.us/api/vote/",
+
+    // ❌ NOT IN USE (kept for reference only)
+    bills: process.env.BILL_API_URL || "https://www.quorum.us/api/newbill/",
   };
 
   static MODELS = {
@@ -259,7 +260,7 @@ class QuorumDataController {
     if (
       cache?.data &&
       now - cache.timestamp <
-      (this._CACHE_TTL[type] || cacheConfig.CACHE_TTL.DEFAULT)
+        (this._CACHE_TTL[type] || cacheConfig.CACHE_TTL.DEFAULT)
     ) {
       console.log(
         `🔄 [${type}] Returning cached data with ${cache.data.length} items`
@@ -283,16 +284,16 @@ class QuorumDataController {
       {
         senator: 100,
         representative: 250,
-        bills: 20,
         votes: 20, // Reduced for votes to avoid timeouts
+        bills: 20, // ❌ NOT IN USE (kept for reference)
       }[type] || 20;
 
     const maxRecords =
       {
         senator: 120,
         representative: 20000,
-        bills: 20,
         votes: 20, // Limit votes to 50 for testing
+        bills: 20, // ❌ NOT IN USE (kept for reference)
       }[type] || 1000;
 
     try {
@@ -316,15 +317,6 @@ class QuorumDataController {
       }
 
       // For bills, enable partial matching on title field
-      if (type === "bills" && processedParams.title) {
-        console.log(
-          `🔍 [BILLS] Converting exact title search to partial match: "${processedParams.title}"`
-        );
-        // Use __icontains for case-insensitive partial matching
-        processedParams.title__icontains = processedParams.title;
-        delete processedParams.title;
-        console.log(`   Using title__icontains for flexible search`);
-      }
 
       const firstParams = {
         api_key: process.env.QUORUM_API_KEY,
@@ -336,8 +328,8 @@ class QuorumDataController {
         ...(type === "senator"
           ? { current: true }
           : type === "representative"
-            ? { current: true, most_recent_role_type: 2 }
-            : {}),
+          ? { current: true, most_recent_role_type: 2 }
+          : {}),
       };
 
       // Enhanced logging for votes
@@ -412,7 +404,8 @@ class QuorumDataController {
         console.log("📊 [VOTES SAMPLE] First 3 vote objects:");
         response.data.objects.slice(0, 3).forEach((vote, index) => {
           console.log(
-            `   ${index + 1}. ID: ${vote.id}, Number: ${vote.number
+            `   ${index + 1}. ID: ${vote.id}, Number: ${
+              vote.number
             }, Question: ${vote.question?.substring(0, 50)}...`
           );
           console.log(
@@ -421,7 +414,8 @@ class QuorumDataController {
           console.log(`      Date: ${vote.created}, Region: ${vote.region}`);
           if (vote.related_bill) {
             console.log(
-              `      Related Bill: ${vote.related_bill.id
+              `      Related Bill: ${
+                vote.related_bill.id
               } - ${vote.related_bill.title?.substring(0, 30)}...`
             );
           }
@@ -468,7 +462,8 @@ class QuorumDataController {
                 })
                 .then((res) => {
                   console.log(
-                    `   ✅ [${type}] Page ${page + i} fetched: ${res.data?.objects?.length || 0
+                    `   ✅ [${type}] Page ${page + i} fetched: ${
+                      res.data?.objects?.length || 0
                     } items`
                   );
                   return res.data?.objects || [];
@@ -489,7 +484,8 @@ class QuorumDataController {
             if (pageData.length > 0) {
               allData.push(...pageData);
               console.log(
-                `   📥 [${type}] Page ${page + index}: added ${pageData.length
+                `   📥 [${type}] Page ${page + index}: added ${
+                  pageData.length
                 } items`
               );
             }
@@ -583,7 +579,6 @@ class QuorumDataController {
       ],
       bills: ["id", "title", "bill_type", "introduced_date", "region"],
       votes: [
-        // ⭐⭐⭐ ADD VOTE FIELDS ⭐⭐⭐
         "id",
         "number",
         "question",
@@ -592,9 +587,6 @@ class QuorumDataController {
         "created",
         "region",
         "related_bill",
-        "total_plus",
-        "total_minus",
-        "total_other",
       ],
       state: null,
       district: null,
@@ -662,8 +654,9 @@ class QuorumDataController {
 
           return {
             senatorId: item.id,
-            name: `Sen. ${item.firstname || ""} ${item.middlename || ""} ${item.lastname || ""
-              }`.trim(),
+            name: `Sen. ${item.firstname || ""} ${item.middlename || ""} ${
+              item.lastname || ""
+            }`.trim(),
             party: partyMap[item.most_recent_party] || "Unknown",
             photo: photoPath,
             state: stateMap[item.most_recent_state] || "Unknown",
@@ -700,8 +693,9 @@ class QuorumDataController {
 
           return {
             repId: item.id,
-            name: `Rep. ${item.firstname || ""} ${item.middlename || ""} ${item.lastname || ""
-              }`.trim(),
+            name: `Rep. ${item.firstname || ""} ${item.middlename || ""} ${
+              item.lastname || ""
+            }`.trim(),
             party: partyMap[item.most_recent_party] || "Unknown",
             photo: photoPath,
             odistrict: formatDistrict(
@@ -711,13 +705,8 @@ class QuorumDataController {
         }
         return null;
       },
-      // bills: (item) => ({
-      //   quorumId: item.id,
-      //   title: item.title || "Unknown",
-      //   type: item.bill_type || "Unknown",
-      //   date: item.introduced_date || "Unknown",
-      // }),
 
+      // Bills API is currently  use for activity save
       bills: (item) => {
         // ⭐⭐⭐ ONLY PROCESS FEDERAL BILLS ⭐⭐⭐
         const isFederalBill = item.region === "federal";
@@ -768,14 +757,12 @@ class QuorumDataController {
             return null;
           }
 
-          const voteType = this.determineVoteType(item);
-          console.log(`   - Determined vote type: ${voteType}`);
           const chamberBasedType =
             item.chamber?.toLowerCase() === "senate"
               ? "senate_vote"
               : item.chamber?.toLowerCase() === "house"
-                ? "house_vote"
-                : "vote";
+              ? "house_vote"
+              : "vote";
 
           console.log(`   - Chamber-based type: ${chamberBasedType}`);
 
@@ -785,26 +772,17 @@ class QuorumDataController {
             question: item.question || "Unknown",
             chamber: item.chamber || "Unknown",
             category: item.category || "Unknown",
-            result: item.result || "Unknown",
             date: item.created || "Unknown",
-            voteType: voteType,
             type: chamberBasedType, // This will be 'senate_vote' or 'house_vote'
             relatedBill: item.related_bill
               ? {
-                id: item.related_bill.id,
-                title: item.related_bill.title,
-                label: item.related_bill.label,
-              }
+                  id: item.related_bill.id,
+                  title: item.related_bill.title,
+                  label: item.related_bill.label,
+                }
               : null,
-            voteCounts: {
-              yea: item.total_plus || 0,
-              nay: item.total_minus || 0,
-              present: item.total_other || 0,
-            },
             region: item.region,
             isFederal: true,
-            isAmendment: voteType === "amendment",
-            isProcedural: voteType === "procedural",
           };
 
           console.log(`   ✅ Keeping vote - ${voteType} vote from ${voteYear}`);
@@ -836,45 +814,6 @@ class QuorumDataController {
 
     return filtered;
   }
-  determineVoteType(voteData) {
-    const question = voteData.question || "";
-    const category = voteData.category || "";
-
-    if (
-      question.includes("Amendment") ||
-      question.includes("Amdt.") ||
-      question.includes("Amdt ")
-    ) {
-      return "amendment";
-    } else if (
-      question.includes("On Passage") ||
-      question.includes("Passage") ||
-      question.includes("Final Passage") ||
-      question.includes("Third Reading")
-    ) {
-      return "passage";
-    } else if (
-      question.includes("Cloture") ||
-      question.includes("Motion to Proceed") ||
-      question.includes("Motion to Recommit") ||
-      question.includes("Previous Question")
-    ) {
-      return "procedural";
-    } else if (
-      question.includes("Conference") ||
-      question.includes("Appointment")
-    ) {
-      return "procedural";
-    } else if (category === "floor_vote") {
-      return "floor_vote";
-    } else if (category === "committee_vote") {
-      return "committee_vote";
-    } else if (category === "procedural") {
-      return "procedural";
-    }
-
-    return "senate_vote";
-  }
 
   async saveData(req, res) {
     try {
@@ -898,7 +837,7 @@ class QuorumDataController {
       const isCacheValid =
         cache?.data &&
         now - cache.timestamp <
-        (this._CACHE_TTL[type] || cacheConfig.CACHE_TTL.DEFAULT);
+          (this._CACHE_TTL[type] || cacheConfig.CACHE_TTL.DEFAULT);
 
       if (isCacheValid && cache.data.length > 0) {
         const filtered = await this.filterData(type, cache.data);
@@ -943,6 +882,7 @@ class QuorumDataController {
             return;
           }
 
+          //   Bill API fetch for activity purpose
           if (type === "bills") {
             if (!responseHandled) {
               return res.json({
@@ -951,9 +891,9 @@ class QuorumDataController {
                 data: filtered,
               });
             }
-
             return;
           }
+
           // In your saveData method, add votes handling
           if (type === "votes") {
             if (!responseHandled) {
@@ -1047,7 +987,9 @@ class QuorumDataController {
         if (bill.relatedBill && bill.relatedBill.id) {
           bill.releatedBillid = String(bill.relatedBill.id);
           bill.relatedBillTitle = bill.relatedBill.title || "";
-          console.log(`   🔗 Flattening relatedBill for ${bill.quorumId}: ${bill.releatedBillid}`);
+          console.log(
+            `   🔗 Flattening relatedBill for ${bill.quorumId}: ${bill.releatedBillid}`
+          );
           delete bill.relatedBill; // Remove nested object before saving
         }
 
@@ -1067,7 +1009,9 @@ class QuorumDataController {
       });
       (async () => {
         try {
-          await this.updateBillShortDesc(saved);
+          // ❌ DISABLED: Bill Summary API (not needed)
+          // await this.updateBillShortDesc(saved);
+
           await updateBillRollCall(saved, apiClient, this._requestQueue);
 
           const CHUNK_SIZE = cacheConfig.BATCH_SIZES.VOTE_UPDATES;
@@ -1098,8 +1042,12 @@ class QuorumDataController {
               const isVote =
                 item.type === "senate_vote" || item.type === "house_vote";
 
-              console.log(`\n🟢 [QUORUM CONTROLLER] ================================================`);
-              console.log(`📋 Processing ${isVote ? "VOTE" : "BILL"}: ${item.quorumId}`);
+              console.log(
+                `\n🟢 [QUORUM CONTROLLER] ================================================`
+              );
+              console.log(
+                `📋 Processing ${isVote ? "VOTE" : "BILL"}: ${item.quorumId}`
+              );
               console.log(`   - Type: ${item.type}`);
               console.log(`   - Title: ${item.title}`);
               console.log(`   - Congress: ${item.congress}`);
@@ -1116,17 +1064,21 @@ class QuorumDataController {
 
               // For votes, use releatedBillid and relatedBillTitle from schema
               // For bills, use their own quorumId and title
-              const billIdForActivity = isVote && item.releatedBillid
-                ? String(item.releatedBillid)
-                : String(item.quorumId);
+              const billIdForActivity =
+                isVote && item.releatedBillid
+                  ? String(item.releatedBillid)
+                  : String(item.quorumId);
 
-              const billTitleForActivity = isVote && item.relatedBillTitle
-                ? String(item.relatedBillTitle)
-                : String(item.title || "Untitled Bill/Vote");
+              const billTitleForActivity =
+                isVote && item.relatedBillTitle
+                  ? String(item.relatedBillTitle)
+                  : String(item.title || "Untitled Bill/Vote");
 
               console.log(`   📤 Parameters for activity creation:`);
               console.log(`      - Bill ID for activity: ${billIdForActivity}`);
-              console.log(`      - Bill Title for activity: ${billTitleForActivity}`);
+              console.log(
+                `      - Bill Title for activity: ${billTitleForActivity}`
+              );
 
               // Skip if no valid bill ID
               if (
@@ -1151,21 +1103,35 @@ class QuorumDataController {
               if (isVote && item.releatedBillid) {
                 console.log(`   📅 Fetching date from related bill...`);
                 try {
-                  const relatedBill = await Bill.findOne({ quorumId: item.releatedBillid });
+                  const relatedBill = await Bill.findOne({
+                    quorumId: item.releatedBillid,
+                  });
                   if (relatedBill && relatedBill.date) {
                     dateForActivity = relatedBill.date;
-                    console.log(`   ✅ Using related bill date: ${dateForActivity}`);
+                    console.log(
+                      `   ✅ Using related bill date: ${dateForActivity}`
+                    );
                   } else {
-                    console.log(`   ⚠️ Related bill not found in DB, using vote date: ${dateForActivity}`);
+                    console.log(
+                      `   ⚠️ Related bill not found in DB, using vote date: ${dateForActivity}`
+                    );
                   }
                 } catch (fetchErr) {
-                  console.warn(`   ⚠️ Could not fetch related bill date: ${fetchErr.message}`);
+                  console.warn(
+                    `   ⚠️ Could not fetch related bill date: ${fetchErr.message}`
+                  );
                 }
               } else {
-                console.log(`   📅 Using ${isVote ? 'vote' : 'bill'} date: ${dateForActivity}`);
+                console.log(
+                  `   📅 Using ${
+                    isVote ? "vote" : "bill"
+                  } date: ${dateForActivity}`
+                );
               }
 
-              console.log(`\n   🚀 Calling ActivityController.fetchAndCreateFromCosponsorships...`);
+              console.log(
+                `\n   🚀 Calling ActivityController.fetchAndCreateFromCosponsorships...`
+              );
               console.log(`      Parameters being passed:`);
               console.log(`      - billId: ${billIdForActivity}`);
               console.log(`      - title: ${billTitleForActivity}`);
@@ -1173,19 +1139,25 @@ class QuorumDataController {
               console.log(`      - congress: ${item.congress}`);
               console.log(`      - editorInfo:`, editorInfo);
 
-              const result = await ActivityController.fetchAndCreateFromCosponsorships(
-                billIdForActivity,
-                billTitleForActivity,
-                dateForActivity,
-                item.congress,
-                editorInfo
+              const result =
+                await ActivityController.fetchAndCreateFromCosponsorships(
+                  billIdForActivity,
+                  billTitleForActivity,
+                  dateForActivity,
+                  item.congress,
+                  editorInfo
+                );
+
+              console.log(
+                `   ✅ ActivityController returned: ${result} cosponsorship(s) linked`
               );
-
-              console.log(`   ✅ ActivityController returned: ${result} cosponsorship(s) linked`);
-              console.log(`🟢 [QUORUM CONTROLLER] ================================================\n`);
-
+              console.log(
+                `🟢 [QUORUM CONTROLLER] ================================================\n`
+              );
             } catch (err) {
-              console.error(`\n   ❌ [QUORUM CONTROLLER] Cosponsorship fetch failed for ${item.quorumId}`);
+              console.error(
+                `\n   ❌ [QUORUM CONTROLLER] Cosponsorship fetch failed for ${item.quorumId}`
+              );
               console.error(`      Error: ${err.message}`);
               console.error(`      Stack:`, err.stack);
             }
@@ -1200,6 +1172,9 @@ class QuorumDataController {
     }
   }
 
+  // ❌❌❌ DISABLED METHOD - NOT IN USE ❌❌❌
+  // This method fetches bill summaries from Quorum API: /api/newbillsummary/
+  // Currently disabled because bill summary API is not needed
   async updateBillShortDesc(bills) {
     const { model, idField } = QuorumDataController.MODELS.bills;
     const BATCH_SIZE = cacheConfig.BATCH_SIZES.BILL_UPDATES;
