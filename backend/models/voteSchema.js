@@ -13,13 +13,12 @@ const VoteSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
-    readMore:{
+    readMore: {
       type: String,
       default: "",
     },
-    releatedBillid: {type:String  },
-    relatedBillTitle: {type:String  },
-    
+    releatedBillid: { type: String },
+    relatedBillTitle: { type: String },
     date: Date,
     congress: { type: String },
     termId: { type: String },
@@ -60,7 +59,7 @@ const VoteSchema = new mongoose.Schema(
       },
     ],
     snapshotSource: {
-      type: String, 
+      type: String,
       enum: ["deleted_pending_update", "edited"],
     },
   },

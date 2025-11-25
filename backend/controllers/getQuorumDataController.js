@@ -285,7 +285,7 @@ class QuorumDataController {
         senator: 100,
         representative: 250,
         votes: 20, // Reduced for votes to avoid timeouts
-        bills: 20, // ❌ NOT IN USE (kept for reference)
+        bills: 30, // ❌ NOT IN USE (kept for reference)
       }[type] || 20;
 
     const maxRecords =
@@ -293,27 +293,22 @@ class QuorumDataController {
         senator: 120,
         representative: 20000,
         votes: 20, // Limit votes to 50 for testing
-        bills: 20, // ❌ NOT IN USE (kept for reference)
+        bills: 30, // ❌ NOT IN USE (kept for reference)
       }[type] || 1000;
 
     try {
-      console.log(
-        `🚀 [${type}] Starting API fetch with params:`,
-        JSON.stringify(additionalParams, null, 2)
-      );
+     
 
       // Transform search params for more flexible searching
       const processedParams = { ...additionalParams };
 
       // For votes, enable partial matching on question field
       if (type === "votes" && processedParams.question) {
-        console.log(
-          `🔍 [VOTES] Converting exact question search to partial match: "${processedParams.question}"`
-        );
+      
         // Use __icontains for case-insensitive partial matching
         processedParams.question__icontains = processedParams.question;
         delete processedParams.question;
-        console.log(`   Using question__icontains for flexible search`);
+        
       }
 
       // For bills, enable partial matching on title field
@@ -332,95 +327,70 @@ class QuorumDataController {
           : {}),
       };
 
-      // Enhanced logging for votes
-      if (type === "votes") {
-        console.log("🎯 [VOTES DEBUG] Vote search configuration:");
-        console.log("   - API URL:", QuorumDataController.API_URLS[type]);
-        console.log(
-          "   - Search params:",
-          JSON.stringify(firstParams, null, 2)
-        );
-        console.log("   - Region:", firstParams.region);
+      // // Enhanced logging for votes
+      // if (type === "votes") {
+       
+       
+      
 
-        if (firstParams.question__icontains) {
-          console.log(
-            "🔍 [VOTES DEBUG] Partial question search:",
-            firstParams.question__icontains
-          );
-          console.log(
-            "   - Using flexible matching (case-insensitive contains)"
-          );
-        }
+      
 
-        if (firstParams.number || additionalParams.number) {
-          console.log(
-            "🔢 [VOTES DEBUG] Roll call number search:",
-            firstParams.number || additionalParams.number
-          );
-          console.log("   - Number param:", firstParams.number);
-          console.log("   - Number type:", typeof firstParams.number);
-        }
+      //   if (firstParams.number || additionalParams.number) {
+      //     console.log(
+      //       "🔢 [VOTES DEBUG] Roll call number search:",
+      //       firstParams.number || additionalParams.number
+      //     );
+      //     console.log("   - Number param:", firstParams.number);
+      //     console.log("   - Number type:", typeof firstParams.number);
+      //   }
 
-        if (firstParams.related_bill || additionalParams.related_bill) {
-          console.log(
-            "📋 [VOTES DEBUG] Related bill search:",
-            firstParams.related_bill || additionalParams.related_bill
-          );
-        }
-      }
+      //   if (firstParams.related_bill || additionalParams.related_bill) {
+      //     console.log(
+      //       "📋 [VOTES DEBUG] Related bill search:",
+      //       firstParams.related_bill || additionalParams.related_bill
+      //     );
+      //   }
+      // }
 
       const fetchTask = () =>
         apiClient.get(QuorumDataController.API_URLS[type], {
           params: firstParams,
         });
 
-      console.log(`📡 [${type}] Making initial API request...`);
       const response = await this._requestQueue.add(fetchTask);
       circuitBreaker.success();
 
-      console.log(`✅ [${type}] Initial request successful`);
-      console.log(`   - Response status: ${response.status}`);
-      console.log(`   - Has data: ${!!response.data}`);
-      console.log(`   - Has objects: ${!!response.data?.objects}`);
-      console.log(`   - Objects count: ${response.data?.objects?.length || 0}`);
 
-      if (response.data?.meta) {
-        console.log(`   - Total count: ${response.data.meta.total_count}`);
-        console.log(`   - Next page: ${response.data.meta.next}`);
-      }
-
+  
       if (!response.data?.objects?.length) {
-        console.log(`❌ [${type}] No objects in response`);
+       
         return [];
       }
 
       allData.push(...response.data.objects);
-      console.log(
-        `📥 [${type}] Initial batch: ${response.data.objects.length} items`
-      );
-
+      
       // Log sample data for votes
-      if (type === "votes" && response.data.objects.length > 0) {
-        console.log("📊 [VOTES SAMPLE] First 3 vote objects:");
-        response.data.objects.slice(0, 3).forEach((vote, index) => {
-          console.log(
-            `   ${index + 1}. ID: ${vote.id}, Number: ${
-              vote.number
-            }, Question: ${vote.question?.substring(0, 50)}...`
-          );
-          console.log(
-            `      Chamber: ${vote.chamber}, Category: ${vote.category}, Result: ${vote.result}`
-          );
-          console.log(`      Date: ${vote.created}, Region: ${vote.region}`);
-          if (vote.related_bill) {
-            console.log(
-              `      Related Bill: ${
-                vote.related_bill.id
-              } - ${vote.related_bill.title?.substring(0, 30)}...`
-            );
-          }
-        });
-      }
+      // if (type === "votes" && response.data.objects.length > 0) {
+       
+      //   response.data.objects.slice(0, 3).forEach((vote, index) => {
+      //     console.log(
+      //       `   ${index + 1}. ID: ${vote.id}, Number: ${
+      //         vote.number
+      //       }, Question: ${vote.question?.substring(0, 50)}...`
+      //     );
+      //     console.log(
+      //       `      Chamber: ${vote.chamber}, Category: ${vote.category}, Result: ${vote.result}`
+      //     );
+      //     console.log(`      Date: ${vote.created}, Region: ${vote.region}`);
+      //     if (vote.related_bill) {
+      //       console.log(
+      //         `      Related Bill: ${
+      //           vote.related_bill.id
+      //         } - ${vote.related_bill.title?.substring(0, 30)}...`
+      //       );
+      //     }
+      //   });
+      // }
 
       if (response.data.meta?.next && type !== "bills") {
         const totalCount = response.data.meta.total_count;
@@ -430,17 +400,9 @@ class QuorumDataController {
         );
         const maxParallelRequests = cacheConfig.MAX_PARALLEL_PAGES || 3;
 
-        console.log(
-          `📄 [${type}] Pagination: ${totalPages} total pages, ${maxParallelRequests} concurrent`
-        );
-
+      
         for (let page = 1; page <= totalPages; page += maxParallelRequests) {
-          console.log(
-            `🔄 [${type}] Processing pages ${page} to ${Math.min(
-              page + maxParallelRequests - 1,
-              totalPages
-            )}`
-          );
+         
 
           const pagePromises = [];
           for (
@@ -451,21 +413,13 @@ class QuorumDataController {
             const pageOffset = (page + i) * limit;
             const pageParams = { ...firstParams, offset: pageOffset };
 
-            console.log(
-              `   📖 [${type}] Queueing page ${page + i}, offset ${pageOffset}`
-            );
-
             const pageTask = () =>
               apiClient
                 .get(QuorumDataController.API_URLS[type], {
                   params: pageParams,
                 })
                 .then((res) => {
-                  console.log(
-                    `   ✅ [${type}] Page ${page + i} fetched: ${
-                      res.data?.objects?.length || 0
-                    } items`
-                  );
+                
                   return res.data?.objects || [];
                 })
                 .catch((err) => {
@@ -483,20 +437,14 @@ class QuorumDataController {
           pageResults.forEach((pageData, index) => {
             if (pageData.length > 0) {
               allData.push(...pageData);
-              console.log(
-                `   📥 [${type}] Page ${page + index}: added ${
-                  pageData.length
-                } items`
-              );
+             
             }
           });
 
-          console.log(`   📊 [${type}] Total so far: ${allData.length} items`);
+         
 
           if (allData.length >= maxRecords) {
-            console.log(
-              `🛑 [${type}] Reached max records limit: ${maxRecords}`
-            );
+          
             break;
           }
 
@@ -510,9 +458,7 @@ class QuorumDataController {
               data: trimmedIntermediateData,
               timestamp: now,
             };
-            console.log(
-              `💾 [${type}] Cached intermediate results: ${trimmedIntermediateData.length} items`
-            );
+            
           }
         }
       }
@@ -527,10 +473,7 @@ class QuorumDataController {
         timestamp: now,
       };
 
-      console.log(
-        `🎉 [${type}] Fetch completed: ${trimmedData.length} total items`
-      );
-      console.log(`💾 [${type}] Cached final results`);
+     
 
       return trimmedData;
     } catch (error) {
@@ -542,9 +485,7 @@ class QuorumDataController {
       );
 
       if (cache?.data) {
-        console.log(
-          `🔄 [${type}] Falling back to cached data: ${cache.data.length} items`
-        );
+     
         return cache.data;
       }
 
@@ -728,32 +669,17 @@ class QuorumDataController {
         // Only process federal votes
         const isFederalVote = item.region === "federal";
 
-        console.log(
-          `🔍 [VOTE FILTER] Processing vote ${item.id} (${item.number}):`
-        );
-        console.log(`   - Region: ${item.region}, Federal: ${isFederalVote}`);
-        console.log(
-          `   - Chamber: ${item.chamber}, Category: ${item.category}`
-        );
-        console.log(
-          `   - Date: ${item.created}, Question: ${item.question?.substring(
-            0,
-            50
-          )}...`
-        );
+        
 
         if (isFederalVote) {
           // Add date filtering - only votes from 2015 onwards
           const voteDate = new Date(item.created || item.date);
           const voteYear = voteDate.getFullYear();
 
-          console.log(
-            `   - Vote year: ${voteYear}, Before 2015: ${voteYear < 2015}`
-          );
-
+      
           // Skip votes before 2015
           if (voteYear < 2015) {
-            console.log(`   ⏩ Skipping - vote before 2015`);
+           
             return null;
           }
 
@@ -764,7 +690,6 @@ class QuorumDataController {
               ? "house_vote"
               : "vote";
 
-          console.log(`   - Chamber-based type: ${chamberBasedType}`);
 
           const filteredVote = {
             voteId: item.id,
@@ -785,11 +710,10 @@ class QuorumDataController {
             isFederal: true,
           };
 
-          console.log(`   ✅ Keeping vote - ${voteType} vote from ${voteYear}`);
+          
           return filteredVote;
         }
 
-        console.log(`   ⏩ Skipping - not federal vote`);
         return null;
       },
     };
@@ -987,10 +911,8 @@ class QuorumDataController {
         if (bill.relatedBill && bill.relatedBill.id) {
           bill.releatedBillid = String(bill.relatedBill.id);
           bill.relatedBillTitle = bill.relatedBill.title || "";
-          console.log(
-            `   🔗 Flattening relatedBill for ${bill.quorumId}: ${bill.releatedBillid}`
-          );
-          delete bill.relatedBill; // Remove nested object before saving
+         
+          delete bill.relatedBill; 
         }
 
         await model.updateOne(
@@ -1042,25 +964,16 @@ class QuorumDataController {
               const isVote =
                 item.type === "senate_vote" || item.type === "house_vote";
 
-              console.log(
-                `\n🟢 [QUORUM CONTROLLER] ================================================`
-              );
-              console.log(
-                `📋 Processing ${isVote ? "VOTE" : "BILL"}: ${item.quorumId}`
-              );
-              console.log(`   - Type: ${item.type}`);
-              console.log(`   - Title: ${item.title}`);
-              console.log(`   - Congress: ${item.congress}`);
-              console.log(`   - Date: ${item.date}`);
+            
 
               // ✅ EXTRACT FROM NESTED relatedBill OBJECT
               // ✅ Use flat schema fields
-              if (isVote && item.releatedBillid) {
-                console.log(`   - releatedBillid: ${item.releatedBillid}`);
-                console.log(`   - relatedBillTitle: ${item.relatedBillTitle}`);
-              } else {
-                console.log(`   - relatedBill: N/A`);
-              }
+              // if (isVote && item.releatedBillid) {
+              //   console.log(`   - releatedBillid: ${item.releatedBillid}`);
+              //   console.log(`   - relatedBillTitle: ${item.relatedBillTitle}`);
+              // } else {
+              //   console.log(`   - relatedBill: N/A`);
+              // }
 
               // For votes, use releatedBillid and relatedBillTitle from schema
               // For bills, use their own quorumId and title
@@ -1074,11 +987,6 @@ class QuorumDataController {
                   ? String(item.relatedBillTitle)
                   : String(item.title || "Untitled Bill/Vote");
 
-              console.log(`   📤 Parameters for activity creation:`);
-              console.log(`      - Bill ID for activity: ${billIdForActivity}`);
-              console.log(
-                `      - Bill Title for activity: ${billTitleForActivity}`
-              );
 
               // Skip if no valid bill ID
               if (
@@ -1086,13 +994,13 @@ class QuorumDataController {
                 billIdForActivity === "null" ||
                 billIdForActivity === "undefined"
               ) {
-                console.log(`   ⏩ SKIPPING - no valid related bill ID`);
+           
                 continue;
               }
 
               // For votes without related bills, skip activity creation
               if (isVote && !item.releatedBillid) {
-                console.log(`   ⏩ SKIPPING - vote has no related bill`);
+            
                 continue;
               }
 
@@ -1101,16 +1009,14 @@ class QuorumDataController {
 
               // For votes with related bills, fetch the bill date from database
               if (isVote && item.releatedBillid) {
-                console.log(`   📅 Fetching date from related bill...`);
+               
                 try {
                   const relatedBill = await Bill.findOne({
                     quorumId: item.releatedBillid,
                   });
                   if (relatedBill && relatedBill.date) {
                     dateForActivity = relatedBill.date;
-                    console.log(
-                      `   ✅ Using related bill date: ${dateForActivity}`
-                    );
+                    
                   } else {
                     console.log(
                       `   ⚠️ Related bill not found in DB, using vote date: ${dateForActivity}`
@@ -1129,15 +1035,7 @@ class QuorumDataController {
                 );
               }
 
-              console.log(
-                `\n   🚀 Calling ActivityController.fetchAndCreateFromCosponsorships...`
-              );
-              console.log(`      Parameters being passed:`);
-              console.log(`      - billId: ${billIdForActivity}`);
-              console.log(`      - title: ${billTitleForActivity}`);
-              console.log(`      - date: ${dateForActivity}`);
-              console.log(`      - congress: ${item.congress}`);
-              console.log(`      - editorInfo:`, editorInfo);
+          
 
               const result =
                 await ActivityController.fetchAndCreateFromCosponsorships(
@@ -1148,12 +1046,8 @@ class QuorumDataController {
                   editorInfo
                 );
 
-              console.log(
-                `   ✅ ActivityController returned: ${result} cosponsorship(s) linked`
-              );
-              console.log(
-                `🟢 [QUORUM CONTROLLER] ================================================\n`
-              );
+              
+             
             } catch (err) {
               console.error(
                 `\n   ❌ [QUORUM CONTROLLER] Cosponsorship fetch failed for ${item.quorumId}`

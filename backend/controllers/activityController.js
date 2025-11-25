@@ -813,17 +813,10 @@ class activityController {
       return 0;
     }
   }
+
   static async saveActivityFromBill(req, res) {
     try {
       const { billId, title, introduced, congress, editorInfo } = req.body;
-
-      console.log(`\n💾 [SAVE ACTIVITY] Received request:`, {
-        billId,
-        title: title?.substring(0, 50) + "...",
-        introduced,
-        congress,
-        hasEditorInfo: !!editorInfo,
-      });
 
       // Validate required fields
       if (!billId || !title || !introduced || !congress) {
@@ -833,47 +826,89 @@ class activityController {
             "Missing required fields: billId, title, introduced, congress",
         });
       }
-
       // Check if activity already exists
-      console.log(`🔍 Checking for existing activity...`);
       let activity = await Activity.findOne({
         activityquorumId: billId,
-        date: introduced,
+       
         congress,
       });
 
       if (activity) {
-        console.log(`❌ Activity already exists: ${activity._id}`);
         return res.status(200).json({
           exists: true,
           message: "Activity already exists",
           activityId: activity._id,
         });
       }
+      // Create activity immediately and get the ID
+      let activityType = null;
+      const queryParams = {
+        api_key: API_KEY,
+        username: USERNAME,
+      };
 
-      console.log(`✅ No existing activity found, proceeding with creation...`);
+      // Quick API call to determine bill type
+      try {
+        const billUrl = `${BASE}/api/newbill/${billId}`;
+        const billRes = await axios.get(billUrl, { params: queryParams });
+        const bill = billRes.data;
 
-      // Process the bill and create activity with sponsors
-      const savedCount =
-        await activityController.fetchAndCreateFromCosponsorships(
+        activityType = bill.type || null;
+        if (!activityType && bill.bill_type) {
+          const fallbackType = bill.bill_type.toLowerCase();
+          if (fallbackType.includes("senate")) activityType = "senate";
+          else if (fallbackType.includes("house")) activityType = "house";
+        }
+      } catch (err) {
+        console.warn(
+          `⚠️ Could not fetch bill details, using default type:`,
+          err.message
+        );
+        activityType = "house";
+      }
+      // Create the activity immediately
+      const newActivity = new Activity({
+        type: activityType,
+        title,
+        shortDesc: "",
+        longDesc: "",
+        rollCall: null,
+        readMore: null,
+        date: introduced,
+        congress,
+        termId: null,
+        trackActivities: "pending",
+        status: "draft",
+        editedFields: [],
+        activityquorumId: billId,
+      });
+
+      await newActivity.save();
+      // Process sponsors in background (don't await)
+      activityController
+        .fetchAndCreateFromCosponsorships(
           String(billId),
           String(title),
           String(introduced),
           String(congress),
           editorInfo || {}
-        );
-
-      console.log(
-        `🎉 [SAVE ACTIVITY] COMPLETED - Linked ${savedCount} sponsors`
-      );
+        )
+        .then((savedCount) => {
+          console.log(
+            `🎉 [BACKGROUND] Legislator assignment completed - Linked ${savedCount} sponsors`
+          );
+        })
+        .catch((err) => {
+          console.error("💥 Background legislator assignment failed:", err);
+        });
 
       res.status(200).json({
-        message: "Activity created and sponsors processed successfully",
-        savedCount,
+        message:
+          "Activity created successfully! Legislators are being assigned in the background.",
+        activityId: newActivity._id,
         exists: false,
       });
     } catch (err) {
-      console.error("💥 Error in saveActivityFromBill:", err);
       res.status(500).json({
         message: "Internal server error",
         error: err.message,
