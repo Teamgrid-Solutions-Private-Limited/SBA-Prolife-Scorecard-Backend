@@ -9,7 +9,7 @@ module.exports = {
     },
     
     TIMEOUTS: {
-        API_REQUEST: 30000, 
+        API_REQUEST: 40000, 
         SERVER_RESPONSE: 45000
     },
     

@@ -297,18 +297,14 @@ class QuorumDataController {
       }[type] || 1000;
 
     try {
-     
-
       // Transform search params for more flexible searching
       const processedParams = { ...additionalParams };
 
       // For votes, enable partial matching on question field
       if (type === "votes" && processedParams.question) {
-      
         // Use __icontains for case-insensitive partial matching
         processedParams.question__icontains = processedParams.question;
         delete processedParams.question;
-        
       }
 
       // For bills, enable partial matching on title field
@@ -329,11 +325,6 @@ class QuorumDataController {
 
       // // Enhanced logging for votes
       // if (type === "votes") {
-       
-       
-      
-
-      
 
       //   if (firstParams.number || additionalParams.number) {
       //     console.log(
@@ -360,18 +351,15 @@ class QuorumDataController {
       const response = await this._requestQueue.add(fetchTask);
       circuitBreaker.success();
 
-
-  
       if (!response.data?.objects?.length) {
-       
         return [];
       }
 
       allData.push(...response.data.objects);
-      
+
       // Log sample data for votes
       // if (type === "votes" && response.data.objects.length > 0) {
-       
+
       //   response.data.objects.slice(0, 3).forEach((vote, index) => {
       //     console.log(
       //       `   ${index + 1}. ID: ${vote.id}, Number: ${
@@ -400,10 +388,7 @@ class QuorumDataController {
         );
         const maxParallelRequests = cacheConfig.MAX_PARALLEL_PAGES || 3;
 
-      
         for (let page = 1; page <= totalPages; page += maxParallelRequests) {
-         
-
           const pagePromises = [];
           for (
             let i = 0;
@@ -419,7 +404,6 @@ class QuorumDataController {
                   params: pageParams,
                 })
                 .then((res) => {
-                
                   return res.data?.objects || [];
                 })
                 .catch((err) => {
@@ -437,14 +421,10 @@ class QuorumDataController {
           pageResults.forEach((pageData, index) => {
             if (pageData.length > 0) {
               allData.push(...pageData);
-             
             }
           });
 
-         
-
           if (allData.length >= maxRecords) {
-          
             break;
           }
 
@@ -458,7 +438,6 @@ class QuorumDataController {
               data: trimmedIntermediateData,
               timestamp: now,
             };
-            
           }
         }
       }
@@ -473,8 +452,6 @@ class QuorumDataController {
         timestamp: now,
       };
 
-     
-
       return trimmedData;
     } catch (error) {
       circuitBreaker.failure();
@@ -485,7 +462,6 @@ class QuorumDataController {
       );
 
       if (cache?.data) {
-     
         return cache.data;
       }
 
@@ -669,17 +645,13 @@ class QuorumDataController {
         // Only process federal votes
         const isFederalVote = item.region === "federal";
 
-        
-
         if (isFederalVote) {
           // Add date filtering - only votes from 2015 onwards
           const voteDate = new Date(item.created || item.date);
           const voteYear = voteDate.getFullYear();
 
-      
           // Skip votes before 2015
           if (voteYear < 2015) {
-           
             return null;
           }
 
@@ -689,7 +661,6 @@ class QuorumDataController {
               : item.chamber?.toLowerCase() === "house"
               ? "house_vote"
               : "vote";
-
 
           const filteredVote = {
             voteId: item.id,
@@ -710,7 +681,6 @@ class QuorumDataController {
             isFederal: true,
           };
 
-          
           return filteredVote;
         }
 
@@ -911,8 +881,8 @@ class QuorumDataController {
         if (bill.relatedBill && bill.relatedBill.id) {
           bill.releatedBillid = String(bill.relatedBill.id);
           bill.relatedBillTitle = bill.relatedBill.title || "";
-         
-          delete bill.relatedBill; 
+
+          delete bill.relatedBill;
         }
 
         await model.updateOne(
@@ -924,17 +894,23 @@ class QuorumDataController {
       });
       const saved = await Promise.all(savedPromises);
 
+      // Update roll call synchronously before sending response
+      try {
+        await updateBillRollCall(saved, apiClient, this._requestQueue);
+      } catch (rollCallError) {
+        console.error("Roll call update error:", rollCallError);
+        // Continue even if roll call update fails
+      }
+
       res.json({
         message:
-          "Bills saved. Cosponsorship & vote updates running in background.",
+          "Bills saved with roll call data. Cosponsorship & vote updates running in background.",
         data: saved,
       });
       (async () => {
         try {
           // ❌ DISABLED: Bill Summary API (not needed)
           // await this.updateBillShortDesc(saved);
-
-          await updateBillRollCall(saved, apiClient, this._requestQueue);
 
           const CHUNK_SIZE = cacheConfig.BATCH_SIZES.VOTE_UPDATES;
           const models = {
@@ -964,8 +940,6 @@ class QuorumDataController {
               const isVote =
                 item.type === "senate_vote" || item.type === "house_vote";
 
-            
-
               // ✅ EXTRACT FROM NESTED relatedBill OBJECT
               // ✅ Use flat schema fields
               // if (isVote && item.releatedBillid) {
@@ -987,20 +961,17 @@ class QuorumDataController {
                   ? String(item.relatedBillTitle)
                   : String(item.title || "Untitled Bill/Vote");
 
-
               // Skip if no valid bill ID
               if (
                 !billIdForActivity ||
                 billIdForActivity === "null" ||
                 billIdForActivity === "undefined"
               ) {
-           
                 continue;
               }
 
               // For votes without related bills, skip activity creation
               if (isVote && !item.releatedBillid) {
-            
                 continue;
               }
 
@@ -1009,14 +980,12 @@ class QuorumDataController {
 
               // For votes with related bills, fetch the bill date from database
               if (isVote && item.releatedBillid) {
-               
                 try {
                   const relatedBill = await Bill.findOne({
                     quorumId: item.releatedBillid,
                   });
                   if (relatedBill && relatedBill.date) {
                     dateForActivity = relatedBill.date;
-                    
                   } else {
                     console.log(
                       `   ⚠️ Related bill not found in DB, using vote date: ${dateForActivity}`
@@ -1035,8 +1004,6 @@ class QuorumDataController {
                 );
               }
 
-          
-
               const result =
                 await ActivityController.fetchAndCreateFromCosponsorships(
                   billIdForActivity,
@@ -1045,9 +1012,6 @@ class QuorumDataController {
                   item.congress,
                   editorInfo
                 );
-
-              
-             
             } catch (err) {
               console.error(
                 `\n   ❌ [QUORUM CONTROLLER] Cosponsorship fetch failed for ${item.quorumId}`

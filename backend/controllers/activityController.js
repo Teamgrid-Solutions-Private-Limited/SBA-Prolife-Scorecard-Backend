@@ -690,7 +690,6 @@ class activityController {
 
       let activity = await Activity.findOne({
         activityquorumId: billId,
-        date: introduced,
         congress,
         type: activityType,
       });
