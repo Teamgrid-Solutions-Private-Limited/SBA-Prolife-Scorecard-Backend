@@ -284,7 +284,7 @@ class QuorumDataController {
       {
         senator: 100,
         representative: 250,
-        votes: 20, // Reduced for votes to avoid timeouts
+        votes: 30, // Reduced for votes to avoid timeouts
         bills: 30, // ❌ NOT IN USE (kept for reference)
       }[type] || 20;
 
@@ -292,7 +292,7 @@ class QuorumDataController {
       {
         senator: 120,
         representative: 20000,
-        votes: 20, // Limit votes to 50 for testing
+        votes: 30, // Limit votes to 50 for testing
         bills: 30, // ❌ NOT IN USE (kept for reference)
       }[type] || 1000;
 
@@ -305,6 +305,21 @@ class QuorumDataController {
         // Use __icontains for case-insensitive partial matching
         processedParams.question__icontains = processedParams.question;
         delete processedParams.question;
+      }
+
+      // For votes, enable partial matching on related bill title field
+      if (type === "votes" && processedParams.billTitle) {
+        // Use __icontains for case-insensitive partial matching on nested related_bill.title
+        // This searches in the related_bill.title field (e.g., "S.Con.Res. 14: A concurrent resolution...")
+        processedParams.related_bill__title__icontains = processedParams.billTitle;
+        delete processedParams.billTitle;
+      }
+
+      // For votes, enable partial matching on related bill label (e.g., "S.Con.Res. 14", "H.R. 1234")
+      if (type === "votes" && processedParams.billLabel) {
+        // Use __icontains for case-insensitive partial matching on nested related_bill.label
+        processedParams.related_bill__label__icontains = processedParams.billLabel;
+        delete processedParams.billLabel;
       }
 
       // For bills, enable partial matching on title field
