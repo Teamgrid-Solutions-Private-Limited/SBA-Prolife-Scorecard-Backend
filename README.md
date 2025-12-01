@@ -1,4 +1,4 @@
-# SBA Prolife Scorecard Backend
+# SBA Pro-life Scorecard Backend
 
 This is the backend API for the SBA Prolife Scorecard project. It is built with Node.js, Express, and MongoDB (Mongoose), and provides secure endpoints for managing senators, representatives, terms, votes, activities, and user authentication.
 

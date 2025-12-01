@@ -375,9 +375,48 @@ class houseDataController {
 
           const singleCongress = termCongresses[0];
 
-          const votesForThisTerm = votesByCongress.get(singleCongress) || [];
-          const activitiesForThisTerm =
-            activitiesByCongress.get(singleCongress) || [];
+          // const votesForThisTerm = votesByCongress.get(singleCongress) || [];
+          // const activitiesForThisTerm =
+          //   activitiesByCongress.get(singleCongress) || [];
+          // Votes sorted by date ASC, if same date → sort by _id ASC
+          const votesForThisTerm = (
+            votesByCongress.get(singleCongress) || []
+          ).sort((a, b) => {
+            const dateA = a.voteId?.date
+              ? new Date(a.voteId.date)
+              : new Date(0);
+            const dateB = b.voteId?.date
+              ? new Date(b.voteId.date)
+              : new Date(0);
+
+            if (dateA.getTime() === dateB.getTime()) {
+              return (a.voteId?._id || "")
+                .toString()
+                .localeCompare((b.voteId?._id || "").toString());
+            }
+
+            return dateA - dateB;
+          });
+
+          // Activities sorted by date ASC, if same date → sort by _id ASC
+          const activitiesForThisTerm = (
+            activitiesByCongress.get(singleCongress) || []
+          ).sort((a, b) => {
+            const dateA = a.activityId?.date
+              ? new Date(a.activityId.date)
+              : new Date(0);
+            const dateB = b.activityId?.date
+              ? new Date(b.activityId.date)
+              : new Date(0);
+
+            if (dateA.getTime() === dateB.getTime()) {
+              return (a.activityId?._id || "")
+                .toString()
+                .localeCompare((b.activityId?._id || "").toString());
+            }
+
+            return dateA - dateB;
+          });
 
           const meta = termIdToMeta.get(term._id?.toString()) || {};
           return {
