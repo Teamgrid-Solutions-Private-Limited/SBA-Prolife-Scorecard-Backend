@@ -204,6 +204,7 @@ class senatorDataController {
       });
     }
   }
+  
   static async getSenatorDataBySenatorId(req, res) {
     try {
       const senateId = req.params.id;
@@ -242,11 +243,56 @@ class senatorDataController {
         return res.status(404).json({ message: "Senator data not found" });
       }
 
-      const orderedData = senatorData.sort((a, b) => {
+      // Sort votes and activities by date in ascending order for each term
+      const sortedSenatorData = senatorData.map((term) => {
+        // Sort votesScore by vote date (ascending)
+        if (term.votesScore && term.votesScore.length > 0) {
+          term.votesScore.sort((a, b) => {
+            const dateA = a.voteId?.date
+              ? new Date(a.voteId.date)
+              : new Date(0);
+            const dateB = b.voteId?.date
+              ? new Date(b.voteId.date)
+              : new Date(0);
+            return dateA - dateB; // Ascending order
+          });
+        }
+
+        // Sort activitiesScore by activity date (ascending)
+        if (term.activitiesScore && term.activitiesScore.length > 0) {
+          term.activitiesScore.sort((a, b) => {
+            const dateA = a.activityId?.date
+              ? new Date(a.activityId.date)
+              : new Date(0);
+            const dateB = b.activityId?.date
+              ? new Date(b.activityId.date)
+              : new Date(0);
+            return dateA - dateB; // Ascending order
+          });
+        }
+
+        // Sort pastVotesScore by vote date (ascending)
+        if (term.pastVotesScore && term.pastVotesScore.length > 0) {
+          term.pastVotesScore.sort((a, b) => {
+            const dateA = a.voteId?.date
+              ? new Date(a.voteId.date)
+              : new Date(0);
+            const dateB = b.voteId?.date
+              ? new Date(b.voteId.date)
+              : new Date(0);
+            return dateA - dateB; // Ascending order
+          });
+        }
+
+        return term;
+      });
+
+      const orderedData = sortedSenatorData.sort((a, b) => {
         if (a.currentTerm && !b.currentTerm) return -1;
         if (!a.currentTerm && b.currentTerm) return 1;
         return 0;
       });
+
       res.status(200).json({
         message: "Retrieve successfully",
         info: orderedData,
