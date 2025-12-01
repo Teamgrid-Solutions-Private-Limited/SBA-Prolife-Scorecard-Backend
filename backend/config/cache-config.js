@@ -9,8 +9,8 @@ module.exports = {
     },
     
     TIMEOUTS: {
-        API_REQUEST: 40000, 
-        SERVER_RESPONSE: 45000
+        API_REQUEST: 30000, 
+        SERVER_RESPONSE: 40000
     },
     
     BATCH_SIZES: {
@@ -21,7 +21,7 @@ module.exports = {
     
     CIRCUIT_BREAKER: {
         FAILURE_THRESHOLD: 3,
-        RESET_TIMEOUT: 40000,
+        RESET_TIMEOUT: 30000,
         SUCCESS_THRESHOLD: 2
     },
     

@@ -284,16 +284,16 @@ class QuorumDataController {
       {
         senator: 100,
         representative: 250,
-        votes: 30, // Reduced for votes to avoid timeouts
-        bills: 30, // ❌ NOT IN USE (kept for reference)
+        votes: 20, // Reduced for votes to avoid timeouts
+        bills: 20, // ❌ NOT IN USE (kept for reference)
       }[type] || 20;
 
     const maxRecords =
       {
         senator: 120,
         representative: 20000,
-        votes: 30, // Limit votes to 50 for testing
-        bills: 30, // ❌ NOT IN USE (kept for reference)
+        votes: 20, // Limit votes to 50 for testing
+        bills: 20, // ❌ NOT IN USE (kept for reference)
       }[type] || 1000;
 
     try {
