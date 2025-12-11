@@ -1,7 +1,8 @@
 const path = require('path');
 
 // environment-specific .env file
-const envFile = process.env.NODE_ENV === 'production' ? '.env.production' : '.env.development';
+// .env = production, .env.development = development
+const envFile = process.env.NODE_ENV === 'production' ? '.env' : '.env.development';
 require('dotenv').config({ path: path.join(__dirname, '..', envFile) });
 
 const config = {

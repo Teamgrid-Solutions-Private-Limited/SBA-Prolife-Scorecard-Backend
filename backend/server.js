@@ -1,8 +1,9 @@
 // Load environment-specific configurations
+// .env = production, .env.development = development
 const path = require("path");
 const fs = require("fs");
 const envFile =
-  process.env.NODE_ENV === "production" ? ".env.production" : ".env";
+  process.env.NODE_ENV === "production" ? ".env" : ".env.development";
 require("dotenv").config({ path: path.join(__dirname, envFile) });
 
 const express = require("express");

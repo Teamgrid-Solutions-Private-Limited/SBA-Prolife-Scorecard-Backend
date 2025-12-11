@@ -22,9 +22,10 @@ jspm_packages/
 .npm/
 
 # dotenv environment variable files
+# .env = production environment
+# .env.development = development environment
 .env
 .env.development
-.env.production
 
 # IDE and editor specific files
 .vscode/
