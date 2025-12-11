@@ -10,7 +10,7 @@ module.exports = {
     
     TIMEOUTS: {
         API_REQUEST: 30000, 
-        SERVER_RESPONSE: 45000
+        SERVER_RESPONSE: 40000
     },
     
     BATCH_SIZES: {
