@@ -357,7 +357,7 @@ class senatorController {
       });
     } catch (error) {
       res.status(500).json({
-        message: "Failed to restore to original state",
+        message: "No history available to restore",
         error: error.message,
       });
     }

@@ -497,7 +497,7 @@ class activityController {
       });
     } catch (error) {
       res.status(500).json({
-        message: "Failed to discard changes",
+        message: "No history available to restore",
         error: error.message,
       });
     }
