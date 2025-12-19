@@ -210,7 +210,7 @@ class activityController {
         trackActivities,
       } = req.body;
 
-      const readMore = getFileUrl(req.file);
+      const readMore = getFileUrl(req.file) || req.body.readMore;
       const newActivity = new Activity({
         type,
         title,
