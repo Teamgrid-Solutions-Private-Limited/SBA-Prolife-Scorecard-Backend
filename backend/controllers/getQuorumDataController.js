@@ -307,18 +307,34 @@ class QuorumDataController {
         delete processedParams.question;
       }
 
+      // For votes, enable exact matching on roll call number
+      if (type === "votes" && processedParams.rollCallNumber) {
+        // Exact match for roll call number
+        processedParams.number = processedParams.rollCallNumber;
+        delete processedParams.rollCallNumber;
+      }
+
+      // Note: congress filtering is handled in filterData() since API doesn't support it
+      // Store congress for later filtering if provided
+      const targetCongress = type === "votes" ? processedParams.congress : null;
+      if (type === "votes" && processedParams.congress) {
+        delete processedParams.congress;
+      }
+
       // For votes, enable partial matching on related bill title field
       if (type === "votes" && processedParams.billTitle) {
         // Use __icontains for case-insensitive partial matching on nested related_bill.title
         // This searches in the related_bill.title field (e.g., "S.Con.Res. 14: A concurrent resolution...")
-        processedParams.related_bill__title__icontains = processedParams.billTitle;
+        processedParams.related_bill__title__icontains =
+          processedParams.billTitle;
         delete processedParams.billTitle;
       }
 
       // For votes, enable partial matching on related bill label (e.g., "S.Con.Res. 14", "H.R. 1234")
       if (type === "votes" && processedParams.billLabel) {
         // Use __icontains for case-insensitive partial matching on nested related_bill.label
-        processedParams.related_bill__label__icontains = processedParams.billLabel;
+        processedParams.related_bill__label__icontains =
+          processedParams.billLabel;
         delete processedParams.billLabel;
       }
 
@@ -513,6 +529,7 @@ class QuorumDataController {
       votes: [
         "id",
         "number",
+        "congress_number",
         "question",
         "chamber",
         "category",
@@ -546,7 +563,7 @@ class QuorumDataController {
     return trimmed;
   }
 
-  async filterData(type, data) {
+  async filterData(type, data, filterParams = {}) {
     if (!data || data.length === 0) {
       return [];
     }
@@ -670,6 +687,17 @@ class QuorumDataController {
             return null;
           }
 
+          // ✅ Filter by congress if specified
+          if (filterParams.targetCongress) {
+            const voteCongressNumber = item.congress_number || item.congress;
+            if (
+              parseInt(voteCongressNumber) !==
+              parseInt(filterParams.targetCongress)
+            ) {
+              return null;
+            }
+          }
+
           const chamberBasedType =
             item.chamber?.toLowerCase() === "senate"
               ? "senate_vote"
@@ -683,6 +711,7 @@ class QuorumDataController {
             question: item.question || "Unknown",
             chamber: item.chamber || "Unknown",
             category: item.category || "Unknown",
+            congress: item.congress_number || "Unknown",
             date: item.created || "Unknown",
             type: chamberBasedType, // This will be 'senate_vote' or 'house_vote'
             relatedBill: item.related_bill
@@ -749,7 +778,11 @@ class QuorumDataController {
           (this._CACHE_TTL[type] || cacheConfig.CACHE_TTL.DEFAULT);
 
       if (isCacheValid && cache.data.length > 0) {
-        const filtered = await this.filterData(type, cache.data);
+        const filterParams =
+          type === "votes" && additionalParams?.congress
+            ? { targetCongress: additionalParams.congress }
+            : {};
+        const filtered = await this.filterData(type, cache.data, filterParams);
         res.status(200).json({
           message: `${type} data available from cache`,
           count: filtered.length,
@@ -781,7 +814,12 @@ class QuorumDataController {
             return;
           }
 
-          const filtered = await this.filterData(type, rawData);
+          // Pass congress filter to filterData for votes
+          const filterParams =
+            type === "votes" && additionalParams?.congress
+              ? { targetCongress: additionalParams.congress }
+              : {};
+          const filtered = await this.filterData(type, rawData, filterParams);
           if (!filtered.length) {
             if (!responseHandled) {
               return res
