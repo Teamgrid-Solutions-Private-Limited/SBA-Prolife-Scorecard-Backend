@@ -470,6 +470,7 @@ class houseDataController {
           longDesc: doc.longDesc || null,
           rollCall: doc.rollCall || null,
           readMore: doc.readMore || null,
+          date: doc.date || null,
         };
 
       const getHouseDetails = (sourceData, isHistorical = false) => ({
@@ -541,22 +542,22 @@ class houseDataController {
             .populate("termId", "_id name startYear endYear congresses")
             .populate(
               "votesScore.voteId",
-              "_id title shortDesc longDesc rollCall readMore"
+              "_id title shortDesc longDesc rollCall readMore date"
             )
             .populate(
               "activitiesScore.activityId",
-              "_id title shortDesc longDesc rollCall readMore"
+              "_id title shortDesc longDesc rollCall readMore date"
             )
             .lean(),
           HouseData.find({ houseId, currentTerm: { $ne: true } })
             .populate("termId", "_id name startYear endYear congresses")
             .populate(
               "votesScore.voteId",
-              "_id title shortDesc longDesc rollCall readMore"
+              "_id title shortDesc longDesc rollCall readMore date"
             )
             .populate(
               "activitiesScore.activityId",
-              "_id title shortDesc longDesc rollCall readMore"
+              "_id title shortDesc longDesc rollCall readMore date"
             )
             .sort({ "termId.startYear": -1, createdAt: -1 })
             .lean(),
