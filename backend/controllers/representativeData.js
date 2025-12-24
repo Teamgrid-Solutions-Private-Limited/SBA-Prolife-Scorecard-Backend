@@ -471,6 +471,7 @@ class houseDataController {
           rollCall: doc.rollCall || null,
           readMore: doc.readMore || null,
           date: doc.date || null,
+          sbaPosition: doc.sbaPosition || null,
         };
 
       const getHouseDetails = (sourceData, isHistorical = false) => ({
@@ -542,7 +543,7 @@ class houseDataController {
             .populate("termId", "_id name startYear endYear congresses")
             .populate(
               "votesScore.voteId",
-              "_id title shortDesc longDesc rollCall readMore date"
+              "_id title shortDesc longDesc rollCall readMore date sbaPosition"
             )
             .populate(
               "activitiesScore.activityId",
@@ -553,7 +554,7 @@ class houseDataController {
             .populate("termId", "_id name startYear endYear congresses")
             .populate(
               "votesScore.voteId",
-              "_id title shortDesc longDesc rollCall readMore date"
+              "_id title shortDesc longDesc rollCall readMore date sbaPosition"
             )
             .populate(
               "activitiesScore.activityId",

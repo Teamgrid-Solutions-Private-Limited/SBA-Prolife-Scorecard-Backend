@@ -22,7 +22,7 @@ const VoteSchema = new mongoose.Schema(
     date: Date,
     congress: { type: String },
     termId: { type: String },
-    sbaPosition: { type: String, enum: ["yes", "no"], default: "no" },
+    sbaPosition: { type: String, enum: ["Yes", "No"], default: "No" },
     status: {
       type: String,
       enum: ["draft", "published", "under review"],
